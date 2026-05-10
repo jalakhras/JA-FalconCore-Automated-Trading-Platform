@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.4.0 - Evidence Framework Foundation |
+//|                     Version: v0.6.0 - No-Lookahead Runtime Guard & Strategy Staging Safety |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.040"
+#property version   "1.060"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.4.0"
-#define EA_BUILD_TAG   "EvidenceFrameworkFoundation_NoExecution"
+#define EA_VERSION_TAG "v0.6.0"
+#define EA_BUILD_TAG   "NoLookaheadRuntimeGuardStrategyStagingSafety_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -39,7 +39,7 @@ input int    MaxOpenPositions                = 1;
 
 // ==================================================================
 // 03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات
-// Keep this list small and explicit. All engines are OFF in v0.3.0.
+// Keep this list small and explicit. All engines are OFF in v0.6.0.
 // ==================================================================
 input group "03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات";
 input bool EnableStrategy_FvgMicroRetest             = false; // Legacy core winner candidate.
@@ -57,18 +57,19 @@ input bool EnableStrategy_GoldenLiquidity5MEntry     = false; // استراتي�
 
 // ==================================================================
 // 04 - Reporting / التقارير
-// v0.4.0 keeps the report contract and adds Evidence Framework diagnostics.
-// Trade rows will be written later by Shadow/Paper/Demo engines.
+// v0.6.0 keeps all previous reports and adds Shadow Engine diagnostics.
+// Trade rows are still written only by controlled Shadow/Paper/Demo records; no live orders.
 // ==================================================================
 input group "04 - Reporting / التقارير";
 input bool EnableMainReport                 = true;
 input bool EnableRejectedReport             = true;
 input bool EnableEvidenceReport             = true;
+input bool EnableShadowDiagnosticsReport    = true;
 input bool EnableVerboseExpertsLog          = true;
 
 // ==================================================================
 // 05 - Market Context / سياق السوق
-// Keep simple. This is diagnostics only in v0.3.0.
+// Keep simple. This is diagnostics only in v0.6.0.
 // ==================================================================
 input group "05 - Market Context / سياق السوق";
 input bool            UseClosedCandlesOnly          = true;      // Core guard: use closed candles for analysis snapshots.
@@ -78,7 +79,13 @@ input bool            EnableCandleCacheDiagnosticsReport = true; // Writes M1/M5
 input bool            EnableEvidenceDiagnosticsReport    = true; // Writes the contract-only Evidence Framework snapshot.
 
 // ==================================================================
-// Core Data Contracts - v0.3.0
+// 06 - Runtime Safety / أمان التشغيل
+// ==================================================================
+input group "06 - Runtime Safety / أمان التشغيل";
+input bool            EnableNoLookaheadDiagnosticsReport = true; // Writes a runtime safety snapshot. No strategy decisions use current candle/final-state.
+
+// ==================================================================
+// Core Data Contracts - v0.6.0
 // ==================================================================
 enum ENUM_FALCON_DIRECTION
 {
@@ -122,6 +129,15 @@ enum ENUM_FALCON_TRADE_STAGE
 };
 
 
+enum ENUM_FALCON_SHADOW_RECORD_STATUS
+{
+   FALCON_SHADOW_RECORD_NONE      = 0,
+   FALCON_SHADOW_RECORD_STAGED    = 1,
+   FALCON_SHADOW_RECORD_CLOSED    = 2,
+   FALCON_SHADOW_RECORD_CANCELLED = 3
+};
+
+
 enum ENUM_FALCON_EVIDENCE_TYPE
 {
    FALCON_EVIDENCE_TYPE_NONE                = 0,
@@ -137,6 +153,22 @@ enum ENUM_FALCON_EVIDENCE_STATE
    FALCON_EVIDENCE_STATE_ABSENT        = 1,
    FALCON_EVIDENCE_STATE_PRESENT       = 2,
    FALCON_EVIDENCE_STATE_CONFLICTING   = 3
+};
+
+enum ENUM_FALCON_RUNTIME_SAFETY_STATUS
+{
+   FALCON_RUNTIME_SAFETY_NOT_EVALUATED = 0,
+   FALCON_RUNTIME_SAFETY_PASSED        = 1,
+   FALCON_RUNTIME_SAFETY_REJECTED      = 2
+};
+
+enum ENUM_FALCON_LOOKAHEAD_RISK
+{
+   FALCON_LOOKAHEAD_RISK_NONE              = 0,
+   FALCON_LOOKAHEAD_RISK_CURRENT_CANDLE    = 1,
+   FALCON_LOOKAHEAD_RISK_FINAL_STATE       = 2,
+   FALCON_LOOKAHEAD_RISK_INVALID_CANDLE    = 3,
+   FALCON_LOOKAHEAD_RISK_INVALID_TRADEPLAN = 4
 };
 
 struct FalconSymbolContext
@@ -182,6 +214,21 @@ struct FalconCandleSnapshot
    int             source_shift;
    bool            is_closed;
    bool            is_valid;
+};
+
+struct FalconRuntimeSafetyCheck
+{
+   string                              check_id;
+   string                              check_name;
+   ENUM_FALCON_RUNTIME_SAFETY_STATUS   status;
+   ENUM_FALCON_LOOKAHEAD_RISK          risk_type;
+   ENUM_TIMEFRAMES                     timeframe;
+   int                                 source_shift;
+   bool                                used_closed_candle;
+   bool                                current_candle_blocked;
+   bool                                final_state_blocked;
+   bool                                staging_allowed;
+   string                              notes;
 };
 
 struct FalconEvidenceRecord
@@ -280,6 +327,30 @@ struct FalconTradeLifecycleRecord
    string                    evidence_summary;
 };
 
+
+struct FalconShadowTradeRecord
+{
+   string                           shadow_id;
+   string                           strategy_id;
+   string                           strategy_name;
+   string                           engine_id;
+   ENUM_FALCON_DIRECTION            direction;
+   ENUM_FALCON_SHADOW_RECORD_STATUS status;
+   datetime                         entry_time;
+   datetime                         exit_time;
+   double                           lot_size;
+   double                           entry_price;
+   double                           structural_sl;
+   double                           tp1;
+   double                           tp2;
+   double                           tp3;
+   double                           simulated_exit_price;
+   ENUM_FALCON_TRADE_OUTCOME        simulated_outcome;
+   string                           close_reason;
+   string                           evidence_summary;
+   bool                             is_closed;
+};
+
 struct FalconReportTotals
 {
    int    total_trades;
@@ -335,6 +406,18 @@ string FalconStageToString(const ENUM_FALCON_TRADE_STAGE stage)
 }
 
 
+string FalconShadowStatusToString(const ENUM_FALCON_SHADOW_RECORD_STATUS status)
+{
+   if(status == FALCON_SHADOW_RECORD_STAGED)
+      return "STAGED";
+   if(status == FALCON_SHADOW_RECORD_CLOSED)
+      return "CLOSED";
+   if(status == FALCON_SHADOW_RECORD_CANCELLED)
+      return "CANCELLED";
+   return "NONE";
+}
+
+
 string FalconEvidenceTypeToString(const ENUM_FALCON_EVIDENCE_TYPE evidence_type)
 {
    if(evidence_type == FALCON_EVIDENCE_TYPE_CANDLE_PATTERN)
@@ -357,6 +440,28 @@ string FalconEvidenceStateToString(const ENUM_FALCON_EVIDENCE_STATE evidence_sta
    if(evidence_state == FALCON_EVIDENCE_STATE_CONFLICTING)
       return "CONFLICTING";
    return "NOT_EVALUATED";
+}
+
+string FalconRuntimeSafetyStatusToString(const ENUM_FALCON_RUNTIME_SAFETY_STATUS status)
+{
+   if(status == FALCON_RUNTIME_SAFETY_PASSED)
+      return "PASSED";
+   if(status == FALCON_RUNTIME_SAFETY_REJECTED)
+      return "REJECTED";
+   return "NOT_EVALUATED";
+}
+
+string FalconLookaheadRiskToString(const ENUM_FALCON_LOOKAHEAD_RISK risk_type)
+{
+   if(risk_type == FALCON_LOOKAHEAD_RISK_CURRENT_CANDLE)
+      return "CURRENT_CANDLE";
+   if(risk_type == FALCON_LOOKAHEAD_RISK_FINAL_STATE)
+      return "FINAL_STATE";
+   if(risk_type == FALCON_LOOKAHEAD_RISK_INVALID_CANDLE)
+      return "INVALID_CANDLE";
+   if(risk_type == FALCON_LOOKAHEAD_RISK_INVALID_TRADEPLAN)
+      return "INVALID_TRADEPLAN";
+   return "NONE";
 }
 
 string FalconTimeToString(const datetime value)
@@ -469,7 +574,7 @@ public:
 };
 
 // ==================================================================
-// Market Context Provider - v0.3.0 symbol, quote, and closed candle diagnostics
+// Market Context Provider - v0.6.0 symbol, quote, and closed candle diagnostics
 // ==================================================================
 class CFalconMarketContext
 {
@@ -666,7 +771,7 @@ private:
 
 
 // ==================================================================
-// Multi-Timeframe Candle Cache - v0.4.0
+// Multi-Timeframe Candle Cache - v0.6.0
 // Official analysis timeframes: M1, M5, M15, H1, H4, D1.
 // This layer is data-provider only. It does not create signals.
 // ==================================================================
@@ -790,7 +895,7 @@ public:
 };
 
 // ==================================================================
-// Evidence Framework Foundation - v0.4.0
+// Evidence Framework Foundation - v0.6.0
 // Contract-only layer. Evidence strengthens or weakens future engine decisions,
 // but it never opens a trade and never overrides guards.
 // ==================================================================
@@ -851,7 +956,7 @@ public:
       pack.has_objective_indicator_evidence = false;
       pack.has_smc_evidence                 = false;
       pack.score                            = 0.0;
-      pack.summary                          = "No runtime evidence evaluated in v0.4.0. Evidence Framework is contract-only.";
+      pack.summary                          = "No runtime evidence evaluated in v0.6.0. Evidence Framework remains contract-only.";
       return pack;
    }
 
@@ -890,7 +995,7 @@ public:
    {
       if(EnableRealExecution)
       {
-         CFalconLogger::Error("HARD SAFETY BLOCK: EnableRealExecution must remain false in v0.4.0.");
+         CFalconLogger::Error("HARD SAFETY BLOCK: EnableRealExecution must remain false in v0.6.0.");
          return false;
       }
 
@@ -949,7 +1054,7 @@ public:
 };
 
 // ==================================================================
-// Strategy Registry - switches only. No engine logic in v0.4.0.
+// Strategy Registry - switches only. No engine logic in v0.6.0.
 // ==================================================================
 class CFalconStrategyRegistry
 {
@@ -974,7 +1079,389 @@ public:
 
    void PrintRegistryState()
    {
-      CFalconLogger::Info(StringFormat("StrategyRegistry initialized. EnabledStrategies=%d. All enabled strategies remain observe-only in v0.4.0.", CountEnabledStrategies()));
+      CFalconLogger::Info(StringFormat("StrategyRegistry initialized. EnabledStrategies=%d. All enabled strategies remain observe-only in v0.6.0.", CountEnabledStrategies()));
+   }
+};
+
+
+// ==================================================================
+// Shadow Engine Framework Foundation - v0.6.0
+// Shadow is observation-only. It can stage simulated records and convert
+// them to lifecycle records, but it never sends broker orders.
+// ==================================================================
+class CFalconShadowExecutor
+{
+private:
+   bool m_initialized;
+   int  m_staged_records;
+   int  m_closed_records;
+   int  m_cancelled_records;
+
+public:
+   CFalconShadowExecutor()
+   {
+      m_initialized       = false;
+      m_staged_records    = 0;
+      m_closed_records    = 0;
+      m_cancelled_records = 0;
+   }
+
+   bool Initialize()
+   {
+      m_initialized       = EnableShadowMode;
+      m_staged_records    = 0;
+      m_closed_records    = 0;
+      m_cancelled_records = 0;
+
+      if(m_initialized)
+         CFalconLogger::Info("ShadowExecutor initialized. Mode=OBSERVE_ONLY | BrokerOrders=false");
+      else
+         CFalconLogger::Warn("ShadowExecutor is disabled by input EnableShadowMode=false. EA remains idle.");
+
+      return true;
+   }
+
+   bool IsInitialized()
+   {
+      return m_initialized;
+   }
+
+   int StagedRecords()
+   {
+      return m_staged_records;
+   }
+
+   int ClosedRecords()
+   {
+      return m_closed_records;
+   }
+
+   int CancelledRecords()
+   {
+      return m_cancelled_records;
+   }
+
+   bool StageTradePlan(const FalconTradePlan &plan,
+                       const FalconEvidencePack &evidence_pack,
+                       FalconShadowTradeRecord &record)
+   {
+      ResetShadowRecord(record);
+
+      if(!m_initialized)
+      {
+         CFalconLogger::Warn("StageTradePlan ignored because ShadowExecutor is not initialized.");
+         return false;
+      }
+
+      record.shadow_id        = StringFormat("SHD_%s_%d_%d", plan.strategy_id, (int)TimeCurrent(), m_staged_records + 1);
+      record.strategy_id      = plan.strategy_id;
+      record.strategy_name    = plan.strategy_name;
+      record.engine_id        = plan.engine_id;
+      record.direction        = plan.direction;
+      record.status           = FALCON_SHADOW_RECORD_STAGED;
+      record.entry_time       = TimeCurrent();
+      record.exit_time        = 0;
+      record.lot_size         = plan.lot_size;
+      record.entry_price      = plan.entry_price;
+      record.structural_sl    = plan.structural_sl;
+      record.tp1              = plan.tp1;
+      record.tp2              = plan.tp2;
+      record.tp3              = plan.tp3;
+      record.simulated_exit_price = 0.0;
+      record.simulated_outcome    = FALCON_TRADE_OUTCOME_OPEN;
+      record.close_reason         = "STAGED_ONLY_NO_EXECUTION";
+      record.evidence_summary     = evidence_pack.summary;
+      record.is_closed            = false;
+
+      m_staged_records++;
+      CFalconLogger::Info(StringFormat("Shadow trade staged. ShadowId=%s | Strategy=%s | Direction=%s | Entry=%.5f | SL=%.5f | TP1=%.5f",
+                                       record.shadow_id,
+                                       record.strategy_name,
+                                       FalconDirectionToString(record.direction),
+                                       record.entry_price,
+                                       record.structural_sl,
+                                       record.tp1));
+      return true;
+   }
+
+   bool CloseShadowRecord(FalconShadowTradeRecord &record,
+                          const double simulated_exit_price,
+                          const string close_reason,
+                          const FalconSymbolContext &symbol_context,
+                          FalconTradeLifecycleRecord &lifecycle_record)
+   {
+      if(record.status != FALCON_SHADOW_RECORD_STAGED)
+      {
+         CFalconLogger::Warn("CloseShadowRecord ignored because record is not staged.");
+         return false;
+      }
+
+      record.simulated_exit_price = simulated_exit_price;
+      record.exit_time            = TimeCurrent();
+      record.close_reason         = close_reason;
+      record.status               = FALCON_SHADOW_RECORD_CLOSED;
+      record.is_closed            = true;
+      m_closed_records++;
+
+      ShadowToLifecycle(record, lifecycle_record);
+      FalconFinalizeTradeMetrics(lifecycle_record, symbol_context);
+      record.simulated_outcome = lifecycle_record.outcome;
+
+      CFalconLogger::Info(StringFormat("Shadow trade closed. ShadowId=%s | Outcome=%s | NetIndexPoints=%.2f | NetUSD=%.2f",
+                                       record.shadow_id,
+                                       FalconOutcomeToString(lifecycle_record.outcome),
+                                       lifecycle_record.net_index_points,
+                                       lifecycle_record.net_usd));
+      return true;
+   }
+
+   void CancelShadowRecord(FalconShadowTradeRecord &record,
+                           const string reason)
+   {
+      if(record.status != FALCON_SHADOW_RECORD_STAGED)
+         return;
+
+      record.status       = FALCON_SHADOW_RECORD_CANCELLED;
+      record.close_reason = reason;
+      record.exit_time    = TimeCurrent();
+      record.is_closed    = true;
+      m_cancelled_records++;
+   }
+
+private:
+   void ResetShadowRecord(FalconShadowTradeRecord &record)
+   {
+      record.shadow_id            = "";
+      record.strategy_id          = "";
+      record.strategy_name        = "";
+      record.engine_id            = "";
+      record.direction            = FALCON_DIRECTION_NONE;
+      record.status               = FALCON_SHADOW_RECORD_NONE;
+      record.entry_time           = 0;
+      record.exit_time            = 0;
+      record.lot_size             = 0.0;
+      record.entry_price          = 0.0;
+      record.structural_sl        = 0.0;
+      record.tp1                  = 0.0;
+      record.tp2                  = 0.0;
+      record.tp3                  = 0.0;
+      record.simulated_exit_price = 0.0;
+      record.simulated_outcome    = FALCON_TRADE_OUTCOME_UNKNOWN;
+      record.close_reason         = "";
+      record.evidence_summary     = "";
+      record.is_closed            = false;
+   }
+
+   void ShadowToLifecycle(const FalconShadowTradeRecord &record,
+                          FalconTradeLifecycleRecord &lifecycle_record)
+   {
+      lifecycle_record.trade_id            = record.shadow_id;
+      lifecycle_record.strategy_id         = record.strategy_id;
+      lifecycle_record.strategy_name       = record.strategy_name;
+      lifecycle_record.engine_id           = record.engine_id;
+      lifecycle_record.direction           = record.direction;
+      lifecycle_record.stage               = FALCON_TRADE_STAGE_SHADOW;
+      lifecycle_record.outcome             = record.simulated_outcome;
+      lifecycle_record.entry_time          = record.entry_time;
+      lifecycle_record.exit_time           = record.exit_time;
+      lifecycle_record.lot_size            = record.lot_size;
+      lifecycle_record.entry_price         = record.entry_price;
+      lifecycle_record.structural_sl       = record.structural_sl;
+      lifecycle_record.tp1                 = record.tp1;
+      lifecycle_record.tp2                 = record.tp2;
+      lifecycle_record.tp3                 = record.tp3;
+      lifecycle_record.exit_price          = record.simulated_exit_price;
+      lifecycle_record.profit_index_points = 0.0;
+      lifecycle_record.loss_index_points   = 0.0;
+      lifecycle_record.net_index_points    = 0.0;
+      lifecycle_record.profit_usd          = 0.0;
+      lifecycle_record.loss_usd            = 0.0;
+      lifecycle_record.net_usd             = 0.0;
+      lifecycle_record.close_reason        = record.close_reason;
+      lifecycle_record.evidence_summary    = record.evidence_summary;
+   }
+};
+
+// ==================================================================
+// No-Lookahead Runtime Guard & Strategy Staging Safety - v0.6.0
+// This layer blocks current-candle/final-state dependency before any future
+// strategy can stage Shadow/Paper/Demo plans. It does not create signals.
+// ==================================================================
+class CFalconRuntimeSafetyGuard
+{
+private:
+   FalconRuntimeSafetyCheck m_checks[4];
+   int                      m_check_count;
+   bool                     m_initialized;
+
+public:
+   CFalconRuntimeSafetyGuard()
+   {
+      m_check_count = 0;
+      m_initialized = false;
+   }
+
+   bool Initialize(CFalconCandleCache &cache)
+   {
+      m_check_count = 0;
+      FalconCandleSnapshot primary_m5;
+      const bool has_m5 = cache.GetSnapshotByTimeframe(PERIOD_M5, primary_m5);
+
+      FalconRuntimeSafetyCheck closed_candle_check;
+      ResetCheck(closed_candle_check);
+      closed_candle_check.check_id               = "NLA_CLOSED_CANDLE";
+      closed_candle_check.check_name             = "Closed Candle Decision Guard";
+      closed_candle_check.timeframe              = PERIOD_M5;
+      closed_candle_check.source_shift           = (has_m5 ? primary_m5.source_shift : -1);
+      closed_candle_check.used_closed_candle     = (has_m5 && primary_m5.is_closed && primary_m5.source_shift > 0);
+      closed_candle_check.current_candle_blocked = true;
+      closed_candle_check.final_state_blocked    = true;
+      closed_candle_check.staging_allowed        = closed_candle_check.used_closed_candle;
+      closed_candle_check.status                 = (closed_candle_check.staging_allowed ? FALCON_RUNTIME_SAFETY_PASSED : FALCON_RUNTIME_SAFETY_REJECTED);
+      closed_candle_check.risk_type              = (closed_candle_check.staging_allowed ? FALCON_LOOKAHEAD_RISK_NONE : FALCON_LOOKAHEAD_RISK_CURRENT_CANDLE);
+      closed_candle_check.notes                  = "Future strategies must use prior closed candle snapshots for decisions. Current candle is blocked from decision state.";
+      AddCheck(closed_candle_check);
+
+      FalconRuntimeSafetyCheck final_state_check;
+      ResetCheck(final_state_check);
+      final_state_check.check_id               = "NLA_FINAL_STATE";
+      final_state_check.check_name             = "No Final-State Dependency";
+      final_state_check.timeframe              = PERIOD_CURRENT;
+      final_state_check.source_shift           = -1;
+      final_state_check.used_closed_candle     = true;
+      final_state_check.current_candle_blocked = true;
+      final_state_check.final_state_blocked    = true;
+      final_state_check.staging_allowed        = true;
+      final_state_check.status                 = FALCON_RUNTIME_SAFETY_PASSED;
+      final_state_check.risk_type              = FALCON_LOOKAHEAD_RISK_NONE;
+      final_state_check.notes                  = "Runtime candidate cannot rely on final trade path, final bar high/low order, or future exit-state tags.";
+      AddCheck(final_state_check);
+
+      FalconRuntimeSafetyCheck staging_check;
+      ResetCheck(staging_check);
+      staging_check.check_id               = "NLA_STAGE_SAFETY";
+      staging_check.check_name             = "Strategy Staging Safety Contract";
+      staging_check.timeframe              = PERIOD_CURRENT;
+      staging_check.source_shift           = -1;
+      staging_check.used_closed_candle     = true;
+      staging_check.current_candle_blocked = true;
+      staging_check.final_state_blocked    = true;
+      staging_check.staging_allowed        = true;
+      staging_check.status                 = FALCON_RUNTIME_SAFETY_PASSED;
+      staging_check.risk_type              = FALCON_LOOKAHEAD_RISK_NONE;
+      staging_check.notes                  = "Future strategy plans must pass ValidateTradePlanForStaging before Shadow/Paper/Demo staging.";
+      AddCheck(staging_check);
+
+      m_initialized = AllChecksPassed();
+      if(m_initialized)
+         CFalconLogger::Info(StringFormat("RuntimeSafetyGuard initialized. Checks=%d | Status=PASSED | NoLookahead=true", m_check_count));
+      else
+         CFalconLogger::Error(StringFormat("RuntimeSafetyGuard failed. Checks=%d | Status=REJECTED", m_check_count));
+
+      return m_initialized;
+   }
+
+   bool IsInitialized()
+   {
+      return m_initialized;
+   }
+
+   int Count()
+   {
+      return m_check_count;
+   }
+
+   bool GetCheckByIndex(const int index, FalconRuntimeSafetyCheck &check)
+   {
+      if(index < 0 || index >= m_check_count)
+         return false;
+      check = m_checks[index];
+      return true;
+   }
+
+   bool ValidateCandleSnapshotForDecision(const FalconCandleSnapshot &snapshot, string &reject_reason)
+   {
+      reject_reason = "";
+      if(!snapshot.is_valid)
+      {
+         reject_reason = "INVALID_CANDLE_SNAPSHOT";
+         return false;
+      }
+
+      if(UseClosedCandlesOnly && (!snapshot.is_closed || snapshot.source_shift <= 0))
+      {
+         reject_reason = "CURRENT_CANDLE_DECISION_BLOCKED";
+         return false;
+      }
+
+      return true;
+   }
+
+   bool ValidateTradePlanForStaging(const FalconTradePlan &plan, string &reject_reason)
+   {
+      reject_reason = "";
+      if(!m_initialized)
+      {
+         reject_reason = "RUNTIME_SAFETY_GUARD_NOT_INITIALIZED";
+         return false;
+      }
+
+      if(plan.strategy_id == "" || plan.strategy_name == "" || plan.engine_id == "")
+      {
+         reject_reason = "TRADEPLAN_MISSING_IDENTITY";
+         return false;
+      }
+
+      if(plan.direction != FALCON_DIRECTION_BUY && plan.direction != FALCON_DIRECTION_SELL)
+      {
+         reject_reason = "TRADEPLAN_INVALID_DIRECTION";
+         return false;
+      }
+
+      if(plan.lot_size <= 0.0 || plan.entry_price <= 0.0 || plan.structural_sl <= 0.0)
+      {
+         reject_reason = "TRADEPLAN_INVALID_PRICE_OR_LOT";
+         return false;
+      }
+
+      return true;
+   }
+
+private:
+   void ResetCheck(FalconRuntimeSafetyCheck &check)
+   {
+      check.check_id               = "";
+      check.check_name             = "";
+      check.status                 = FALCON_RUNTIME_SAFETY_NOT_EVALUATED;
+      check.risk_type              = FALCON_LOOKAHEAD_RISK_NONE;
+      check.timeframe              = PERIOD_CURRENT;
+      check.source_shift           = -1;
+      check.used_closed_candle     = false;
+      check.current_candle_blocked = false;
+      check.final_state_blocked    = false;
+      check.staging_allowed        = false;
+      check.notes                  = "";
+   }
+
+   void AddCheck(const FalconRuntimeSafetyCheck &check)
+   {
+      if(m_check_count >= 4)
+         return;
+      m_checks[m_check_count] = check;
+      m_check_count++;
+   }
+
+   bool AllChecksPassed()
+   {
+      if(m_check_count <= 0)
+         return false;
+
+      for(int i = 0; i < m_check_count; i++)
+      {
+         if(m_checks[i].status != FALCON_RUNTIME_SAFETY_PASSED)
+            return false;
+      }
+      return true;
    }
 };
 
@@ -989,6 +1476,8 @@ private:
    string              m_market_diagnostics_file;
    string              m_candle_cache_diagnostics_file;
    string              m_evidence_diagnostics_file;
+   string              m_shadow_diagnostics_file;
+   string              m_no_lookahead_diagnostics_file;
    FalconSymbolContext m_symbol_context;
    FalconReportTotals  m_totals;
    bool                m_initialized;
@@ -1003,11 +1492,12 @@ public:
    bool Initialize(const FalconSymbolContext &symbol_context)
    {
       m_symbol_context     = symbol_context;
-      m_trade_report_file  = "JA_FalconCore_TradeLifecycle_v0_4_0.csv";
-      m_summary_report_file= "JA_FalconCore_Summary_v0_4_0.csv";
-      m_market_diagnostics_file = "JA_FalconCore_MarketDiagnostics_v0_4_0.csv";
-      m_candle_cache_diagnostics_file = "JA_FalconCore_CandleCacheDiagnostics_v0_4_0.csv";
-      m_evidence_diagnostics_file = "JA_FalconCore_EvidenceDiagnostics_v0_4_0.csv";
+      m_trade_report_file  = "JA_FalconCore_TradeLifecycle_v0_5_1.csv";
+      m_summary_report_file= "JA_FalconCore_Summary_v0_5_1.csv";
+      m_market_diagnostics_file = "JA_FalconCore_MarketDiagnostics_v0_5_1.csv";
+      m_candle_cache_diagnostics_file = "JA_FalconCore_CandleCacheDiagnostics_v0_5_1.csv";
+      m_evidence_diagnostics_file = "JA_FalconCore_EvidenceDiagnostics_v0_5_1.csv";
+      m_shadow_diagnostics_file = "JA_FalconCore_ShadowDiagnostics_v0_5_1.csv";
       ResetTotals();
 
       if(EnableMainReport)
@@ -1184,6 +1674,93 @@ public:
 
       FileClose(handle);
       CFalconLogger::Info(StringFormat("Evidence diagnostics snapshot written: %s", m_evidence_diagnostics_file));
+   }
+
+   void WriteShadowDiagnosticsSnapshot(CFalconShadowExecutor &shadow_executor)
+   {
+      if(!m_initialized || !EnableShadowDiagnosticsReport)
+         return;
+
+      int handle = FileOpen(m_shadow_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not write shadow diagnostics report: %s", m_shadow_diagnostics_file));
+         return;
+      }
+
+      FileWrite(handle,
+                "EAName", "Version", "Build", "Symbol", "GeneratedAt",
+                "ShadowModeEnabled", "ShadowExecutorInitialized", "BrokerOrdersAllowed",
+                "StagedRecords", "ClosedRecords", "CancelledRecords",
+                "TradeLifecycleBridge", "Notes");
+
+      FileWrite(handle,
+                EA_NAME,
+                EA_VERSION_TAG,
+                EA_BUILD_TAG,
+                m_symbol_context.symbol,
+                FalconTimeToString(TimeCurrent()),
+                (EnableShadowMode ? "true" : "false"),
+                (shadow_executor.IsInitialized() ? "true" : "false"),
+                "false",
+                shadow_executor.StagedRecords(),
+                shadow_executor.ClosedRecords(),
+                shadow_executor.CancelledRecords(),
+                "ShadowToTradeLifecycleRecord_READY",
+                "v0.6.0 is framework only. No strategy creates shadow records yet.");
+
+      FileClose(handle);
+      CFalconLogger::Info(StringFormat("Shadow diagnostics snapshot written: %s", m_shadow_diagnostics_file));
+   }
+
+   void WriteNoLookaheadDiagnosticsSnapshot(CFalconRuntimeSafetyGuard &runtime_guard)
+   {
+      if(!m_initialized || !EnableNoLookaheadDiagnosticsReport)
+         return;
+
+      int handle = FileOpen(m_no_lookahead_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not write no-lookahead diagnostics report: %s", m_no_lookahead_diagnostics_file));
+         return;
+      }
+
+      FileWrite(handle,
+                "EAName", "Version", "Build", "Symbol", "GeneratedAt",
+                "GuardInitialized", "TotalChecks",
+                "CheckId", "CheckName", "Status", "RiskType", "Timeframe", "SourceShift",
+                "UsedClosedCandle", "CurrentCandleBlocked", "FinalStateBlocked",
+                "StagingAllowed", "Notes");
+
+      for(int i = 0; i < runtime_guard.Count(); i++)
+      {
+         FalconRuntimeSafetyCheck check;
+         if(!runtime_guard.GetCheckByIndex(i, check))
+            continue;
+
+         FileWrite(handle,
+                   EA_NAME,
+                   EA_VERSION_TAG,
+                   EA_BUILD_TAG,
+                   m_symbol_context.symbol,
+                   FalconTimeToString(TimeCurrent()),
+                   (runtime_guard.IsInitialized() ? "true" : "false"),
+                   runtime_guard.Count(),
+                   check.check_id,
+                   check.check_name,
+                   FalconRuntimeSafetyStatusToString(check.status),
+                   FalconLookaheadRiskToString(check.risk_type),
+                   FalconTimeframeToString(check.timeframe),
+                   check.source_shift,
+                   (check.used_closed_candle ? "true" : "false"),
+                   (check.current_candle_blocked ? "true" : "false"),
+                   (check.final_state_blocked ? "true" : "false"),
+                   (check.staging_allowed ? "true" : "false"),
+                   check.notes);
+      }
+
+      FileClose(handle);
+      CFalconLogger::Info(StringFormat("No-lookahead diagnostics snapshot written: %s", m_no_lookahead_diagnostics_file));
    }
 
    void RegisterClosedTrade(FalconTradeLifecycleRecord &record)
@@ -1374,20 +1951,20 @@ private:
 };
 
 // ==================================================================
-// Execution Guard - real trading intentionally impossible in v0.3.0.
+// Execution Guard - real trading intentionally impossible in v0.6.0.
 // ==================================================================
 class CFalconExecutionGuard
 {
 public:
    bool CanSendRealOrders()
    {
-      // v0.4.0 is an Evidence Framework foundation build. Real execution is not allowed even if the input is changed.
+      // v0.6.0 is a Shadow Engine Framework foundation build. Real execution is not allowed even if the input is changed.
       return false;
    }
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / trade execution is intentionally disabled in v0.4.0.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.6.0.");
    }
 };
 
@@ -1398,6 +1975,8 @@ CFalconMarketContext     g_market_context;
 CFalconRiskFoundation    g_risk_foundation;
 CFalconCandleCache       g_candle_cache;
 CFalconEvidenceFramework g_evidence_framework;
+CFalconShadowExecutor    g_shadow_executor;
+CFalconRuntimeSafetyGuard g_runtime_safety_guard;
 CFalconStrategyRegistry  g_strategy_registry;
 CFalconReportWriter      g_report_writer;
 CFalconExecutionGuard    g_execution_guard;
@@ -1411,7 +1990,7 @@ int OnInit()
    PrintFormat("============================================================");
    PrintFormat("%s", EA_NAME);
    PrintFormat("Version: %s | Build: %s", EA_VERSION_TAG, EA_BUILD_TAG);
-   PrintFormat("Stage: Evidence Framework Foundation / No strategies / No real execution");
+   PrintFormat("Stage: No-Lookahead Runtime Guard & Strategy Staging Safety / No strategies / No real execution");
    PrintFormat("============================================================");
 
    if(!g_market_context.Initialize())
@@ -1427,9 +2006,16 @@ int OnInit()
    g_candle_cache.LoadAll(g_market_context);
    g_report_writer.WriteCandleCacheDiagnosticsSnapshot(g_candle_cache);
 
+   if(!g_runtime_safety_guard.Initialize(g_candle_cache))
+      return INIT_FAILED;
+   g_report_writer.WriteNoLookaheadDiagnosticsSnapshot(g_runtime_safety_guard);
+
    if(!g_evidence_framework.Initialize())
       return INIT_FAILED;
    g_report_writer.WriteEvidenceDiagnosticsSnapshot(g_evidence_framework);
+
+   g_shadow_executor.Initialize();
+   g_report_writer.WriteShadowDiagnosticsSnapshot(g_shadow_executor);
 
    g_execution_guard.AssertNoExecution();
 
@@ -1450,7 +2036,7 @@ void OnTick()
    if(!g_is_initialized)
       return;
 
-   // v0.4.0 intentionally does not detect strategies and does not send orders.
+   // v0.6.0 intentionally does not detect live strategies and does not send orders.
    // Future pipeline:
    // MarketContext -> CandleCache -> Narrative -> StrategyEngine -> Evidence -> Guard -> TradePlan -> Shadow/Paper/Demo/Live Executor -> ReportWriter
    return;
