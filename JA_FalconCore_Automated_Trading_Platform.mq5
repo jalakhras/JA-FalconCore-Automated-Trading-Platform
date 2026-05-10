@@ -1,15 +1,17 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.1.1 - RefreshRates Compile Hotfix |
+//|                     Version: v0.3.0 - Multi-Timeframe Candle Cache & Closed Candle Data Provider |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.011"
+#property version   "1.030"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.1.1"
-#define EA_BUILD_TAG   "RefreshRatesCompileHotfix_NoExecution"
+#define EA_VERSION_TAG "v0.3.0"
+#define EA_BUILD_TAG   "MultiTimeframeCandleCacheClosedCandleProvider_NoExecution"
+
+#define FALCON_MTF_COUNT       6
 
 // ==================================================================
 // 01 - EA Safety & Risk / إعدادات المستخدم الأساسية
@@ -37,7 +39,7 @@ input int    MaxOpenPositions                = 1;
 
 // ==================================================================
 // 03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات
-// Keep this list small and explicit. All engines are OFF in v0.1.1.
+// Keep this list small and explicit. All engines are OFF in v0.3.0.
 // ==================================================================
 input group "03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات";
 input bool EnableStrategy_FvgMicroRetest             = false; // Legacy core winner candidate.
@@ -55,7 +57,7 @@ input bool EnableStrategy_GoldenLiquidity5MEntry     = false; // استراتي�
 
 // ==================================================================
 // 04 - Reporting / التقارير
-// v0.1.1 keeps the report contract and fixes MQL5 compile compatibility.
+// v0.3.0 keeps the report contract and adds multi-timeframe candle cache diagnostics.
 // Trade rows will be written later by Shadow/Paper/Demo engines.
 // ==================================================================
 input group "04 - Reporting / التقارير";
@@ -65,7 +67,17 @@ input bool EnableEvidenceReport             = true;
 input bool EnableVerboseExpertsLog          = true;
 
 // ==================================================================
-// Core Data Contracts - v0.1.1
+// 05 - Market Context / سياق السوق
+// Keep simple. This is diagnostics only in v0.3.0.
+// ==================================================================
+input group "05 - Market Context / سياق السوق";
+input bool            UseClosedCandlesOnly          = true;      // Core guard: use closed candles for analysis snapshots.
+input bool            EnableMarketDiagnosticsReport = true;      // Writes one symbol/context snapshot at initialization.
+input ENUM_TIMEFRAMES PrimaryContextTimeframe       = PERIOD_M5; // Diagnostic timeframe only. No strategy logic yet.
+input bool            EnableCandleCacheDiagnosticsReport = true; // Writes M1/M5/M15/H1/H4/D1 closed-candle cache snapshot.
+
+// ==================================================================
+// Core Data Contracts - v0.3.0
 // ==================================================================
 enum ENUM_FALCON_DIRECTION
 {
@@ -122,6 +134,35 @@ struct FalconSymbolContext
    double max_lot;
    double lot_step;
    bool   is_valid;
+};
+
+struct FalconQuoteContext
+{
+   double   bid;
+   double   ask;
+   double   last;
+   long     volume;
+   double   volume_real;
+   datetime tick_time;
+   long     time_msc;
+   long     spread_points;
+   bool     is_valid;
+};
+
+struct FalconCandleSnapshot
+{
+   ENUM_TIMEFRAMES timeframe;
+   datetime        time;
+   double          open;
+   double          high;
+   double          low;
+   double          close;
+   long            tick_volume;
+   long            real_volume;
+   int             spread;
+   int             source_shift;
+   bool            is_closed;
+   bool            is_valid;
 };
 
 struct FalconEvidencePack
@@ -268,6 +309,23 @@ string FalconTimeToString(const datetime value)
    return TimeToString(value, TIME_DATE | TIME_SECONDS);
 }
 
+string FalconTimeframeToString(const ENUM_TIMEFRAMES timeframe)
+{
+   return EnumToString(timeframe);
+}
+
+int FalconAnalysisCandleShift()
+{
+   return (UseClosedCandlesOnly ? 1 : 0);
+}
+
+double FalconConfiguredCapital()
+{
+   if(UseAutoCapitalDetection)
+      return AccountInfoDouble(ACCOUNT_BALANCE);
+   return ManualCapital;
+}
+
 double FalconRawIndexPoints(const ENUM_FALCON_DIRECTION direction,
                             const double entry_price,
                             const double exit_price)
@@ -354,12 +412,14 @@ public:
 };
 
 // ==================================================================
-// Market Context Provider - v0.1.0 minimal symbol metadata only
+// Market Context Provider - v0.3.0 symbol, quote, and closed candle diagnostics
 // ==================================================================
 class CFalconMarketContext
 {
 private:
-   FalconSymbolContext m_symbol;
+   FalconSymbolContext  m_symbol;
+   FalconQuoteContext   m_quote;
+   FalconCandleSnapshot m_primary_candle;
 
 public:
    bool Initialize()
@@ -380,20 +440,127 @@ public:
       if(!m_symbol.is_valid)
          return false;
 
-      CFalconLogger::Info(StringFormat("SymbolContext initialized: %s | Digits=%d | Point=%.10f | Contract=%.2f | MinLot=%.2f | Step=%.2f | StopsLevel=%d",
+      if(!Refresh())
+         return false;
+
+      const int shift = FalconAnalysisCandleShift();
+      if(!GetCandleSnapshot(PrimaryContextTimeframe, shift, m_primary_candle))
+      {
+         CFalconLogger::Error(StringFormat("Could not read primary context candle. Timeframe=%s | Shift=%d",
+                                           FalconTimeframeToString(PrimaryContextTimeframe),
+                                           shift));
+         return false;
+      }
+
+      CFalconLogger::Info(StringFormat("SymbolContext initialized: %s | Digits=%d | Point=%.10f | TickSize=%.10f | TickValue=%.5f | Contract=%.2f | MinLot=%.2f | Step=%.2f | StopsLevel=%d",
                                        m_symbol.symbol,
                                        m_symbol.digits,
                                        m_symbol.point,
+                                       m_symbol.tick_size,
+                                       m_symbol.tick_value,
                                        m_symbol.contract_size,
                                        m_symbol.min_lot,
                                        m_symbol.lot_step,
                                        (int)m_symbol.stops_level_points));
+
+      CFalconLogger::Info(StringFormat("QuoteContext initialized: Bid=%s | Ask=%s | SpreadPoints=%d | TickTime=%s",
+                                       DoubleToString(m_quote.bid, m_symbol.digits),
+                                       DoubleToString(m_quote.ask, m_symbol.digits),
+                                       (int)m_quote.spread_points,
+                                       FalconTimeToString(m_quote.tick_time)));
+
+      CFalconLogger::Info(StringFormat("Primary closed-candle guard: UseClosedCandlesOnly=%s | Timeframe=%s | Shift=%d | CandleTime=%s | O=%.5f H=%.5f L=%.5f C=%.5f",
+                                       (UseClosedCandlesOnly ? "true" : "false"),
+                                       FalconTimeframeToString(m_primary_candle.timeframe),
+                                       m_primary_candle.source_shift,
+                                       FalconTimeToString(m_primary_candle.time),
+                                       m_primary_candle.open,
+                                       m_primary_candle.high,
+                                       m_primary_candle.low,
+                                       m_primary_candle.close));
+      return true;
+   }
+
+   bool Refresh()
+   {
+      MqlTick tick;
+      if(!SymbolInfoTick(_Symbol, tick))
+      {
+         CFalconLogger::Error("SymbolInfoTick failed. Market context cannot be refreshed.");
+         m_quote.is_valid = false;
+         return false;
+      }
+
+      m_quote.bid           = tick.bid;
+      m_quote.ask           = tick.ask;
+      m_quote.last          = tick.last;
+      m_quote.volume        = (long)tick.volume;
+      m_quote.volume_real   = tick.volume_real;
+      m_quote.tick_time     = tick.time;
+      m_quote.time_msc      = tick.time_msc;
+      m_quote.spread_points = CalculateLiveSpreadPoints(tick.bid, tick.ask);
+      m_quote.is_valid      = (tick.bid > 0.0 && tick.ask > 0.0 && m_quote.spread_points >= 0);
+
+      if(!m_quote.is_valid)
+      {
+         CFalconLogger::Warn("Quote context is not valid yet. This can happen when the market is closed or no tick is available.");
+      }
       return true;
    }
 
    FalconSymbolContext GetSymbolContext()
    {
       return m_symbol;
+   }
+
+   FalconQuoteContext GetQuoteContext()
+   {
+      return m_quote;
+   }
+
+   FalconCandleSnapshot GetPrimaryCandleSnapshot()
+   {
+      return m_primary_candle;
+   }
+
+   bool GetCandleSnapshot(const ENUM_TIMEFRAMES timeframe,
+                          const int shift,
+                          FalconCandleSnapshot &snapshot)
+   {
+      ResetCandleSnapshot(snapshot);
+      snapshot.timeframe    = timeframe;
+      snapshot.source_shift = shift;
+      snapshot.is_closed    = (shift > 0);
+
+      if(shift < 0)
+      {
+         CFalconLogger::Error("Candle snapshot shift cannot be negative.");
+         return false;
+      }
+
+      MqlRates rates[];
+      ArraySetAsSeries(rates, true);
+      int copied = CopyRates(_Symbol, timeframe, shift, 1, rates);
+      if(copied != 1)
+      {
+         CFalconLogger::Warn(StringFormat("CopyRates failed. Symbol=%s | Timeframe=%s | Shift=%d | Copied=%d",
+                                           _Symbol,
+                                           FalconTimeframeToString(timeframe),
+                                           shift,
+                                           copied));
+         return false;
+      }
+
+      snapshot.time        = rates[0].time;
+      snapshot.open        = rates[0].open;
+      snapshot.high        = rates[0].high;
+      snapshot.low         = rates[0].low;
+      snapshot.close       = rates[0].close;
+      snapshot.tick_volume = rates[0].tick_volume;
+      snapshot.real_volume = rates[0].real_volume;
+      snapshot.spread      = rates[0].spread;
+      snapshot.is_valid    = (snapshot.time > 0 && snapshot.high >= snapshot.low);
+      return snapshot.is_valid;
    }
 
 private:
@@ -409,7 +576,159 @@ private:
          CFalconLogger::Error("Invalid symbol lot configuration.");
          return false;
       }
+      if(m_symbol.contract_size <= 0.0)
+      {
+         CFalconLogger::Warn("Symbol contract size is not positive. USD estimates may be zero until broker metadata is available.");
+      }
       return true;
+   }
+
+   long CalculateLiveSpreadPoints(const double bid, const double ask)
+   {
+      if(m_symbol.point <= 0.0 || bid <= 0.0 || ask <= 0.0)
+         return -1;
+      return (long)MathRound((ask - bid) / m_symbol.point);
+   }
+
+   void ResetCandleSnapshot(FalconCandleSnapshot &snapshot)
+   {
+      snapshot.timeframe    = PERIOD_CURRENT;
+      snapshot.time         = 0;
+      snapshot.open         = 0.0;
+      snapshot.high         = 0.0;
+      snapshot.low          = 0.0;
+      snapshot.close        = 0.0;
+      snapshot.tick_volume  = 0;
+      snapshot.real_volume  = 0;
+      snapshot.spread       = 0;
+      snapshot.source_shift = 0;
+      snapshot.is_closed    = false;
+      snapshot.is_valid     = false;
+   }
+};
+
+
+// ==================================================================
+// Multi-Timeframe Candle Cache - v0.3.0
+// Official analysis timeframes: M1, M5, M15, H1, H4, D1.
+// This layer is data-provider only. It does not create signals.
+// ==================================================================
+class CFalconCandleCache
+{
+private:
+   ENUM_TIMEFRAMES       m_timeframes[FALCON_MTF_COUNT];
+   FalconCandleSnapshot  m_analysis_snapshots[FALCON_MTF_COUNT];
+   bool                  m_is_loaded;
+   int                   m_valid_count;
+   int                   m_analysis_shift;
+
+public:
+   CFalconCandleCache()
+   {
+      m_is_loaded      = false;
+      m_valid_count    = 0;
+      m_analysis_shift = 1;
+      ConfigureTimeframes();
+   }
+
+   void ConfigureTimeframes()
+   {
+      m_timeframes[0] = PERIOD_M1;
+      m_timeframes[1] = PERIOD_M5;
+      m_timeframes[2] = PERIOD_M15;
+      m_timeframes[3] = PERIOD_H1;
+      m_timeframes[4] = PERIOD_H4;
+      m_timeframes[5] = PERIOD_D1;
+   }
+
+   bool LoadAll(CFalconMarketContext &context)
+   {
+      m_is_loaded      = false;
+      m_valid_count    = 0;
+      m_analysis_shift = FalconAnalysisCandleShift();
+
+      for(int i = 0; i < FALCON_MTF_COUNT; i++)
+      {
+         FalconCandleSnapshot snapshot;
+         bool ok = context.GetCandleSnapshot(m_timeframes[i], m_analysis_shift, snapshot);
+         m_analysis_snapshots[i] = snapshot;
+
+         if(ok && snapshot.is_valid)
+            m_valid_count++;
+      }
+
+      m_is_loaded = (m_valid_count > 0);
+      CFalconLogger::Info(StringFormat("CandleCache loaded. Timeframes=%d | Valid=%d | Shift=%d | UseClosedCandlesOnly=%s",
+                                       FALCON_MTF_COUNT,
+                                       m_valid_count,
+                                       m_analysis_shift,
+                                       (UseClosedCandlesOnly ? "true" : "false")));
+
+      for(int i = 0; i < FALCON_MTF_COUNT; i++)
+      {
+         FalconCandleSnapshot s = m_analysis_snapshots[i];
+         CFalconLogger::Info(StringFormat("CandleCache[%s] Valid=%s | Shift=%d | Time=%s | O=%.5f H=%.5f L=%.5f C=%.5f",
+                                          FalconTimeframeToString(s.timeframe),
+                                          (s.is_valid ? "true" : "false"),
+                                          s.source_shift,
+                                          FalconTimeToString(s.time),
+                                          s.open,
+                                          s.high,
+                                          s.low,
+                                          s.close));
+      }
+
+      return m_is_loaded;
+   }
+
+   int Count()
+   {
+      return FALCON_MTF_COUNT;
+   }
+
+   int ValidCount()
+   {
+      return m_valid_count;
+   }
+
+   bool IsLoaded()
+   {
+      return m_is_loaded;
+   }
+
+   int AnalysisShift()
+   {
+      return m_analysis_shift;
+   }
+
+   ENUM_TIMEFRAMES TimeframeAt(const int index)
+   {
+      if(index < 0 || index >= FALCON_MTF_COUNT)
+         return PERIOD_CURRENT;
+      return m_timeframes[index];
+   }
+
+   bool GetSnapshotByIndex(const int index,
+                           FalconCandleSnapshot &snapshot)
+   {
+      if(index < 0 || index >= FALCON_MTF_COUNT)
+         return false;
+      snapshot = m_analysis_snapshots[index];
+      return snapshot.is_valid;
+   }
+
+   bool GetSnapshotByTimeframe(const ENUM_TIMEFRAMES timeframe,
+                               FalconCandleSnapshot &snapshot)
+   {
+      for(int i = 0; i < FALCON_MTF_COUNT; i++)
+      {
+         if(m_timeframes[i] == timeframe)
+         {
+            snapshot = m_analysis_snapshots[i];
+            return snapshot.is_valid;
+         }
+      }
+      return false;
    }
 };
 
@@ -423,7 +742,7 @@ public:
    {
       if(EnableRealExecution)
       {
-         CFalconLogger::Error("HARD SAFETY BLOCK: EnableRealExecution must remain false in v0.1.0.");
+         CFalconLogger::Error("HARD SAFETY BLOCK: EnableRealExecution must remain false in v0.3.0.");
          return false;
       }
 
@@ -482,7 +801,7 @@ public:
 };
 
 // ==================================================================
-// Strategy Registry - switches only. No engine logic in v0.1.0.
+// Strategy Registry - switches only. No engine logic in v0.3.0.
 // ==================================================================
 class CFalconStrategyRegistry
 {
@@ -507,7 +826,7 @@ public:
 
    void PrintRegistryState()
    {
-      CFalconLogger::Info(StringFormat("StrategyRegistry initialized. EnabledStrategies=%d. All enabled strategies remain observe-only in v0.1.0.", CountEnabledStrategies()));
+      CFalconLogger::Info(StringFormat("StrategyRegistry initialized. EnabledStrategies=%d. All enabled strategies remain observe-only in v0.3.0.", CountEnabledStrategies()));
    }
 };
 
@@ -519,6 +838,8 @@ class CFalconReportWriter
 private:
    string              m_trade_report_file;
    string              m_summary_report_file;
+   string              m_market_diagnostics_file;
+   string              m_candle_cache_diagnostics_file;
    FalconSymbolContext m_symbol_context;
    FalconReportTotals  m_totals;
    bool                m_initialized;
@@ -533,8 +854,10 @@ public:
    bool Initialize(const FalconSymbolContext &symbol_context)
    {
       m_symbol_context     = symbol_context;
-      m_trade_report_file  = "JA_FalconCore_TradeLifecycle_v0_1_1.csv";
-      m_summary_report_file= "JA_FalconCore_Summary_v0_1_1.csv";
+      m_trade_report_file  = "JA_FalconCore_TradeLifecycle_v0_3_0.csv";
+      m_summary_report_file= "JA_FalconCore_Summary_v0_3_0.csv";
+      m_market_diagnostics_file = "JA_FalconCore_MarketDiagnostics_v0_3_0.csv";
+      m_candle_cache_diagnostics_file = "JA_FalconCore_CandleCacheDiagnostics_v0_3_0.csv";
       ResetTotals();
 
       if(EnableMainReport)
@@ -546,6 +869,127 @@ public:
       m_initialized = true;
       CFalconLogger::Info(StringFormat("ReportWriter initialized. TradeReport=%s | SummaryReport=%s", m_trade_report_file, m_summary_report_file));
       return true;
+   }
+
+   void WriteMarketDiagnosticsSnapshot(const FalconQuoteContext &quote_context,
+                                       const FalconCandleSnapshot &primary_candle)
+   {
+      if(!m_initialized || !EnableMarketDiagnosticsReport)
+         return;
+
+      int handle = FileOpen(m_market_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not write market diagnostics report: %s", m_market_diagnostics_file));
+         return;
+      }
+
+      FileWrite(handle,
+                "EAName", "Version", "Build", "Symbol", "GeneratedAt",
+                "Digits", "Point", "TickSize", "TickValue", "ContractSize",
+                "BrokerSpreadPoints", "LiveSpreadPoints", "StopsLevelPoints",
+                "MinLot", "MaxLot", "LotStep",
+                "Bid", "Ask", "Last", "TickTime", "TickVolume", "TickVolumeReal",
+                "UseClosedCandlesOnly", "PrimaryContextTimeframe", "AnalysisCandleShift",
+                "CandleTime", "CandleOpen", "CandleHigh", "CandleLow", "CandleClose",
+                "CandleTickVolume", "CandleRealVolume", "CandleSpread", "IsClosed", "IsValid",
+                "ConfiguredCapital", "DailyLossLimitEnabled", "FixedDailyLossAmount", "DailyLossPercentOfCapital",
+                "EnableRealExecution");
+
+      FileWrite(handle,
+                EA_NAME,
+                EA_VERSION_TAG,
+                EA_BUILD_TAG,
+                m_symbol_context.symbol,
+                FalconTimeToString(TimeCurrent()),
+                m_symbol_context.digits,
+                DoubleToString(m_symbol_context.point, 10),
+                DoubleToString(m_symbol_context.tick_size, 10),
+                DoubleToString(m_symbol_context.tick_value, 5),
+                DoubleToString(m_symbol_context.contract_size, 2),
+                (int)m_symbol_context.spread_points,
+                (int)quote_context.spread_points,
+                (int)m_symbol_context.stops_level_points,
+                DoubleToString(m_symbol_context.min_lot, 2),
+                DoubleToString(m_symbol_context.max_lot, 2),
+                DoubleToString(m_symbol_context.lot_step, 2),
+                DoubleToString(quote_context.bid, m_symbol_context.digits),
+                DoubleToString(quote_context.ask, m_symbol_context.digits),
+                DoubleToString(quote_context.last, m_symbol_context.digits),
+                FalconTimeToString(quote_context.tick_time),
+                quote_context.volume,
+                DoubleToString(quote_context.volume_real, 2),
+                (UseClosedCandlesOnly ? "true" : "false"),
+                FalconTimeframeToString(primary_candle.timeframe),
+                primary_candle.source_shift,
+                FalconTimeToString(primary_candle.time),
+                DoubleToString(primary_candle.open, m_symbol_context.digits),
+                DoubleToString(primary_candle.high, m_symbol_context.digits),
+                DoubleToString(primary_candle.low, m_symbol_context.digits),
+                DoubleToString(primary_candle.close, m_symbol_context.digits),
+                primary_candle.tick_volume,
+                primary_candle.real_volume,
+                primary_candle.spread,
+                (primary_candle.is_closed ? "true" : "false"),
+                (primary_candle.is_valid ? "true" : "false"),
+                DoubleToString(FalconConfiguredCapital(), 2),
+                (UseDailyLossLimit ? "true" : "false"),
+                DoubleToString(FixedDailyLossAmount, 2),
+                DoubleToString(DailyLossPercentOfCapital, 2),
+                (EnableRealExecution ? "true" : "false"));
+
+      FileClose(handle);
+      CFalconLogger::Info(StringFormat("Market diagnostics snapshot written: %s", m_market_diagnostics_file));
+   }
+
+   void WriteCandleCacheDiagnosticsSnapshot(CFalconCandleCache &cache)
+   {
+      if(!m_initialized || !EnableCandleCacheDiagnosticsReport)
+         return;
+
+      int handle = FileOpen(m_candle_cache_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not write candle cache diagnostics report: %s", m_candle_cache_diagnostics_file));
+         return;
+      }
+
+      FileWrite(handle,
+                "EAName", "Version", "Build", "Symbol", "GeneratedAt",
+                "UseClosedCandlesOnly", "AnalysisShift", "CacheCount", "ValidCount",
+                "Timeframe", "CandleTime", "Open", "High", "Low", "Close",
+                "TickVolume", "RealVolume", "Spread", "IsClosed", "IsValid");
+
+      for(int i = 0; i < cache.Count(); i++)
+      {
+         FalconCandleSnapshot snapshot;
+         cache.GetSnapshotByIndex(i, snapshot);
+
+         FileWrite(handle,
+                   EA_NAME,
+                   EA_VERSION_TAG,
+                   EA_BUILD_TAG,
+                   m_symbol_context.symbol,
+                   FalconTimeToString(TimeCurrent()),
+                   (UseClosedCandlesOnly ? "true" : "false"),
+                   cache.AnalysisShift(),
+                   cache.Count(),
+                   cache.ValidCount(),
+                   FalconTimeframeToString(snapshot.timeframe),
+                   FalconTimeToString(snapshot.time),
+                   DoubleToString(snapshot.open, m_symbol_context.digits),
+                   DoubleToString(snapshot.high, m_symbol_context.digits),
+                   DoubleToString(snapshot.low, m_symbol_context.digits),
+                   DoubleToString(snapshot.close, m_symbol_context.digits),
+                   snapshot.tick_volume,
+                   snapshot.real_volume,
+                   snapshot.spread,
+                   (snapshot.is_closed ? "true" : "false"),
+                   (snapshot.is_valid ? "true" : "false"));
+      }
+
+      FileClose(handle);
+      CFalconLogger::Info(StringFormat("Candle cache diagnostics snapshot written: %s", m_candle_cache_diagnostics_file));
    }
 
    void RegisterClosedTrade(FalconTradeLifecycleRecord &record)
@@ -736,20 +1180,20 @@ private:
 };
 
 // ==================================================================
-// Execution Guard - real trading intentionally impossible in v0.1.0.
+// Execution Guard - real trading intentionally impossible in v0.3.0.
 // ==================================================================
 class CFalconExecutionGuard
 {
 public:
    bool CanSendRealOrders()
    {
-      // v0.1.0 is a contracts/reporting foundation build. Real execution is not allowed even if the input is changed.
+      // v0.3.0 is a multi-timeframe candle cache and diagnostics foundation build. Real execution is not allowed even if the input is changed.
       return false;
    }
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / trade execution is intentionally disabled in v0.1.0.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / trade execution is intentionally disabled in v0.3.0.");
    }
 };
 
@@ -758,6 +1202,7 @@ public:
 // ==================================================================
 CFalconMarketContext     g_market_context;
 CFalconRiskFoundation    g_risk_foundation;
+CFalconCandleCache       g_candle_cache;
 CFalconStrategyRegistry  g_strategy_registry;
 CFalconReportWriter      g_report_writer;
 CFalconExecutionGuard    g_execution_guard;
@@ -771,7 +1216,7 @@ int OnInit()
    PrintFormat("============================================================");
    PrintFormat("%s", EA_NAME);
    PrintFormat("Version: %s | Build: %s", EA_VERSION_TAG, EA_BUILD_TAG);
-   PrintFormat("Stage: Core contracts + report writer foundation hotfix / No strategies / No real execution");
+   PrintFormat("Stage: Multi-timeframe candle cache + closed candle provider / No strategies / No real execution");
    PrintFormat("============================================================");
 
    if(!g_market_context.Initialize())
@@ -783,6 +1228,9 @@ int OnInit()
 
    g_strategy_registry.PrintRegistryState();
    g_report_writer.Initialize(symbol_context);
+   g_report_writer.WriteMarketDiagnosticsSnapshot(g_market_context.GetQuoteContext(), g_market_context.GetPrimaryCandleSnapshot());
+   g_candle_cache.LoadAll(g_market_context);
+   g_report_writer.WriteCandleCacheDiagnosticsSnapshot(g_candle_cache);
    g_execution_guard.AssertNoExecution();
 
    g_is_initialized = true;
@@ -802,9 +1250,9 @@ void OnTick()
    if(!g_is_initialized)
       return;
 
-   // v0.1.1 intentionally does not detect strategies and does not send orders.
+   // v0.3.0 intentionally does not detect strategies and does not send orders.
    // Future pipeline:
-   // MarketContext -> Narrative -> StrategyEngine -> Evidence -> Guard -> TradePlan -> Shadow/Paper/Demo/Live Executor -> ReportWriter
+   // MarketContext -> CandleCache -> Narrative -> StrategyEngine -> Evidence -> Guard -> TradePlan -> Shadow/Paper/Demo/Live Executor -> ReportWriter
    return;
 }
 
