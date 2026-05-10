@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.3.0 - Multi-Timeframe Candle Cache & Closed Candle Data Provider |
+//|                     Version: v0.4.0 - Evidence Framework Foundation |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.030"
+#property version   "1.040"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.3.0"
-#define EA_BUILD_TAG   "MultiTimeframeCandleCacheClosedCandleProvider_NoExecution"
+#define EA_VERSION_TAG "v0.4.0"
+#define EA_BUILD_TAG   "EvidenceFrameworkFoundation_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -57,7 +57,7 @@ input bool EnableStrategy_GoldenLiquidity5MEntry     = false; // استراتي�
 
 // ==================================================================
 // 04 - Reporting / التقارير
-// v0.3.0 keeps the report contract and adds multi-timeframe candle cache diagnostics.
+// v0.4.0 keeps the report contract and adds Evidence Framework diagnostics.
 // Trade rows will be written later by Shadow/Paper/Demo engines.
 // ==================================================================
 input group "04 - Reporting / التقارير";
@@ -75,6 +75,7 @@ input bool            UseClosedCandlesOnly          = true;      // Core guard: 
 input bool            EnableMarketDiagnosticsReport = true;      // Writes one symbol/context snapshot at initialization.
 input ENUM_TIMEFRAMES PrimaryContextTimeframe       = PERIOD_M5; // Diagnostic timeframe only. No strategy logic yet.
 input bool            EnableCandleCacheDiagnosticsReport = true; // Writes M1/M5/M15/H1/H4/D1 closed-candle cache snapshot.
+input bool            EnableEvidenceDiagnosticsReport    = true; // Writes the contract-only Evidence Framework snapshot.
 
 // ==================================================================
 // Core Data Contracts - v0.3.0
@@ -120,6 +121,24 @@ enum ENUM_FALCON_TRADE_STAGE
    FALCON_TRADE_STAGE_LIVE     = 4
 };
 
+
+enum ENUM_FALCON_EVIDENCE_TYPE
+{
+   FALCON_EVIDENCE_TYPE_NONE                = 0,
+   FALCON_EVIDENCE_TYPE_CANDLE_PATTERN      = 1,
+   FALCON_EVIDENCE_TYPE_CHART_PATTERN       = 2,
+   FALCON_EVIDENCE_TYPE_OBJECTIVE_INDICATOR = 3,
+   FALCON_EVIDENCE_TYPE_SMC_LIQUIDITY       = 4
+};
+
+enum ENUM_FALCON_EVIDENCE_STATE
+{
+   FALCON_EVIDENCE_STATE_NOT_EVALUATED = 0,
+   FALCON_EVIDENCE_STATE_ABSENT        = 1,
+   FALCON_EVIDENCE_STATE_PRESENT       = 2,
+   FALCON_EVIDENCE_STATE_CONFLICTING   = 3
+};
+
 struct FalconSymbolContext
 {
    string symbol;
@@ -163,6 +182,19 @@ struct FalconCandleSnapshot
    int             source_shift;
    bool            is_closed;
    bool            is_valid;
+};
+
+struct FalconEvidenceRecord
+{
+   string                     evidence_id;
+   string                     evidence_name;
+   ENUM_FALCON_EVIDENCE_TYPE  evidence_type;
+   ENUM_FALCON_EVIDENCE_STATE evidence_state;
+   ENUM_FALCON_DIRECTION      direction_bias;
+   ENUM_TIMEFRAMES            source_timeframe;
+   double                     score;
+   bool                       is_runtime_permission;
+   string                     notes;
 };
 
 struct FalconEvidencePack
@@ -300,6 +332,31 @@ string FalconStageToString(const ENUM_FALCON_TRADE_STAGE stage)
    if(stage == FALCON_TRADE_STAGE_LIVE)
       return "LIVE";
    return "NONE";
+}
+
+
+string FalconEvidenceTypeToString(const ENUM_FALCON_EVIDENCE_TYPE evidence_type)
+{
+   if(evidence_type == FALCON_EVIDENCE_TYPE_CANDLE_PATTERN)
+      return "CANDLE_PATTERN";
+   if(evidence_type == FALCON_EVIDENCE_TYPE_CHART_PATTERN)
+      return "CHART_PATTERN";
+   if(evidence_type == FALCON_EVIDENCE_TYPE_OBJECTIVE_INDICATOR)
+      return "OBJECTIVE_INDICATOR";
+   if(evidence_type == FALCON_EVIDENCE_TYPE_SMC_LIQUIDITY)
+      return "SMC_LIQUIDITY";
+   return "NONE";
+}
+
+string FalconEvidenceStateToString(const ENUM_FALCON_EVIDENCE_STATE evidence_state)
+{
+   if(evidence_state == FALCON_EVIDENCE_STATE_ABSENT)
+      return "ABSENT";
+   if(evidence_state == FALCON_EVIDENCE_STATE_PRESENT)
+      return "PRESENT";
+   if(evidence_state == FALCON_EVIDENCE_STATE_CONFLICTING)
+      return "CONFLICTING";
+   return "NOT_EVALUATED";
 }
 
 string FalconTimeToString(const datetime value)
@@ -609,7 +666,7 @@ private:
 
 
 // ==================================================================
-// Multi-Timeframe Candle Cache - v0.3.0
+// Multi-Timeframe Candle Cache - v0.4.0
 // Official analysis timeframes: M1, M5, M15, H1, H4, D1.
 // This layer is data-provider only. It does not create signals.
 // ==================================================================
@@ -733,6 +790,97 @@ public:
 };
 
 // ==================================================================
+// Evidence Framework Foundation - v0.4.0
+// Contract-only layer. Evidence strengthens or weakens future engine decisions,
+// but it never opens a trade and never overrides guards.
+// ==================================================================
+class CFalconEvidenceFramework
+{
+private:
+   FalconEvidenceRecord m_records[4];
+   int                  m_record_count;
+   bool                 m_initialized;
+
+public:
+   CFalconEvidenceFramework()
+   {
+      m_record_count = 0;
+      m_initialized  = false;
+   }
+
+   bool Initialize()
+   {
+      m_record_count = 0;
+      AddContractRecord("EVID_CANDLE", "Candle Pattern Evidence", FALCON_EVIDENCE_TYPE_CANDLE_PATTERN,
+                        "Contract only: engulfing, pin bar, hammer, shooting star, wide body, inside/outside bar, three-bar reversal.");
+      AddContractRecord("EVID_CHART", "Chart Pattern Evidence", FALCON_EVIDENCE_TYPE_CHART_PATTERN,
+                        "Contract only: double top/bottom, H&S, flag, wedge, triangle, range break/retest, channel break, sweep/reclaim.");
+      AddContractRecord("EVID_OBJECTIVE", "Objective Indicator Evidence", FALCON_EVIDENCE_TYPE_OBJECTIVE_INDICATOR,
+                        "Contract only: VWAP, EMA 7/25/50/200, ATR, RSI closed candle, session levels, previous day levels, FVG, tick volume.");
+      AddContractRecord("EVID_SMC", "SMC / Liquidity Evidence", FALCON_EVIDENCE_TYPE_SMC_LIQUIDITY,
+                        "Contract only: liquidity sweep, reclaim, FVG/imbalance, displacement, BOS/CHoCH, premium/discount, HTF/LTF alignment.");
+
+      m_initialized = (m_record_count == 4);
+      CFalconLogger::Info(StringFormat("EvidenceFramework initialized. Records=%d | PermissionMode=EVIDENCE_ONLY", m_record_count));
+      return m_initialized;
+   }
+
+   bool IsInitialized()
+   {
+      return m_initialized;
+   }
+
+   int Count()
+   {
+      return m_record_count;
+   }
+
+   bool GetRecordByIndex(const int index, FalconEvidenceRecord &record)
+   {
+      if(index < 0 || index >= m_record_count)
+         return false;
+      record = m_records[index];
+      return true;
+   }
+
+   FalconEvidencePack BuildEmptyEvidencePack()
+   {
+      FalconEvidencePack pack;
+      pack.has_candle_evidence              = false;
+      pack.has_chart_pattern_evidence       = false;
+      pack.has_objective_indicator_evidence = false;
+      pack.has_smc_evidence                 = false;
+      pack.score                            = 0.0;
+      pack.summary                          = "No runtime evidence evaluated in v0.4.0. Evidence Framework is contract-only.";
+      return pack;
+   }
+
+private:
+   void AddContractRecord(const string evidence_id,
+                          const string evidence_name,
+                          const ENUM_FALCON_EVIDENCE_TYPE evidence_type,
+                          const string notes)
+   {
+      if(m_record_count >= 4)
+         return;
+
+      FalconEvidenceRecord record;
+      record.evidence_id           = evidence_id;
+      record.evidence_name         = evidence_name;
+      record.evidence_type         = evidence_type;
+      record.evidence_state        = FALCON_EVIDENCE_STATE_NOT_EVALUATED;
+      record.direction_bias        = FALCON_DIRECTION_NONE;
+      record.source_timeframe      = PERIOD_CURRENT;
+      record.score                 = 0.0;
+      record.is_runtime_permission = false;
+      record.notes                 = notes;
+
+      m_records[m_record_count] = record;
+      m_record_count++;
+   }
+};
+
+// ==================================================================
 // Risk Foundation - validates only. No lot calculations yet.
 // ==================================================================
 class CFalconRiskFoundation
@@ -742,7 +890,7 @@ public:
    {
       if(EnableRealExecution)
       {
-         CFalconLogger::Error("HARD SAFETY BLOCK: EnableRealExecution must remain false in v0.3.0.");
+         CFalconLogger::Error("HARD SAFETY BLOCK: EnableRealExecution must remain false in v0.4.0.");
          return false;
       }
 
@@ -801,7 +949,7 @@ public:
 };
 
 // ==================================================================
-// Strategy Registry - switches only. No engine logic in v0.3.0.
+// Strategy Registry - switches only. No engine logic in v0.4.0.
 // ==================================================================
 class CFalconStrategyRegistry
 {
@@ -826,7 +974,7 @@ public:
 
    void PrintRegistryState()
    {
-      CFalconLogger::Info(StringFormat("StrategyRegistry initialized. EnabledStrategies=%d. All enabled strategies remain observe-only in v0.3.0.", CountEnabledStrategies()));
+      CFalconLogger::Info(StringFormat("StrategyRegistry initialized. EnabledStrategies=%d. All enabled strategies remain observe-only in v0.4.0.", CountEnabledStrategies()));
    }
 };
 
@@ -840,6 +988,7 @@ private:
    string              m_summary_report_file;
    string              m_market_diagnostics_file;
    string              m_candle_cache_diagnostics_file;
+   string              m_evidence_diagnostics_file;
    FalconSymbolContext m_symbol_context;
    FalconReportTotals  m_totals;
    bool                m_initialized;
@@ -854,10 +1003,11 @@ public:
    bool Initialize(const FalconSymbolContext &symbol_context)
    {
       m_symbol_context     = symbol_context;
-      m_trade_report_file  = "JA_FalconCore_TradeLifecycle_v0_3_0.csv";
-      m_summary_report_file= "JA_FalconCore_Summary_v0_3_0.csv";
-      m_market_diagnostics_file = "JA_FalconCore_MarketDiagnostics_v0_3_0.csv";
-      m_candle_cache_diagnostics_file = "JA_FalconCore_CandleCacheDiagnostics_v0_3_0.csv";
+      m_trade_report_file  = "JA_FalconCore_TradeLifecycle_v0_4_0.csv";
+      m_summary_report_file= "JA_FalconCore_Summary_v0_4_0.csv";
+      m_market_diagnostics_file = "JA_FalconCore_MarketDiagnostics_v0_4_0.csv";
+      m_candle_cache_diagnostics_file = "JA_FalconCore_CandleCacheDiagnostics_v0_4_0.csv";
+      m_evidence_diagnostics_file = "JA_FalconCore_EvidenceDiagnostics_v0_4_0.csv";
       ResetTotals();
 
       if(EnableMainReport)
@@ -990,6 +1140,50 @@ public:
 
       FileClose(handle);
       CFalconLogger::Info(StringFormat("Candle cache diagnostics snapshot written: %s", m_candle_cache_diagnostics_file));
+   }
+
+   void WriteEvidenceDiagnosticsSnapshot(CFalconEvidenceFramework &evidence_framework)
+   {
+      if(!m_initialized || !EnableEvidenceDiagnosticsReport)
+         return;
+
+      int handle = FileOpen(m_evidence_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not write evidence diagnostics report: %s", m_evidence_diagnostics_file));
+         return;
+      }
+
+      FileWrite(handle,
+                "EAName", "Version", "Build", "Symbol", "GeneratedAt",
+                "EvidenceId", "EvidenceName", "EvidenceType", "EvidenceState",
+                "DirectionBias", "SourceTimeframe", "Score", "RuntimePermission", "Notes");
+
+      for(int i = 0; i < evidence_framework.Count(); i++)
+      {
+         FalconEvidenceRecord record;
+         if(!evidence_framework.GetRecordByIndex(i, record))
+            continue;
+
+         FileWrite(handle,
+                   EA_NAME,
+                   EA_VERSION_TAG,
+                   EA_BUILD_TAG,
+                   m_symbol_context.symbol,
+                   FalconTimeToString(TimeCurrent()),
+                   record.evidence_id,
+                   record.evidence_name,
+                   FalconEvidenceTypeToString(record.evidence_type),
+                   FalconEvidenceStateToString(record.evidence_state),
+                   FalconDirectionToString(record.direction_bias),
+                   FalconTimeframeToString(record.source_timeframe),
+                   DoubleToString(record.score, 2),
+                   (record.is_runtime_permission ? "true" : "false"),
+                   record.notes);
+      }
+
+      FileClose(handle);
+      CFalconLogger::Info(StringFormat("Evidence diagnostics snapshot written: %s", m_evidence_diagnostics_file));
    }
 
    void RegisterClosedTrade(FalconTradeLifecycleRecord &record)
@@ -1187,13 +1381,13 @@ class CFalconExecutionGuard
 public:
    bool CanSendRealOrders()
    {
-      // v0.3.0 is a multi-timeframe candle cache and diagnostics foundation build. Real execution is not allowed even if the input is changed.
+      // v0.4.0 is an Evidence Framework foundation build. Real execution is not allowed even if the input is changed.
       return false;
    }
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / trade execution is intentionally disabled in v0.3.0.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / trade execution is intentionally disabled in v0.4.0.");
    }
 };
 
@@ -1203,6 +1397,7 @@ public:
 CFalconMarketContext     g_market_context;
 CFalconRiskFoundation    g_risk_foundation;
 CFalconCandleCache       g_candle_cache;
+CFalconEvidenceFramework g_evidence_framework;
 CFalconStrategyRegistry  g_strategy_registry;
 CFalconReportWriter      g_report_writer;
 CFalconExecutionGuard    g_execution_guard;
@@ -1216,7 +1411,7 @@ int OnInit()
    PrintFormat("============================================================");
    PrintFormat("%s", EA_NAME);
    PrintFormat("Version: %s | Build: %s", EA_VERSION_TAG, EA_BUILD_TAG);
-   PrintFormat("Stage: Multi-timeframe candle cache + closed candle provider / No strategies / No real execution");
+   PrintFormat("Stage: Evidence Framework Foundation / No strategies / No real execution");
    PrintFormat("============================================================");
 
    if(!g_market_context.Initialize())
@@ -1231,6 +1426,11 @@ int OnInit()
    g_report_writer.WriteMarketDiagnosticsSnapshot(g_market_context.GetQuoteContext(), g_market_context.GetPrimaryCandleSnapshot());
    g_candle_cache.LoadAll(g_market_context);
    g_report_writer.WriteCandleCacheDiagnosticsSnapshot(g_candle_cache);
+
+   if(!g_evidence_framework.Initialize())
+      return INIT_FAILED;
+   g_report_writer.WriteEvidenceDiagnosticsSnapshot(g_evidence_framework);
+
    g_execution_guard.AssertNoExecution();
 
    g_is_initialized = true;
@@ -1250,7 +1450,7 @@ void OnTick()
    if(!g_is_initialized)
       return;
 
-   // v0.3.0 intentionally does not detect strategies and does not send orders.
+   // v0.4.0 intentionally does not detect strategies and does not send orders.
    // Future pipeline:
    // MarketContext -> CandleCache -> Narrative -> StrategyEngine -> Evidence -> Guard -> TradePlan -> Shadow/Paper/Demo/Live Executor -> ReportWriter
    return;
