@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.6.0 - No-Lookahead Runtime Guard & Strategy Staging Safety |
+//|                     Version: v0.8.0 - First Shadow Strategy Adapter Shell |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.060"
+#property version   "1.080"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.6.0"
-#define EA_BUILD_TAG   "NoLookaheadRuntimeGuardStrategyStagingSafety_NoExecution"
+#define EA_VERSION_TAG "v0.8.0"
+#define EA_BUILD_TAG   "FirstShadowStrategyAdapterShell_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -39,7 +39,7 @@ input int    MaxOpenPositions                = 1;
 
 // ==================================================================
 // 03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات
-// Keep this list small and explicit. All engines are OFF in v0.6.0.
+// Keep this list small and explicit. All engines are OFF in v0.8.0.
 // ==================================================================
 input group "03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات";
 input bool EnableStrategy_FvgMicroRetest             = false; // Legacy core winner candidate.
@@ -57,7 +57,7 @@ input bool EnableStrategy_GoldenLiquidity5MEntry     = false; // استراتي�
 
 // ==================================================================
 // 04 - Reporting / التقارير
-// v0.6.0 keeps all previous reports and adds Shadow Engine diagnostics.
+// v0.8.0 keeps all previous reports and adds Shadow Engine diagnostics.
 // Trade rows are still written only by controlled Shadow/Paper/Demo records; no live orders.
 // ==================================================================
 input group "04 - Reporting / التقارير";
@@ -69,7 +69,7 @@ input bool EnableVerboseExpertsLog          = true;
 
 // ==================================================================
 // 05 - Market Context / سياق السوق
-// Keep simple. This is diagnostics only in v0.6.0.
+// Keep simple. This is diagnostics only in v0.8.0.
 // ==================================================================
 input group "05 - Market Context / سياق السوق";
 input bool            UseClosedCandlesOnly          = true;      // Core guard: use closed candles for analysis snapshots.
@@ -83,9 +83,11 @@ input bool            EnableEvidenceDiagnosticsReport    = true; // Writes the c
 // ==================================================================
 input group "06 - Runtime Safety / أمان التشغيل";
 input bool            EnableNoLookaheadDiagnosticsReport = true; // Writes a runtime safety snapshot. No strategy decisions use current candle/final-state.
+input bool            EnableStrategyRegistryDiagnosticsReport = true; // Writes registered strategy switches and engine health states. No engine activation.
+input bool            EnableStrategyAdapterDiagnosticsReport = true; // Writes first Strategy Adapter shell diagnostics. No detector, no staging, no execution.
 
 // ==================================================================
-// Core Data Contracts - v0.6.0
+// Core Data Contracts - v0.8.0
 // ==================================================================
 enum ENUM_FALCON_DIRECTION
 {
@@ -171,6 +173,34 @@ enum ENUM_FALCON_LOOKAHEAD_RISK
    FALCON_LOOKAHEAD_RISK_INVALID_TRADEPLAN = 4
 };
 
+enum ENUM_FALCON_STRATEGY_GROUP
+{
+   FALCON_STRATEGY_GROUP_CORE         = 0,
+   FALCON_STRATEGY_GROUP_PRICE_ACTION = 1,
+   FALCON_STRATEGY_GROUP_OPENING      = 2,
+   FALCON_STRATEGY_GROUP_LIQUIDITY    = 3,
+   FALCON_STRATEGY_GROUP_CONFIRMATION = 4,
+   FALCON_STRATEGY_GROUP_RESEARCH     = 5
+};
+
+enum ENUM_FALCON_ENGINE_HEALTH
+{
+   FALCON_ENGINE_HEALTH_DISABLED    = 0,
+   FALCON_ENGINE_HEALTH_RESEARCH    = 1,
+   FALCON_ENGINE_HEALTH_WATCH       = 2,
+   FALCON_ENGINE_HEALTH_HEALTHY     = 3,
+   FALCON_ENGINE_HEALTH_CORE_WINNER = 4,
+   FALCON_ENGINE_HEALTH_LOCKED      = 5
+};
+
+enum ENUM_FALCON_ADAPTER_STATUS
+{
+   FALCON_ADAPTER_STATUS_NOT_INITIALIZED           = 0,
+   FALCON_ADAPTER_STATUS_NO_TRADE                  = 1,
+   FALCON_ADAPTER_STATUS_SHADOW_CANDIDATE_BLOCKED  = 2,
+   FALCON_ADAPTER_STATUS_READY                     = 3
+};
+
 struct FalconSymbolContext
 {
    string symbol;
@@ -229,6 +259,46 @@ struct FalconRuntimeSafetyCheck
    bool                                final_state_blocked;
    bool                                staging_allowed;
    string                              notes;
+};
+
+struct FalconStrategyRegistryEntry
+{
+   string                     strategy_id;
+   string                     strategy_name;
+   string                     engine_id;
+   ENUM_FALCON_STRATEGY_GROUP strategy_group;
+   bool                       input_enabled;
+   ENUM_FALCON_ENGINE_HEALTH  health_status;
+   ENUM_FALCON_ENGINE_STATUS  max_allowed_stage;
+   bool                       shadow_allowed;
+   bool                       paper_allowed;
+   bool                       demo_allowed;
+   bool                       live_allowed;
+   string                     notes;
+};
+
+struct FalconStrategyAdapterSnapshot
+{
+   string                     adapter_id;
+   string                     target_strategy_id;
+   string                     strategy_name;
+   string                     engine_id;
+   ENUM_FALCON_STRATEGY_GROUP strategy_group;
+   ENUM_FALCON_ENGINE_HEALTH  health_status;
+   ENUM_FALCON_ENGINE_STATUS  max_allowed_stage;
+   ENUM_FALCON_ADAPTER_STATUS adapter_status;
+   bool                       registry_found;
+   bool                       input_enabled;
+   bool                       shadow_allowed;
+   bool                       shadow_executor_ready;
+   bool                       runtime_safety_ready;
+   bool                       candidate_requested;
+   bool                       candidate_staged;
+   bool                       live_allowed;
+   bool                       order_send_used;
+   string                     no_trade_reason;
+   string                     safety_reason;
+   string                     notes;
 };
 
 struct FalconEvidenceRecord
@@ -464,6 +534,62 @@ string FalconLookaheadRiskToString(const ENUM_FALCON_LOOKAHEAD_RISK risk_type)
    return "NONE";
 }
 
+string FalconEngineStatusToString(const ENUM_FALCON_ENGINE_STATUS status)
+{
+   if(status == FALCON_ENGINE_SHADOW)
+      return "SHADOW";
+   if(status == FALCON_ENGINE_PAPER)
+      return "PAPER";
+   if(status == FALCON_ENGINE_DEMO)
+      return "DEMO";
+   if(status == FALCON_ENGINE_LIVE)
+      return "LIVE";
+   return "DISABLED";
+}
+
+string FalconStrategyGroupToString(const ENUM_FALCON_STRATEGY_GROUP group)
+{
+   if(group == FALCON_STRATEGY_GROUP_CORE)
+      return "CORE";
+   if(group == FALCON_STRATEGY_GROUP_PRICE_ACTION)
+      return "PRICE_ACTION";
+   if(group == FALCON_STRATEGY_GROUP_OPENING)
+      return "OPENING";
+   if(group == FALCON_STRATEGY_GROUP_LIQUIDITY)
+      return "LIQUIDITY";
+   if(group == FALCON_STRATEGY_GROUP_CONFIRMATION)
+      return "CONFIRMATION";
+   if(group == FALCON_STRATEGY_GROUP_RESEARCH)
+      return "RESEARCH";
+   return "UNKNOWN";
+}
+
+string FalconEngineHealthToString(const ENUM_FALCON_ENGINE_HEALTH health)
+{
+   if(health == FALCON_ENGINE_HEALTH_RESEARCH)
+      return "RESEARCH";
+   if(health == FALCON_ENGINE_HEALTH_WATCH)
+      return "WATCH";
+   if(health == FALCON_ENGINE_HEALTH_HEALTHY)
+      return "HEALTHY";
+   if(health == FALCON_ENGINE_HEALTH_CORE_WINNER)
+      return "CORE_WINNER";
+   if(health == FALCON_ENGINE_HEALTH_LOCKED)
+      return "LOCKED";
+   return "DISABLED";
+}
+
+string FalconAdapterStatusToString(const ENUM_FALCON_ADAPTER_STATUS status)
+{
+   if(status == FALCON_ADAPTER_STATUS_NO_TRADE)
+      return "NO_TRADE";
+   if(status == FALCON_ADAPTER_STATUS_SHADOW_CANDIDATE_BLOCKED)
+      return "SHADOW_CANDIDATE_BLOCKED";
+   if(status == FALCON_ADAPTER_STATUS_READY)
+      return "READY";
+   return "NOT_INITIALIZED";
+}
+
 string FalconTimeToString(const datetime value)
 {
    if(value <= 0)
@@ -574,7 +700,7 @@ public:
 };
 
 // ==================================================================
-// Market Context Provider - v0.6.0 symbol, quote, and closed candle diagnostics
+// Market Context Provider - v0.8.0 symbol, quote, and closed candle diagnostics
 // ==================================================================
 class CFalconMarketContext
 {
@@ -771,7 +897,7 @@ private:
 
 
 // ==================================================================
-// Multi-Timeframe Candle Cache - v0.6.0
+// Multi-Timeframe Candle Cache - v0.8.0
 // Official analysis timeframes: M1, M5, M15, H1, H4, D1.
 // This layer is data-provider only. It does not create signals.
 // ==================================================================
@@ -895,7 +1021,7 @@ public:
 };
 
 // ==================================================================
-// Evidence Framework Foundation - v0.6.0
+// Evidence Framework Foundation - v0.8.0
 // Contract-only layer. Evidence strengthens or weakens future engine decisions,
 // but it never opens a trade and never overrides guards.
 // ==================================================================
@@ -956,7 +1082,7 @@ public:
       pack.has_objective_indicator_evidence = false;
       pack.has_smc_evidence                 = false;
       pack.score                            = 0.0;
-      pack.summary                          = "No runtime evidence evaluated in v0.6.0. Evidence Framework remains contract-only.";
+      pack.summary                          = "No runtime evidence evaluated in v0.8.0. Evidence Framework remains contract-only.";
       return pack;
    }
 
@@ -995,7 +1121,7 @@ public:
    {
       if(EnableRealExecution)
       {
-         CFalconLogger::Error("HARD SAFETY BLOCK: EnableRealExecution must remain false in v0.6.0.");
+         CFalconLogger::Error("HARD SAFETY BLOCK: EnableRealExecution must remain false in v0.8.0.");
          return false;
       }
 
@@ -1054,38 +1180,229 @@ public:
 };
 
 // ==================================================================
-// Strategy Registry - switches only. No engine logic in v0.6.0.
+// First Shadow Strategy Adapter Shell - v0.8.0
+// This registry only describes strategies and their safety stage.
+// It does not execute detectors, does not produce signals, and does not send orders.
 // ==================================================================
 class CFalconStrategyRegistry
 {
+private:
+   FalconStrategyRegistryEntry m_entries[];
+   int                         m_entry_count;
+   bool                        m_initialized;
+
+   void Reset()
+   {
+      ArrayResize(m_entries, 0);
+      m_entry_count = 0;
+      m_initialized = false;
+   }
+
+   void AddEntry(const string strategy_id,
+                 const string strategy_name,
+                 const string engine_id,
+                 const ENUM_FALCON_STRATEGY_GROUP strategy_group,
+                 const bool input_enabled,
+                 const ENUM_FALCON_ENGINE_HEALTH health_status,
+                 const ENUM_FALCON_ENGINE_STATUS max_allowed_stage,
+                 const bool shadow_allowed,
+                 const bool paper_allowed,
+                 const bool demo_allowed,
+                 const bool live_allowed,
+                 const string notes)
+   {
+      int index = m_entry_count;
+      ArrayResize(m_entries, index + 1);
+      m_entries[index].strategy_id       = strategy_id;
+      m_entries[index].strategy_name     = strategy_name;
+      m_entries[index].engine_id         = engine_id;
+      m_entries[index].strategy_group    = strategy_group;
+      m_entries[index].input_enabled     = input_enabled;
+      m_entries[index].health_status     = health_status;
+      m_entries[index].max_allowed_stage = max_allowed_stage;
+      m_entries[index].shadow_allowed    = shadow_allowed;
+      m_entries[index].paper_allowed     = paper_allowed;
+      m_entries[index].demo_allowed      = demo_allowed;
+      m_entries[index].live_allowed      = false; // v0.x never allows live strategy execution.
+      m_entries[index].notes             = notes;
+      m_entry_count++;
+   }
+
 public:
+   CFalconStrategyRegistry()
+   {
+      Reset();
+   }
+
+   bool Initialize()
+   {
+      Reset();
+
+      AddEntry("FVG_MICRO_RETEST", "FVG Micro Retest Engine", "SCALP.FVG_MICRO",
+               FALCON_STRATEGY_GROUP_CORE, EnableStrategy_FvgMicroRetest,
+               FALCON_ENGINE_HEALTH_CORE_WINNER, FALCON_ENGINE_SHADOW,
+               true, false, false, false,
+               "Legacy indicator core winner. First real strategy candidate later, but still Shadow-first.");
+
+      AddEntry("TAIL_SMART_RETURN", "Tail Smart Return Strategy", "PRICE.TAIL_RETURN",
+               FALCON_STRATEGY_GROUP_PRICE_ACTION, EnableStrategy_TailSmartReturn,
+               FALCON_ENGINE_HEALTH_RESEARCH, FALCON_ENGINE_SHADOW,
+               true, false, false, false,
+               "Strategy rewritten from candle-tail retest concept. H1 zone then LTF confirmation.");
+
+      AddEntry("MOMENTUM_CROSS_8_20", "Momentum Cross 8/20 Strategy", "CONFIRM.MA_8_20",
+               FALCON_STRATEGY_GROUP_CONFIRMATION, EnableStrategy_MomentumCross820,
+               FALCON_ENGINE_HEALTH_WATCH, FALCON_ENGINE_SHADOW,
+               true, false, false, false,
+               "Golden/Death Cross 8/20. Confirmation-first, not a priority execution engine.");
+
+      AddEntry("CHECK_MARK_LIQUIDITY_SWEEP", "Check Mark Liquidity Sweep Reversal", "OPENING.CHECK_MARK",
+               FALCON_STRATEGY_GROUP_OPENING, EnableStrategy_CheckMarkLiquiditySweep,
+               FALCON_ENGINE_HEALTH_RESEARCH, FALCON_ENGINE_SHADOW,
+               true, false, false, false,
+               "Opening 15m manipulation/blowoff plus retest and pivot confirmation.");
+
+      AddEntry("DOUBLE_BOX_WICK_CONFIRMATION", "Double Box Wick Confirmation Strategy", "LIQUIDITY.DOUBLE_BOX",
+               FALCON_STRATEGY_GROUP_LIQUIDITY, EnableStrategy_DoubleBoxWickConfirmation,
+               FALCON_ENGINE_HEALTH_RESEARCH, FALCON_ENGINE_SHADOW,
+               true, false, false, false,
+               "Previous-day box plus pre/post-market box with wick confirmation.");
+
+      AddEntry("TOUCH_TURN_OPENING_RANGE", "Touch & Turn Opening Range Scalper", "OPENING.TOUCH_TURN",
+               FALCON_STRATEGY_GROUP_OPENING, EnableStrategy_TouchTurnOpeningRange,
+               FALCON_ENGINE_HEALTH_RESEARCH, FALCON_ENGINE_SHADOW,
+               true, false, false, false,
+               "First 15m range, ATR liquidity candle, edge touch then rotation back inside.");
+
+      AddEntry("MAGIC_LIQUIDITY_PITCHFORK", "Magic Liquidity Lines + Pitchfork Confirmation", "LIQUIDITY.MAGIC_LINES",
+               FALCON_STRATEGY_GROUP_LIQUIDITY, EnableStrategy_MagicLiquidityPitchfork,
+               FALCON_ENGINE_HEALTH_RESEARCH, FALCON_ENGINE_SHADOW,
+               true, false, false, false,
+               "H1 highs/lows/breakout zones with pitchfork candle confirmation.");
+
+      AddEntry("DAILY_LIQUIDITY_BOX", "Daily Liquidity Box + Pitchfork Confirmation", "LIQUIDITY.DAILY_BOX",
+               FALCON_STRATEGY_GROUP_LIQUIDITY, EnableStrategy_DailyLiquidityBox,
+               FALCON_ENGINE_HEALTH_RESEARCH, FALCON_ENGINE_SHADOW,
+               true, false, false, false,
+               "Previous-day high/low box. Buy lower edge, sell upper edge after confirmation.");
+
+      AddEntry("QUICK_FLIP_OPENING_LIQUIDITY", "Quick Flip Opening Liquidity Scalper", "OPENING.QUICK_FLIP",
+               FALCON_STRATEGY_GROUP_OPENING, EnableStrategy_QuickFlipOpeningLiquidity,
+               FALCON_ENGINE_HEALTH_RESEARCH, FALCON_ENGINE_SHADOW,
+               true, false, false, false,
+               "Opening 15m liquidity candle, reversal candle outside range within 90 minutes.");
+
+      AddEntry("FSE_PATTERN_FAILURE_ENTRY", "First Sign Execution Pattern Failure Entry", "PRICE.FSE_FAILURE",
+               FALCON_STRATEGY_GROUP_PRICE_ACTION, EnableStrategy_FSEPatternFailureEntry,
+               FALCON_ENGINE_HEALTH_RESEARCH, FALCON_ENGINE_SHADOW,
+               true, false, false, false,
+               "Early entry after previous pattern failure at a known level. Also called Unsharp/FSE.");
+
+      AddEntry("TWO_LIQUIDITY_LINES_15M", "Two Liquidity Lines + 15M Confirmation", "LIQUIDITY.TWO_LINES_15M",
+               FALCON_STRATEGY_GROUP_LIQUIDITY, EnableStrategy_TwoLiquidityLines15M,
+               FALCON_ENGINE_HEALTH_RESEARCH, FALCON_ENGINE_SHADOW,
+               true, false, false, false,
+               "H1 swing high/low lines and 15M reversal confirmation. No middle trades.");
+
+      AddEntry("GOLDEN_LIQUIDITY_5M_ENTRY", "Golden Liquidity Zones + 5M Pitchfork Entry", "LIQUIDITY.GOLDEN_5M",
+               FALCON_STRATEGY_GROUP_LIQUIDITY, EnableStrategy_GoldenLiquidity5MEntry,
+               FALCON_ENGINE_HEALTH_RESEARCH, FALCON_ENGINE_SHADOW,
+               true, false, false, false,
+               "H1 liquidity zones with M5 pitchfork confirmation. Anti-random-5M usage.");
+
+      m_initialized = true;
+      return true;
+   }
+
+   bool IsInitialized()
+   {
+      return m_initialized;
+   }
+
+   int CountRegisteredStrategies()
+   {
+      return m_entry_count;
+   }
+
    int CountEnabledStrategies()
    {
       int count = 0;
-      if(EnableStrategy_FvgMicroRetest)            count++;
-      if(EnableStrategy_TailSmartReturn)           count++;
-      if(EnableStrategy_MomentumCross820)          count++;
-      if(EnableStrategy_CheckMarkLiquiditySweep)   count++;
-      if(EnableStrategy_DoubleBoxWickConfirmation) count++;
-      if(EnableStrategy_TouchTurnOpeningRange)     count++;
-      if(EnableStrategy_MagicLiquidityPitchfork)   count++;
-      if(EnableStrategy_DailyLiquidityBox)         count++;
-      if(EnableStrategy_QuickFlipOpeningLiquidity) count++;
-      if(EnableStrategy_FSEPatternFailureEntry)    count++;
-      if(EnableStrategy_TwoLiquidityLines15M)      count++;
-      if(EnableStrategy_GoldenLiquidity5MEntry)    count++;
+      for(int i = 0; i < m_entry_count; i++)
+      {
+         if(m_entries[i].input_enabled)
+            count++;
+      }
       return count;
+   }
+
+   int CountByGroup(const ENUM_FALCON_STRATEGY_GROUP group)
+   {
+      int count = 0;
+      for(int i = 0; i < m_entry_count; i++)
+      {
+         if(m_entries[i].strategy_group == group)
+            count++;
+      }
+      return count;
+   }
+
+   int CountByHealth(const ENUM_FALCON_ENGINE_HEALTH health_status)
+   {
+      int count = 0;
+      for(int i = 0; i < m_entry_count; i++)
+      {
+         if(m_entries[i].health_status == health_status)
+            count++;
+      }
+      return count;
+   }
+
+   bool GetEntryByIndex(const int index, FalconStrategyRegistryEntry &entry)
+   {
+      if(index < 0 || index >= m_entry_count)
+         return false;
+      entry = m_entries[index];
+      return true;
+   }
+
+   bool GetEntryById(const string strategy_id, FalconStrategyRegistryEntry &entry)
+   {
+      for(int i = 0; i < m_entry_count; i++)
+      {
+         if(m_entries[i].strategy_id == strategy_id)
+         {
+            entry = m_entries[i];
+            return true;
+         }
+      }
+      return false;
+   }
+
+   bool AnyLiveAllowed()
+   {
+      for(int i = 0; i < m_entry_count; i++)
+      {
+         if(m_entries[i].live_allowed)
+            return true;
+      }
+      return false;
    }
 
    void PrintRegistryState()
    {
-      CFalconLogger::Info(StringFormat("StrategyRegistry initialized. EnabledStrategies=%d. All enabled strategies remain observe-only in v0.6.0.", CountEnabledStrategies()));
+      CFalconLogger::Info(StringFormat("StrategyRegistry initialized. Registered=%d | EnabledByInputs=%d | CoreWinners=%d | Research=%d | Watch=%d | LiveAllowed=%s | Stage=REGISTRY_ONLY_v0.8.0",
+                                       CountRegisteredStrategies(),
+                                       CountEnabledStrategies(),
+                                       CountByHealth(FALCON_ENGINE_HEALTH_CORE_WINNER),
+                                       CountByHealth(FALCON_ENGINE_HEALTH_RESEARCH),
+                                       CountByHealth(FALCON_ENGINE_HEALTH_WATCH),
+                                       (AnyLiveAllowed() ? "true" : "false")));
    }
 };
 
 
 // ==================================================================
-// Shadow Engine Framework Foundation - v0.6.0
+// Shadow Engine Framework Foundation - v0.8.0
 // Shadow is observation-only. It can stage simulated records and convert
 // them to lifecycle records, but it never sends broker orders.
 // ==================================================================
@@ -1283,7 +1600,7 @@ private:
 };
 
 // ==================================================================
-// No-Lookahead Runtime Guard & Strategy Staging Safety - v0.6.0
+// No-Lookahead Runtime Guard & Strategy Staging Safety - v0.8.0
 // This layer blocks current-candle/final-state dependency before any future
 // strategy can stage Shadow/Paper/Demo plans. It does not create signals.
 // ==================================================================
@@ -1465,6 +1782,134 @@ private:
    }
 };
 
+
+// ==================================================================
+// First Shadow Strategy Adapter Shell - v0.8.0
+// This adapter proves that a registered strategy can be discovered and
+// evaluated for future Shadow staging without running any detector.
+// It intentionally produces NO_TRADE / BLOCKED candidate diagnostics only.
+// ==================================================================
+class CFalconFirstShadowStrategyAdapterShell
+{
+private:
+   FalconStrategyAdapterSnapshot m_snapshot;
+   bool                          m_initialized;
+
+public:
+   CFalconFirstShadowStrategyAdapterShell()
+   {
+      ResetSnapshot();
+      m_initialized = false;
+   }
+
+   bool Initialize(CFalconStrategyRegistry &registry,
+                   CFalconRuntimeSafetyGuard &runtime_guard,
+                   CFalconShadowExecutor &shadow_executor)
+   {
+      ResetSnapshot();
+      m_snapshot.adapter_id         = "ADAPTER_SHELL_FVG_MICRO_RETEST_v0_8_0";
+      m_snapshot.target_strategy_id = "FVG_MICRO_RETEST";
+      m_snapshot.runtime_safety_ready = runtime_guard.IsInitialized();
+      m_snapshot.shadow_executor_ready = shadow_executor.IsInitialized();
+      m_snapshot.order_send_used = false;
+      m_snapshot.live_allowed = false;
+
+      FalconStrategyRegistryEntry entry;
+      if(!registry.GetEntryById(m_snapshot.target_strategy_id, entry))
+      {
+         m_snapshot.registry_found = false;
+         m_snapshot.adapter_status = FALCON_ADAPTER_STATUS_NO_TRADE;
+         m_snapshot.no_trade_reason = "REGISTRY_ENTRY_NOT_FOUND";
+         m_snapshot.safety_reason = "ADAPTER_DID_NOT_BUILD_TRADEPLAN";
+         m_snapshot.notes = "First adapter shell could not find the target strategy. No staging attempted.";
+         m_initialized = true;
+         return true;
+      }
+
+      m_snapshot.registry_found     = true;
+      m_snapshot.strategy_name      = entry.strategy_name;
+      m_snapshot.engine_id          = entry.engine_id;
+      m_snapshot.strategy_group     = entry.strategy_group;
+      m_snapshot.health_status      = entry.health_status;
+      m_snapshot.max_allowed_stage  = entry.max_allowed_stage;
+      m_snapshot.input_enabled      = entry.input_enabled;
+      m_snapshot.shadow_allowed     = entry.shadow_allowed;
+      m_snapshot.live_allowed       = false;
+      m_snapshot.candidate_requested = (entry.input_enabled && entry.shadow_allowed && EnableShadowMode);
+      m_snapshot.candidate_staged    = false;
+
+      if(!m_snapshot.runtime_safety_ready)
+      {
+         m_snapshot.adapter_status  = FALCON_ADAPTER_STATUS_SHADOW_CANDIDATE_BLOCKED;
+         m_snapshot.no_trade_reason = "RUNTIME_SAFETY_NOT_READY";
+         m_snapshot.safety_reason   = "NO_LOOKAHEAD_GUARD_REQUIRED_BEFORE_SHADOW_STAGING";
+      }
+      else if(!m_snapshot.shadow_executor_ready)
+      {
+         m_snapshot.adapter_status  = FALCON_ADAPTER_STATUS_SHADOW_CANDIDATE_BLOCKED;
+         m_snapshot.no_trade_reason = "SHADOW_EXECUTOR_NOT_READY";
+         m_snapshot.safety_reason   = "ENABLE_SHADOW_MODE_REQUIRED_FOR_FUTURE_STAGING";
+      }
+      else if(m_snapshot.candidate_requested)
+      {
+         m_snapshot.adapter_status  = FALCON_ADAPTER_STATUS_SHADOW_CANDIDATE_BLOCKED;
+         m_snapshot.no_trade_reason = "ADAPTER_SHELL_NO_DETECTOR_YET";
+         m_snapshot.safety_reason   = "NO_TRADEPLAN_CREATED_IN_v0_8_0";
+      }
+      else
+      {
+         m_snapshot.adapter_status  = FALCON_ADAPTER_STATUS_NO_TRADE;
+         m_snapshot.no_trade_reason = (entry.input_enabled ? "SHADOW_NOT_REQUESTED_OR_NOT_ALLOWED" : "STRATEGY_INPUT_DISABLED");
+         m_snapshot.safety_reason   = "ADAPTER_SHELL_OBSERVE_ONLY";
+      }
+
+      m_snapshot.notes = "v0.8.0 adapter shell only. Registry linked to Shadow Executor, but no detector, no signal, no trade plan, and no staging.";
+      m_initialized = true;
+
+      CFalconLogger::Info(StringFormat("FirstStrategyAdapterShell initialized. Strategy=%s | InputEnabled=%s | Status=%s | Reason=%s",
+                                       m_snapshot.target_strategy_id,
+                                       (m_snapshot.input_enabled ? "true" : "false"),
+                                       FalconAdapterStatusToString(m_snapshot.adapter_status),
+                                       m_snapshot.no_trade_reason));
+      return true;
+   }
+
+   bool IsInitialized()
+   {
+      return m_initialized;
+   }
+
+   FalconStrategyAdapterSnapshot GetSnapshot()
+   {
+      return m_snapshot;
+   }
+
+private:
+   void ResetSnapshot()
+   {
+      m_snapshot.adapter_id            = "";
+      m_snapshot.target_strategy_id    = "";
+      m_snapshot.strategy_name         = "";
+      m_snapshot.engine_id             = "";
+      m_snapshot.strategy_group        = FALCON_STRATEGY_GROUP_RESEARCH;
+      m_snapshot.health_status         = FALCON_ENGINE_HEALTH_DISABLED;
+      m_snapshot.max_allowed_stage     = FALCON_ENGINE_DISABLED;
+      m_snapshot.adapter_status        = FALCON_ADAPTER_STATUS_NOT_INITIALIZED;
+      m_snapshot.registry_found        = false;
+      m_snapshot.input_enabled         = false;
+      m_snapshot.shadow_allowed        = false;
+      m_snapshot.shadow_executor_ready = false;
+      m_snapshot.runtime_safety_ready  = false;
+      m_snapshot.candidate_requested   = false;
+      m_snapshot.candidate_staged      = false;
+      m_snapshot.live_allowed          = false;
+      m_snapshot.order_send_used       = false;
+      m_snapshot.no_trade_reason       = "";
+      m_snapshot.safety_reason         = "";
+      m_snapshot.notes                 = "";
+   }
+};
+
 // ==================================================================
 // Report Writer Foundation - append-ready CSV contracts
 // ==================================================================
@@ -1478,6 +1923,8 @@ private:
    string              m_evidence_diagnostics_file;
    string              m_shadow_diagnostics_file;
    string              m_no_lookahead_diagnostics_file;
+   string              m_strategy_registry_diagnostics_file;
+   string              m_strategy_adapter_diagnostics_file;
    FalconSymbolContext m_symbol_context;
    FalconReportTotals  m_totals;
    bool                m_initialized;
@@ -1492,12 +1939,15 @@ public:
    bool Initialize(const FalconSymbolContext &symbol_context)
    {
       m_symbol_context     = symbol_context;
-      m_trade_report_file  = "JA_FalconCore_TradeLifecycle_v0_5_1.csv";
-      m_summary_report_file= "JA_FalconCore_Summary_v0_5_1.csv";
-      m_market_diagnostics_file = "JA_FalconCore_MarketDiagnostics_v0_5_1.csv";
-      m_candle_cache_diagnostics_file = "JA_FalconCore_CandleCacheDiagnostics_v0_5_1.csv";
-      m_evidence_diagnostics_file = "JA_FalconCore_EvidenceDiagnostics_v0_5_1.csv";
-      m_shadow_diagnostics_file = "JA_FalconCore_ShadowDiagnostics_v0_5_1.csv";
+      m_trade_report_file  = "JA_FalconCore_TradeLifecycle_v0_8_0.csv";
+      m_summary_report_file= "JA_FalconCore_Summary_v0_8_0.csv";
+      m_market_diagnostics_file = "JA_FalconCore_MarketDiagnostics_v0_8_0.csv";
+      m_candle_cache_diagnostics_file = "JA_FalconCore_CandleCacheDiagnostics_v0_8_0.csv";
+      m_evidence_diagnostics_file = "JA_FalconCore_EvidenceDiagnostics_v0_8_0.csv";
+      m_shadow_diagnostics_file = "JA_FalconCore_ShadowDiagnostics_v0_8_0.csv";
+      m_no_lookahead_diagnostics_file = "JA_FalconCore_NoLookaheadDiagnostics_v0_8_0.csv";
+      m_strategy_registry_diagnostics_file = "JA_FalconCore_StrategyRegistryDiagnostics_v0_8_0.csv";
+      m_strategy_adapter_diagnostics_file = "JA_FalconCore_StrategyAdapterDiagnostics_v0_8_0.csv";
       ResetTotals();
 
       if(EnableMainReport)
@@ -1707,7 +2157,7 @@ public:
                 shadow_executor.ClosedRecords(),
                 shadow_executor.CancelledRecords(),
                 "ShadowToTradeLifecycleRecord_READY",
-                "v0.6.0 is framework only. No strategy creates shadow records yet.");
+                "v0.8.0 is framework only. No strategy creates shadow records yet.");
 
       FileClose(handle);
       CFalconLogger::Info(StringFormat("Shadow diagnostics snapshot written: %s", m_shadow_diagnostics_file));
@@ -1761,6 +2211,120 @@ public:
 
       FileClose(handle);
       CFalconLogger::Info(StringFormat("No-lookahead diagnostics snapshot written: %s", m_no_lookahead_diagnostics_file));
+   }
+
+   void WriteStrategyRegistryDiagnosticsSnapshot(CFalconStrategyRegistry &registry)
+   {
+      if(!m_initialized || !EnableStrategyRegistryDiagnosticsReport)
+         return;
+
+      int handle = FileOpen(m_strategy_registry_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not write strategy registry diagnostics report: %s", m_strategy_registry_diagnostics_file));
+         return;
+      }
+
+      FileWrite(handle,
+                "EAName", "Version", "Build", "Symbol", "GeneratedAt",
+                "RegistryInitialized", "RegisteredStrategies", "EnabledByInputs",
+                "CoreCount", "PriceActionCount", "OpeningCount", "LiquidityCount", "ConfirmationCount", "ResearchCount",
+                "StrategyId", "StrategyName", "EngineId", "Group", "InputEnabled",
+                "HealthStatus", "MaxAllowedStage", "ShadowAllowed", "PaperAllowed", "DemoAllowed", "LiveAllowed", "Notes");
+
+      for(int i = 0; i < registry.CountRegisteredStrategies(); i++)
+      {
+         FalconStrategyRegistryEntry entry;
+         if(!registry.GetEntryByIndex(i, entry))
+            continue;
+
+         FileWrite(handle,
+                   EA_NAME,
+                   EA_VERSION_TAG,
+                   EA_BUILD_TAG,
+                   m_symbol_context.symbol,
+                   FalconTimeToString(TimeCurrent()),
+                   (registry.IsInitialized() ? "true" : "false"),
+                   registry.CountRegisteredStrategies(),
+                   registry.CountEnabledStrategies(),
+                   registry.CountByGroup(FALCON_STRATEGY_GROUP_CORE),
+                   registry.CountByGroup(FALCON_STRATEGY_GROUP_PRICE_ACTION),
+                   registry.CountByGroup(FALCON_STRATEGY_GROUP_OPENING),
+                   registry.CountByGroup(FALCON_STRATEGY_GROUP_LIQUIDITY),
+                   registry.CountByGroup(FALCON_STRATEGY_GROUP_CONFIRMATION),
+                   registry.CountByGroup(FALCON_STRATEGY_GROUP_RESEARCH),
+                   entry.strategy_id,
+                   entry.strategy_name,
+                   entry.engine_id,
+                   FalconStrategyGroupToString(entry.strategy_group),
+                   (entry.input_enabled ? "true" : "false"),
+                   FalconEngineHealthToString(entry.health_status),
+                   FalconEngineStatusToString(entry.max_allowed_stage),
+                   (entry.shadow_allowed ? "true" : "false"),
+                   (entry.paper_allowed ? "true" : "false"),
+                   (entry.demo_allowed ? "true" : "false"),
+                   (entry.live_allowed ? "true" : "false"),
+                   entry.notes);
+      }
+
+      FileClose(handle);
+      CFalconLogger::Info(StringFormat("Strategy registry diagnostics snapshot written: %s", m_strategy_registry_diagnostics_file));
+   }
+
+
+
+   void WriteStrategyAdapterDiagnosticsSnapshot(CFalconFirstShadowStrategyAdapterShell &adapter)
+   {
+      if(!m_initialized || !EnableStrategyAdapterDiagnosticsReport)
+         return;
+
+      int handle = FileOpen(m_strategy_adapter_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not write strategy adapter diagnostics report: %s", m_strategy_adapter_diagnostics_file));
+         return;
+      }
+
+      FalconStrategyAdapterSnapshot snapshot = adapter.GetSnapshot();
+
+      FileWrite(handle,
+                "EAName", "Version", "Build", "Symbol", "GeneratedAt",
+                "AdapterInitialized", "AdapterId", "TargetStrategyId", "StrategyName", "EngineId",
+                "Group", "HealthStatus", "MaxAllowedStage", "AdapterStatus",
+                "RegistryFound", "InputEnabled", "ShadowAllowed", "ShadowExecutorReady", "RuntimeSafetyReady",
+                "CandidateRequested", "CandidateStaged", "LiveAllowed", "OrderSendUsed",
+                "NoTradeReason", "SafetyReason", "Notes");
+
+      FileWrite(handle,
+                EA_NAME,
+                EA_VERSION_TAG,
+                EA_BUILD_TAG,
+                m_symbol_context.symbol,
+                FalconTimeToString(TimeCurrent()),
+                (adapter.IsInitialized() ? "true" : "false"),
+                snapshot.adapter_id,
+                snapshot.target_strategy_id,
+                snapshot.strategy_name,
+                snapshot.engine_id,
+                FalconStrategyGroupToString(snapshot.strategy_group),
+                FalconEngineHealthToString(snapshot.health_status),
+                FalconEngineStatusToString(snapshot.max_allowed_stage),
+                FalconAdapterStatusToString(snapshot.adapter_status),
+                (snapshot.registry_found ? "true" : "false"),
+                (snapshot.input_enabled ? "true" : "false"),
+                (snapshot.shadow_allowed ? "true" : "false"),
+                (snapshot.shadow_executor_ready ? "true" : "false"),
+                (snapshot.runtime_safety_ready ? "true" : "false"),
+                (snapshot.candidate_requested ? "true" : "false"),
+                (snapshot.candidate_staged ? "true" : "false"),
+                (snapshot.live_allowed ? "true" : "false"),
+                (snapshot.order_send_used ? "true" : "false"),
+                snapshot.no_trade_reason,
+                snapshot.safety_reason,
+                snapshot.notes);
+
+      FileClose(handle);
+      CFalconLogger::Info(StringFormat("Strategy adapter diagnostics snapshot written: %s", m_strategy_adapter_diagnostics_file));
    }
 
    void RegisterClosedTrade(FalconTradeLifecycleRecord &record)
@@ -1951,20 +2515,20 @@ private:
 };
 
 // ==================================================================
-// Execution Guard - real trading intentionally impossible in v0.6.0.
+// Execution Guard - real trading intentionally impossible in v0.8.0.
 // ==================================================================
 class CFalconExecutionGuard
 {
 public:
    bool CanSendRealOrders()
    {
-      // v0.6.0 is a Shadow Engine Framework foundation build. Real execution is not allowed even if the input is changed.
+      // v0.8.0 is a Shadow Engine Framework foundation build. Real execution is not allowed even if the input is changed.
       return false;
    }
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.6.0.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.8.0.");
    }
 };
 
@@ -1978,6 +2542,7 @@ CFalconEvidenceFramework g_evidence_framework;
 CFalconShadowExecutor    g_shadow_executor;
 CFalconRuntimeSafetyGuard g_runtime_safety_guard;
 CFalconStrategyRegistry  g_strategy_registry;
+CFalconFirstShadowStrategyAdapterShell g_first_strategy_adapter;
 CFalconReportWriter      g_report_writer;
 CFalconExecutionGuard    g_execution_guard;
 bool                     g_is_initialized = false;
@@ -1990,7 +2555,7 @@ int OnInit()
    PrintFormat("============================================================");
    PrintFormat("%s", EA_NAME);
    PrintFormat("Version: %s | Build: %s", EA_VERSION_TAG, EA_BUILD_TAG);
-   PrintFormat("Stage: No-Lookahead Runtime Guard & Strategy Staging Safety / No strategies / No real execution");
+   PrintFormat("Stage: First Shadow Strategy Adapter Shell / No detectors running / No real execution");
    PrintFormat("============================================================");
 
    if(!g_market_context.Initialize())
@@ -2000,9 +2565,12 @@ int OnInit()
    if(!g_risk_foundation.ValidateInputs(symbol_context))
       return INIT_PARAMETERS_INCORRECT;
 
+   if(!g_strategy_registry.Initialize())
+      return INIT_FAILED;
    g_strategy_registry.PrintRegistryState();
    g_report_writer.Initialize(symbol_context);
    g_report_writer.WriteMarketDiagnosticsSnapshot(g_market_context.GetQuoteContext(), g_market_context.GetPrimaryCandleSnapshot());
+   g_report_writer.WriteStrategyRegistryDiagnosticsSnapshot(g_strategy_registry);
    g_candle_cache.LoadAll(g_market_context);
    g_report_writer.WriteCandleCacheDiagnosticsSnapshot(g_candle_cache);
 
@@ -2016,6 +2584,10 @@ int OnInit()
 
    g_shadow_executor.Initialize();
    g_report_writer.WriteShadowDiagnosticsSnapshot(g_shadow_executor);
+
+   if(!g_first_strategy_adapter.Initialize(g_strategy_registry, g_runtime_safety_guard, g_shadow_executor))
+      return INIT_FAILED;
+   g_report_writer.WriteStrategyAdapterDiagnosticsSnapshot(g_first_strategy_adapter);
 
    g_execution_guard.AssertNoExecution();
 
@@ -2036,7 +2608,7 @@ void OnTick()
    if(!g_is_initialized)
       return;
 
-   // v0.6.0 intentionally does not detect live strategies and does not send orders.
+   // v0.8.0 intentionally links the first Strategy Adapter shell only. It does not run detectors, does not stage trades, and does not send orders.
    // Future pipeline:
    // MarketContext -> CandleCache -> Narrative -> StrategyEngine -> Evidence -> Guard -> TradePlan -> Shadow/Paper/Demo/Live Executor -> ReportWriter
    return;
