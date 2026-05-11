@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.13.1 - Shadow Record Reset Compile Hotfix |
+//|                     Version: v0.14.0 - FVG Micro Shadow Trade Lifecycle Simulation Phase 1 |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.131"
+#property version   "1.140"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.13.1"
-#define EA_BUILD_TAG   "ShadowRecordResetCompileHotfix_NoExecution"
+#define EA_VERSION_TAG "v0.14.0"
+#define EA_BUILD_TAG   "FvgMicroShadowLifecycleSimulationPhase1_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -39,7 +39,7 @@ input int    MaxOpenPositions                = 1;
 
 // ==================================================================
 // 03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات
-// Keep this list small and explicit. All engines are OFF in v0.13.1.
+// Keep this list small and explicit. All engines are OFF in v0.14.0.
 // ==================================================================
 input group "03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات";
 input bool EnableStrategy_FvgMicroRetest             = false; // Legacy core winner candidate.
@@ -57,7 +57,7 @@ input bool EnableStrategy_GoldenLiquidity5MEntry     = false; // استراتي�
 
 // ==================================================================
 // 04 - Reporting / التقارير
-// v0.13.1 keeps prior reports and adds FVG Micro Shadow TradePlan staging dry-run diagnostics.
+// v0.14.0 keeps prior reports and adds FVG Micro Shadow trade lifecycle simulation diagnostics.
 // Trade rows are still written only by controlled Shadow/Paper/Demo records; no live orders.
 // ==================================================================
 input group "04 - Reporting / التقارير";
@@ -69,7 +69,7 @@ input bool EnableVerboseExpertsLog          = true;
 
 // ==================================================================
 // 05 - Market Context / سياق السوق
-// Keep simple. This is diagnostics only in v0.13.1.
+// Keep simple. This is diagnostics only in v0.14.0.
 // ==================================================================
 input group "05 - Market Context / سياق السوق";
 input bool            UseClosedCandlesOnly          = true;      // Core guard: use closed candles for analysis snapshots.
@@ -89,9 +89,10 @@ input bool            EnableFvgMicroDetectorDiagnosticsReport = true; // Writes 
 input bool            EnableFvgMicroCandidateDiagnosticsReport = true; // Writes FVG Micro Shadow Candidate Builder diagnostics. No TradePlan, no staging.
 input bool            EnableFvgMicroRetestWatcherDiagnosticsReport = true; // Writes FVG Micro retest watcher and TradePlan skeleton diagnostics. No staging, no execution.
 input bool            EnableFvgMicroTradePlanStagingDiagnosticsReport = true; // Writes FVG Micro TradePlan staging dry-run diagnostics. Shadow-only, no broker execution.
+input bool            EnableFvgMicroLifecycleSimulationDiagnosticsReport = true; // Writes FVG Micro Shadow trade lifecycle simulation diagnostics. No broker execution.
 
 // ==================================================================
-// Core Data Contracts - v0.13.1
+// Core Data Contracts - v0.14.0
 // ==================================================================
 enum ENUM_FALCON_DIRECTION
 {
@@ -239,6 +240,16 @@ enum ENUM_FALCON_TRADEPLAN_STAGING_STATUS
    FALCON_TRADEPLAN_STAGING_STATUS_BLOCKED         = 1,
    FALCON_TRADEPLAN_STAGING_STATUS_PLAN_CREATED    = 2,
    FALCON_TRADEPLAN_STAGING_STATUS_STAGED_SHADOW   = 3
+};
+
+enum ENUM_FALCON_SHADOW_LIFECYCLE_STATUS
+{
+   FALCON_SHADOW_LIFECYCLE_STATUS_NOT_INITIALIZED = 0,
+   FALCON_SHADOW_LIFECYCLE_STATUS_BLOCKED         = 1,
+   FALCON_SHADOW_LIFECYCLE_STATUS_MONITORING      = 2,
+   FALCON_SHADOW_LIFECYCLE_STATUS_CLOSED_TP       = 3,
+   FALCON_SHADOW_LIFECYCLE_STATUS_CLOSED_SL       = 4,
+   FALCON_SHADOW_LIFECYCLE_STATUS_CLOSED_TIMEOUT  = 5
 };
 
 struct FalconSymbolContext
@@ -490,6 +501,45 @@ struct FalconFvgMicroTradePlanStagingSnapshot
    string                               staging_reason;
    string                               evidence_summary;
    string                               notes;
+};
+
+struct FalconFvgMicroShadowLifecycleSnapshot
+{
+   string                              simulator_id;
+   string                              shadow_id;
+   string                              strategy_id;
+   string                              strategy_name;
+   string                              engine_id;
+   ENUM_FALCON_SHADOW_LIFECYCLE_STATUS lifecycle_status;
+   ENUM_FALCON_SHADOW_RECORD_STATUS    shadow_record_status;
+   bool                                stager_ready;
+   bool                                staged_to_shadow_executor;
+   bool                                shadow_record_loaded;
+   bool                                quote_valid;
+   bool                                close_record_created;
+   bool                                registered_to_trade_report;
+   bool                                order_send_used;
+   ENUM_FALCON_DIRECTION               direction;
+   datetime                            entry_time;
+   datetime                            evaluation_time;
+   int                                 elapsed_seconds;
+   double                              entry_price;
+   double                              structural_sl;
+   double                              tp1;
+   double                              tp2;
+   double                              tp3;
+   double                              current_price;
+   double                              simulated_exit_price;
+   ENUM_FALCON_TRADE_OUTCOME           simulated_outcome;
+   double                              profit_index_points;
+   double                              loss_index_points;
+   double                              net_index_points;
+   double                              profit_usd;
+   double                              loss_usd;
+   double                              net_usd;
+   string                              close_reason;
+   string                              lifecycle_reason;
+   string                              notes;
 };
 
 struct FalconEvidenceRecord
@@ -829,6 +879,21 @@ string FalconTradePlanStagingStatusToString(const ENUM_FALCON_TRADEPLAN_STAGING_
       return "PLAN_CREATED";
    if(status == FALCON_TRADEPLAN_STAGING_STATUS_STAGED_SHADOW)
       return "STAGED_SHADOW";
+   return "NOT_INITIALIZED";
+}
+
+string FalconShadowLifecycleStatusToString(const ENUM_FALCON_SHADOW_LIFECYCLE_STATUS status)
+{
+   if(status == FALCON_SHADOW_LIFECYCLE_STATUS_BLOCKED)
+      return "BLOCKED";
+   if(status == FALCON_SHADOW_LIFECYCLE_STATUS_MONITORING)
+      return "MONITORING";
+   if(status == FALCON_SHADOW_LIFECYCLE_STATUS_CLOSED_TP)
+      return "CLOSED_TP";
+   if(status == FALCON_SHADOW_LIFECYCLE_STATUS_CLOSED_SL)
+      return "CLOSED_SL";
+   if(status == FALCON_SHADOW_LIFECYCLE_STATUS_CLOSED_TIMEOUT)
+      return "CLOSED_TIMEOUT";
    return "NOT_INITIALIZED";
 }
 
@@ -3039,6 +3104,318 @@ private:
    }
 };
 
+
+// ==================================================================
+// FVG Micro Shadow Trade Lifecycle Simulation - v0.14.0
+// Monitors a staged Shadow record and closes it diagnostically at TP1, SL, or timeout.
+// This is still Shadow-only. It never sends broker orders.
+// ==================================================================
+#define FALCON_SHADOW_LIFECYCLE_TIMEOUT_SECONDS 5400
+
+class CFalconFvgMicroShadowLifecycleSimulation
+{
+private:
+   FalconFvgMicroShadowLifecycleSnapshot m_snapshot;
+   FalconShadowTradeRecord               m_shadow_record;
+   FalconTradeLifecycleRecord            m_lifecycle_record;
+   bool                                  m_initialized;
+   bool                                  m_has_closed_lifecycle;
+   bool                                  m_closed_lifecycle_exported;
+
+public:
+   CFalconFvgMicroShadowLifecycleSimulation()
+   {
+      ResetSnapshot();
+      ResetLocalShadowRecord(m_shadow_record);
+      ResetLifecycleRecord(m_lifecycle_record);
+      m_initialized               = false;
+      m_has_closed_lifecycle      = false;
+      m_closed_lifecycle_exported = false;
+   }
+
+   bool Initialize(CFalconFvgMicroTradePlanStagingDryRun &stager,
+                   CFalconMarketContext &market_context,
+                   CFalconShadowExecutor &shadow_executor)
+   {
+      ResetSnapshot();
+      ResetLocalShadowRecord(m_shadow_record);
+      ResetLifecycleRecord(m_lifecycle_record);
+      m_initialized               = true;
+      m_has_closed_lifecycle      = false;
+      m_closed_lifecycle_exported = false;
+
+      m_snapshot.simulator_id = "FVG_MICRO_LIFECYCLE_SIM_PHASE1";
+      m_snapshot.stager_ready = true;
+      FalconFvgMicroTradePlanStagingSnapshot staging = stager.GetSnapshot();
+      m_snapshot.staged_to_shadow_executor = staging.staged_to_shadow_executor;
+
+      if(!staging.staged_to_shadow_executor)
+      {
+         Block("NO_STAGED_SHADOW_RECORD", "Lifecycle simulation requires a staged Shadow record from v0.13.x TradePlan staging.");
+         return true;
+      }
+
+      m_shadow_record = stager.GetShadowRecord();
+      m_snapshot.shadow_record_loaded = (m_shadow_record.status == FALCON_SHADOW_RECORD_STAGED);
+      if(!m_snapshot.shadow_record_loaded)
+      {
+         Block("SHADOW_RECORD_NOT_STAGED", "The copied Shadow record is not in STAGED status. No simulation close is allowed.");
+         return true;
+      }
+
+      CopyShadowFieldsToSnapshot();
+      Refresh(market_context, shadow_executor);
+      CFalconLogger::Info(StringFormat("FVG Micro lifecycle simulation initialized. Status=%s | ShadowId=%s | Entry=%.5f | TP1=%.5f | SL=%.5f",
+                                       FalconShadowLifecycleStatusToString(m_snapshot.lifecycle_status),
+                                       m_snapshot.shadow_id,
+                                       m_snapshot.entry_price,
+                                       m_snapshot.tp1,
+                                       m_snapshot.structural_sl));
+      return true;
+   }
+
+   bool Refresh(CFalconMarketContext &market_context,
+                CFalconShadowExecutor &shadow_executor)
+   {
+      if(!m_initialized)
+         return false;
+
+      if(m_has_closed_lifecycle)
+         return true;
+
+      if(m_shadow_record.status != FALCON_SHADOW_RECORD_STAGED)
+         return true;
+
+      market_context.Refresh();
+      FalconQuoteContext quote = market_context.GetQuoteContext();
+      m_snapshot.quote_valid = quote.is_valid;
+      m_snapshot.evaluation_time = TimeCurrent();
+      if(m_shadow_record.entry_time > 0)
+         m_snapshot.elapsed_seconds = (int)(m_snapshot.evaluation_time - m_shadow_record.entry_time);
+
+      if(!quote.is_valid)
+      {
+         m_snapshot.lifecycle_status = FALCON_SHADOW_LIFECYCLE_STATUS_MONITORING;
+         m_snapshot.lifecycle_reason = "WAITING_FOR_VALID_QUOTE";
+         m_snapshot.notes = "Shadow record is staged, but no valid quote is available yet. No close is simulated.";
+         return true;
+      }
+
+      double current_price = SelectExitPrice(m_shadow_record.direction, quote);
+      m_snapshot.current_price = current_price;
+      m_snapshot.simulated_exit_price = 0.0;
+      string close_reason = "";
+      ENUM_FALCON_SHADOW_LIFECYCLE_STATUS close_status = FALCON_SHADOW_LIFECYCLE_STATUS_MONITORING;
+
+      if(ShouldCloseAtStop(current_price))
+      {
+         close_reason = "SHADOW_SL_HIT_CONSERVATIVE";
+         close_status = FALCON_SHADOW_LIFECYCLE_STATUS_CLOSED_SL;
+      }
+      else if(ShouldCloseAtTp1(current_price))
+      {
+         close_reason = "SHADOW_TP1_HIT";
+         close_status = FALCON_SHADOW_LIFECYCLE_STATUS_CLOSED_TP;
+      }
+      else if(m_snapshot.elapsed_seconds >= FALCON_SHADOW_LIFECYCLE_TIMEOUT_SECONDS)
+      {
+         close_reason = "SHADOW_TIMEOUT_CLOSE";
+         close_status = FALCON_SHADOW_LIFECYCLE_STATUS_CLOSED_TIMEOUT;
+      }
+
+      if(close_status == FALCON_SHADOW_LIFECYCLE_STATUS_MONITORING)
+      {
+         m_snapshot.lifecycle_status = FALCON_SHADOW_LIFECYCLE_STATUS_MONITORING;
+         m_snapshot.lifecycle_reason = "MONITORING_TP_SL_TIMEOUT";
+         m_snapshot.notes = "Shadow lifecycle is monitoring the staged record. No TP1, SL, or timeout close has been triggered yet.";
+         return true;
+      }
+
+      FalconSymbolContext symbol_context = market_context.GetSymbolContext();
+      if(!shadow_executor.CloseShadowRecord(m_shadow_record, current_price, close_reason, symbol_context, m_lifecycle_record))
+      {
+         Block("SHADOW_CLOSE_FAILED", "ShadowExecutor refused to close the staged Shadow record. No broker order was sent.");
+         return true;
+      }
+
+      m_has_closed_lifecycle = true;
+      m_snapshot.lifecycle_status = close_status;
+      m_snapshot.shadow_record_status = m_shadow_record.status;
+      m_snapshot.close_record_created = true;
+      m_snapshot.simulated_exit_price = current_price;
+      m_snapshot.simulated_outcome = m_lifecycle_record.outcome;
+      m_snapshot.profit_index_points = m_lifecycle_record.profit_index_points;
+      m_snapshot.loss_index_points = m_lifecycle_record.loss_index_points;
+      m_snapshot.net_index_points = m_lifecycle_record.net_index_points;
+      m_snapshot.profit_usd = m_lifecycle_record.profit_usd;
+      m_snapshot.loss_usd = m_lifecycle_record.loss_usd;
+      m_snapshot.net_usd = m_lifecycle_record.net_usd;
+      m_snapshot.close_reason = close_reason;
+      m_snapshot.lifecycle_reason = close_reason;
+      m_snapshot.notes = "Shadow-only lifecycle close was simulated and converted to a TradeLifecycleRecord. No OrderSend was used.";
+      return true;
+   }
+
+   FalconFvgMicroShadowLifecycleSnapshot GetSnapshot()
+   {
+      return m_snapshot;
+   }
+
+   bool ExtractClosedLifecycleRecord(FalconTradeLifecycleRecord &record)
+   {
+      if(!m_has_closed_lifecycle || m_closed_lifecycle_exported)
+         return false;
+      record = m_lifecycle_record;
+      m_closed_lifecycle_exported = true;
+      m_snapshot.registered_to_trade_report = true;
+      return true;
+   }
+
+private:
+   double SelectExitPrice(const ENUM_FALCON_DIRECTION direction, const FalconQuoteContext &quote)
+   {
+      if(direction == FALCON_DIRECTION_BUY)
+         return quote.bid;
+      if(direction == FALCON_DIRECTION_SELL)
+         return quote.ask;
+      if(quote.last > 0.0)
+         return quote.last;
+      return quote.bid;
+   }
+
+   bool ShouldCloseAtStop(const double price)
+   {
+      if(m_shadow_record.direction == FALCON_DIRECTION_BUY)
+         return (m_shadow_record.structural_sl > 0.0 && price <= m_shadow_record.structural_sl);
+      if(m_shadow_record.direction == FALCON_DIRECTION_SELL)
+         return (m_shadow_record.structural_sl > 0.0 && price >= m_shadow_record.structural_sl);
+      return false;
+   }
+
+   bool ShouldCloseAtTp1(const double price)
+   {
+      if(m_shadow_record.direction == FALCON_DIRECTION_BUY)
+         return (m_shadow_record.tp1 > 0.0 && price >= m_shadow_record.tp1);
+      if(m_shadow_record.direction == FALCON_DIRECTION_SELL)
+         return (m_shadow_record.tp1 > 0.0 && price <= m_shadow_record.tp1);
+      return false;
+   }
+
+   void CopyShadowFieldsToSnapshot()
+   {
+      m_snapshot.shadow_id = m_shadow_record.shadow_id;
+      m_snapshot.strategy_id = m_shadow_record.strategy_id;
+      m_snapshot.strategy_name = m_shadow_record.strategy_name;
+      m_snapshot.engine_id = m_shadow_record.engine_id;
+      m_snapshot.shadow_record_status = m_shadow_record.status;
+      m_snapshot.direction = m_shadow_record.direction;
+      m_snapshot.entry_time = m_shadow_record.entry_time;
+      m_snapshot.entry_price = m_shadow_record.entry_price;
+      m_snapshot.structural_sl = m_shadow_record.structural_sl;
+      m_snapshot.tp1 = m_shadow_record.tp1;
+      m_snapshot.tp2 = m_shadow_record.tp2;
+      m_snapshot.tp3 = m_shadow_record.tp3;
+   }
+
+   void Block(const string reason, const string notes)
+   {
+      m_snapshot.lifecycle_status = FALCON_SHADOW_LIFECYCLE_STATUS_BLOCKED;
+      m_snapshot.lifecycle_reason = reason;
+      m_snapshot.notes = notes;
+      CFalconLogger::Info(StringFormat("FVG Micro lifecycle simulation blocked. Reason=%s", reason));
+   }
+
+   void ResetLocalShadowRecord(FalconShadowTradeRecord &record)
+   {
+      record.shadow_id            = "";
+      record.strategy_id          = "";
+      record.strategy_name        = "";
+      record.engine_id            = "";
+      record.direction            = FALCON_DIRECTION_NONE;
+      record.status               = FALCON_SHADOW_RECORD_NONE;
+      record.entry_time           = 0;
+      record.exit_time            = 0;
+      record.lot_size             = 0.0;
+      record.entry_price          = 0.0;
+      record.structural_sl        = 0.0;
+      record.tp1                  = 0.0;
+      record.tp2                  = 0.0;
+      record.tp3                  = 0.0;
+      record.simulated_exit_price = 0.0;
+      record.simulated_outcome    = FALCON_TRADE_OUTCOME_UNKNOWN;
+      record.close_reason         = "";
+      record.evidence_summary     = "";
+      record.is_closed            = false;
+   }
+
+   void ResetLifecycleRecord(FalconTradeLifecycleRecord &record)
+   {
+      record.trade_id            = "";
+      record.strategy_id         = "";
+      record.strategy_name       = "";
+      record.engine_id           = "";
+      record.direction           = FALCON_DIRECTION_NONE;
+      record.stage               = FALCON_TRADE_STAGE_NONE;
+      record.outcome             = FALCON_TRADE_OUTCOME_UNKNOWN;
+      record.entry_time          = 0;
+      record.exit_time           = 0;
+      record.lot_size            = 0.0;
+      record.entry_price         = 0.0;
+      record.structural_sl       = 0.0;
+      record.tp1                 = 0.0;
+      record.tp2                 = 0.0;
+      record.tp3                 = 0.0;
+      record.exit_price          = 0.0;
+      record.profit_index_points = 0.0;
+      record.loss_index_points   = 0.0;
+      record.net_index_points    = 0.0;
+      record.profit_usd          = 0.0;
+      record.loss_usd            = 0.0;
+      record.net_usd             = 0.0;
+      record.close_reason        = "";
+      record.evidence_summary    = "";
+   }
+
+   void ResetSnapshot()
+   {
+      m_snapshot.simulator_id = "FVG_MICRO_LIFECYCLE_SIM_PHASE1";
+      m_snapshot.shadow_id = "";
+      m_snapshot.strategy_id = "";
+      m_snapshot.strategy_name = "";
+      m_snapshot.engine_id = "";
+      m_snapshot.lifecycle_status = FALCON_SHADOW_LIFECYCLE_STATUS_NOT_INITIALIZED;
+      m_snapshot.shadow_record_status = FALCON_SHADOW_RECORD_NONE;
+      m_snapshot.stager_ready = false;
+      m_snapshot.staged_to_shadow_executor = false;
+      m_snapshot.shadow_record_loaded = false;
+      m_snapshot.quote_valid = false;
+      m_snapshot.close_record_created = false;
+      m_snapshot.registered_to_trade_report = false;
+      m_snapshot.order_send_used = false;
+      m_snapshot.direction = FALCON_DIRECTION_NONE;
+      m_snapshot.entry_time = 0;
+      m_snapshot.evaluation_time = 0;
+      m_snapshot.elapsed_seconds = 0;
+      m_snapshot.entry_price = 0.0;
+      m_snapshot.structural_sl = 0.0;
+      m_snapshot.tp1 = 0.0;
+      m_snapshot.tp2 = 0.0;
+      m_snapshot.tp3 = 0.0;
+      m_snapshot.current_price = 0.0;
+      m_snapshot.simulated_exit_price = 0.0;
+      m_snapshot.simulated_outcome = FALCON_TRADE_OUTCOME_UNKNOWN;
+      m_snapshot.profit_index_points = 0.0;
+      m_snapshot.loss_index_points = 0.0;
+      m_snapshot.net_index_points = 0.0;
+      m_snapshot.profit_usd = 0.0;
+      m_snapshot.loss_usd = 0.0;
+      m_snapshot.net_usd = 0.0;
+      m_snapshot.close_reason = "";
+      m_snapshot.lifecycle_reason = "";
+      m_snapshot.notes = "";
+   }
+};
+
 // ==================================================================
 // Report Writer Foundation - append-ready CSV contracts
 // ==================================================================
@@ -3058,6 +3435,7 @@ private:
    string              m_fvg_micro_candidate_diagnostics_file;
    string              m_fvg_micro_retest_watcher_diagnostics_file;
    string              m_fvg_micro_tradeplan_staging_diagnostics_file;
+   string              m_fvg_micro_lifecycle_simulation_diagnostics_file;
    FalconSymbolContext m_symbol_context;
    FalconReportTotals  m_totals;
    bool                m_initialized;
@@ -3072,19 +3450,20 @@ public:
    bool Initialize(const FalconSymbolContext &symbol_context)
    {
       m_symbol_context     = symbol_context;
-      m_trade_report_file  = "JA_FalconCore_TradeLifecycle_v0_13_1.csv";
-      m_summary_report_file= "JA_FalconCore_Summary_v0_13_1.csv";
-      m_market_diagnostics_file = "JA_FalconCore_MarketDiagnostics_v0_13_1.csv";
-      m_candle_cache_diagnostics_file = "JA_FalconCore_CandleCacheDiagnostics_v0_13_1.csv";
-      m_evidence_diagnostics_file = "JA_FalconCore_EvidenceDiagnostics_v0_13_1.csv";
-      m_shadow_diagnostics_file = "JA_FalconCore_ShadowDiagnostics_v0_13_1.csv";
-      m_no_lookahead_diagnostics_file = "JA_FalconCore_NoLookaheadDiagnostics_v0_13_1.csv";
-      m_strategy_registry_diagnostics_file = "JA_FalconCore_StrategyRegistryDiagnostics_v0_13_1.csv";
-      m_strategy_adapter_diagnostics_file = "JA_FalconCore_StrategyAdapterDiagnostics_v0_13_1.csv";
-      m_fvg_micro_detector_diagnostics_file = "JA_FalconCore_FvgMicroDetectorDiagnostics_v0_13_1.csv";
-      m_fvg_micro_candidate_diagnostics_file = "JA_FalconCore_FvgMicroShadowCandidateDiagnostics_v0_13_1.csv";
-      m_fvg_micro_retest_watcher_diagnostics_file = "JA_FalconCore_FvgMicroRetestWatcherDiagnostics_v0_13_1.csv";
-      m_fvg_micro_tradeplan_staging_diagnostics_file = "JA_FalconCore_FvgMicroTradePlanStagingDiagnostics_v0_13_1.csv";
+      m_trade_report_file  = "JA_FalconCore_TradeLifecycle_v0_14_0.csv";
+      m_summary_report_file= "JA_FalconCore_Summary_v0_14_0.csv";
+      m_market_diagnostics_file = "JA_FalconCore_MarketDiagnostics_v0_14_0.csv";
+      m_candle_cache_diagnostics_file = "JA_FalconCore_CandleCacheDiagnostics_v0_14_0.csv";
+      m_evidence_diagnostics_file = "JA_FalconCore_EvidenceDiagnostics_v0_14_0.csv";
+      m_shadow_diagnostics_file = "JA_FalconCore_ShadowDiagnostics_v0_14_0.csv";
+      m_no_lookahead_diagnostics_file = "JA_FalconCore_NoLookaheadDiagnostics_v0_14_0.csv";
+      m_strategy_registry_diagnostics_file = "JA_FalconCore_StrategyRegistryDiagnostics_v0_14_0.csv";
+      m_strategy_adapter_diagnostics_file = "JA_FalconCore_StrategyAdapterDiagnostics_v0_14_0.csv";
+      m_fvg_micro_detector_diagnostics_file = "JA_FalconCore_FvgMicroDetectorDiagnostics_v0_14_0.csv";
+      m_fvg_micro_candidate_diagnostics_file = "JA_FalconCore_FvgMicroShadowCandidateDiagnostics_v0_14_0.csv";
+      m_fvg_micro_retest_watcher_diagnostics_file = "JA_FalconCore_FvgMicroRetestWatcherDiagnostics_v0_14_0.csv";
+      m_fvg_micro_tradeplan_staging_diagnostics_file = "JA_FalconCore_FvgMicroTradePlanStagingDiagnostics_v0_14_0.csv";
+      m_fvg_micro_lifecycle_simulation_diagnostics_file = "JA_FalconCore_FvgMicroLifecycleSimulationDiagnostics_v0_14_0.csv";
       ResetTotals();
 
       if(EnableMainReport)
@@ -3746,6 +4125,76 @@ public:
       CFalconLogger::Info(StringFormat("FVG Micro TradePlan staging dry-run diagnostics snapshot written: %s", m_fvg_micro_tradeplan_staging_diagnostics_file));
    }
 
+   void WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(CFalconFvgMicroShadowLifecycleSimulation &simulator)
+   {
+      if(!m_initialized || !EnableFvgMicroLifecycleSimulationDiagnosticsReport)
+         return;
+
+      int handle = FileOpen(m_fvg_micro_lifecycle_simulation_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not write FVG Micro lifecycle simulation diagnostics report: %s", m_fvg_micro_lifecycle_simulation_diagnostics_file));
+         return;
+      }
+
+      FalconFvgMicroShadowLifecycleSnapshot snapshot = simulator.GetSnapshot();
+      FileWrite(handle,
+                "EAName", "Version", "Build", "Symbol", "GeneratedAt",
+                "SimulatorId", "LifecycleStatus", "ShadowStatus", "ShadowId",
+                "StrategyId", "StrategyName", "EngineId", "Direction",
+                "StagerReady", "StagedToShadowExecutor", "ShadowRecordLoaded", "QuoteValid",
+                "CloseRecordCreated", "RegisteredToTradeReport", "OrderSendUsed",
+                "EntryTime", "EvaluationTime", "ElapsedSeconds",
+                "Entry", "SL", "TP1", "TP2", "TP3", "CurrentPrice", "ExitPrice",
+                "Outcome", "ProfitIndexPoints", "LoseIndexPoints", "NetIndexPoints",
+                "ProfitUSD", "LoseUSD", "NetUSD", "CloseReason", "LifecycleReason", "Notes");
+
+      FileWrite(handle,
+                EA_NAME,
+                EA_VERSION_TAG,
+                EA_BUILD_TAG,
+                m_symbol_context.symbol,
+                FalconTimeToString(TimeCurrent()),
+                snapshot.simulator_id,
+                FalconShadowLifecycleStatusToString(snapshot.lifecycle_status),
+                FalconShadowStatusToString(snapshot.shadow_record_status),
+                snapshot.shadow_id,
+                snapshot.strategy_id,
+                snapshot.strategy_name,
+                snapshot.engine_id,
+                FalconDirectionToString(snapshot.direction),
+                (snapshot.stager_ready ? "true" : "false"),
+                (snapshot.staged_to_shadow_executor ? "true" : "false"),
+                (snapshot.shadow_record_loaded ? "true" : "false"),
+                (snapshot.quote_valid ? "true" : "false"),
+                (snapshot.close_record_created ? "true" : "false"),
+                (snapshot.registered_to_trade_report ? "true" : "false"),
+                (snapshot.order_send_used ? "true" : "false"),
+                FalconTimeToString(snapshot.entry_time),
+                FalconTimeToString(snapshot.evaluation_time),
+                snapshot.elapsed_seconds,
+                DoubleToString(snapshot.entry_price, m_symbol_context.digits),
+                DoubleToString(snapshot.structural_sl, m_symbol_context.digits),
+                DoubleToString(snapshot.tp1, m_symbol_context.digits),
+                DoubleToString(snapshot.tp2, m_symbol_context.digits),
+                DoubleToString(snapshot.tp3, m_symbol_context.digits),
+                DoubleToString(snapshot.current_price, m_symbol_context.digits),
+                DoubleToString(snapshot.simulated_exit_price, m_symbol_context.digits),
+                FalconOutcomeToString(snapshot.simulated_outcome),
+                DoubleToString(snapshot.profit_index_points, 2),
+                DoubleToString(snapshot.loss_index_points, 2),
+                DoubleToString(snapshot.net_index_points, 2),
+                DoubleToString(snapshot.profit_usd, 2),
+                DoubleToString(snapshot.loss_usd, 2),
+                DoubleToString(snapshot.net_usd, 2),
+                snapshot.close_reason,
+                snapshot.lifecycle_reason,
+                snapshot.notes);
+
+      FileClose(handle);
+      CFalconLogger::Info(StringFormat("FVG Micro lifecycle simulation diagnostics snapshot written: %s", m_fvg_micro_lifecycle_simulation_diagnostics_file));
+   }
+
    void RegisterClosedTrade(FalconTradeLifecycleRecord &record)
    {
       if(!m_initialized || !EnableMainReport)
@@ -3934,20 +4383,20 @@ private:
 };
 
 // ==================================================================
-// Execution Guard - real trading intentionally impossible in v0.13.1.
+// Execution Guard - real trading intentionally impossible in v0.14.0.
 // ==================================================================
 class CFalconExecutionGuard
 {
 public:
    bool CanSendRealOrders()
    {
-      // v0.13.1 is a Shadow Engine Framework foundation build. Real execution is not allowed even if the input is changed.
+      // v0.14.0 is a Shadow lifecycle simulation build. Real execution is not allowed even if the input is changed.
       return false;
    }
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.13.1.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.14.0.");
    }
 };
 
@@ -3966,6 +4415,7 @@ CFalconFvgMicroShadowDetectorStub g_fvg_micro_detector_stub;
 CFalconFvgMicroShadowCandidateBuilder g_fvg_micro_candidate_builder;
 CFalconFvgMicroRetestWatcher g_fvg_micro_retest_watcher;
 CFalconFvgMicroTradePlanStagingDryRun g_fvg_micro_tradeplan_stager;
+CFalconFvgMicroShadowLifecycleSimulation g_fvg_micro_lifecycle_simulator;
 CFalconReportWriter      g_report_writer;
 CFalconExecutionGuard    g_execution_guard;
 bool                     g_is_initialized = false;
@@ -3978,7 +4428,7 @@ int OnInit()
    PrintFormat("============================================================");
    PrintFormat("%s", EA_NAME);
    PrintFormat("Version: %s | Build: %s", EA_VERSION_TAG, EA_BUILD_TAG);
-   PrintFormat("Stage: FVG Micro Shadow TradePlan Staging Dry Run / Shadow-only / No real execution");
+   PrintFormat("Stage: FVG Micro Shadow Trade Lifecycle Simulation / Shadow-only / No real execution");
    PrintFormat("============================================================");
 
    if(!g_market_context.Initialize())
@@ -4024,6 +4474,13 @@ int OnInit()
       return INIT_FAILED;
    g_report_writer.WriteFvgMicroTradePlanStagingDiagnosticsSnapshot(g_fvg_micro_tradeplan_stager);
 
+   if(!g_fvg_micro_lifecycle_simulator.Initialize(g_fvg_micro_tradeplan_stager, g_market_context, g_shadow_executor))
+      return INIT_FAILED;
+   FalconTradeLifecycleRecord lifecycle_record_on_init;
+   if(g_fvg_micro_lifecycle_simulator.ExtractClosedLifecycleRecord(lifecycle_record_on_init))
+      g_report_writer.RegisterClosedTrade(lifecycle_record_on_init);
+   g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
+
    if(!g_first_strategy_adapter.Initialize(g_strategy_registry, g_runtime_safety_guard, g_shadow_executor))
       return INIT_FAILED;
    g_report_writer.WriteStrategyAdapterDiagnosticsSnapshot(g_first_strategy_adapter);
@@ -4047,7 +4504,15 @@ void OnTick()
    if(!g_is_initialized)
       return;
 
-   // v0.13.1 runs the FVG Micro detector, candidate builder, retest watcher, and TradePlan staging dry run during initialization. It may stage a Shadow-only TradePlan if all guards pass; it does not send orders.
+   // v0.14.0 monitors a staged Shadow record and can close it diagnostically at TP1/SL/timeout.
+   // Broker execution remains impossible. No OrderSend is used.
+   g_fvg_micro_lifecycle_simulator.Refresh(g_market_context, g_shadow_executor);
+
+   FalconTradeLifecycleRecord lifecycle_record;
+   if(g_fvg_micro_lifecycle_simulator.ExtractClosedLifecycleRecord(lifecycle_record))
+      g_report_writer.RegisterClosedTrade(lifecycle_record);
+   g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
+
    // Future pipeline:
    // MarketContext -> CandleCache -> Narrative -> StrategyEngine -> Evidence -> Guard -> TradePlan -> Shadow/Paper/Demo/Live Executor -> ReportWriter
    return;
