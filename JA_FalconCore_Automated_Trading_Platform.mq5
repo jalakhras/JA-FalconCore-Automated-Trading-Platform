@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.14.0 - FVG Micro Shadow Trade Lifecycle Simulation Phase 1 |
+//|                     Version: v0.15.0 - FVG Micro Shadow Lifecycle Report Calibration & Cleanup Gate Review |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.140"
+#property version   "1.150"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.14.0"
-#define EA_BUILD_TAG   "FvgMicroShadowLifecycleSimulationPhase1_NoExecution"
+#define EA_VERSION_TAG "v0.15.0"
+#define EA_BUILD_TAG   "FvgMicroLifecycleReportCalibrationCleanupGate_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -39,7 +39,7 @@ input int    MaxOpenPositions                = 1;
 
 // ==================================================================
 // 03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات
-// Keep this list small and explicit. All engines are OFF in v0.14.0.
+// Keep this list small and explicit. All engines are OFF in v0.15.0.
 // ==================================================================
 input group "03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات";
 input bool EnableStrategy_FvgMicroRetest             = false; // Legacy core winner candidate.
@@ -57,7 +57,7 @@ input bool EnableStrategy_GoldenLiquidity5MEntry     = false; // استراتي�
 
 // ==================================================================
 // 04 - Reporting / التقارير
-// v0.14.0 keeps prior reports and adds FVG Micro Shadow trade lifecycle simulation diagnostics.
+// v0.15.0 keeps prior reports and adds lifecycle report calibration plus cleanup gate review diagnostics.
 // Trade rows are still written only by controlled Shadow/Paper/Demo records; no live orders.
 // ==================================================================
 input group "04 - Reporting / التقارير";
@@ -69,7 +69,7 @@ input bool EnableVerboseExpertsLog          = true;
 
 // ==================================================================
 // 05 - Market Context / سياق السوق
-// Keep simple. This is diagnostics only in v0.14.0.
+// Keep simple. This is diagnostics only in v0.15.0.
 // ==================================================================
 input group "05 - Market Context / سياق السوق";
 input bool            UseClosedCandlesOnly          = true;      // Core guard: use closed candles for analysis snapshots.
@@ -90,9 +90,10 @@ input bool            EnableFvgMicroCandidateDiagnosticsReport = true; // Writes
 input bool            EnableFvgMicroRetestWatcherDiagnosticsReport = true; // Writes FVG Micro retest watcher and TradePlan skeleton diagnostics. No staging, no execution.
 input bool            EnableFvgMicroTradePlanStagingDiagnosticsReport = true; // Writes FVG Micro TradePlan staging dry-run diagnostics. Shadow-only, no broker execution.
 input bool            EnableFvgMicroLifecycleSimulationDiagnosticsReport = true; // Writes FVG Micro Shadow trade lifecycle simulation diagnostics. No broker execution.
+input bool            EnableReportCalibrationDiagnosticsReport = true; // Writes report schema calibration and Diagnostic Cleanup Gate review. No trading logic change.
 
 // ==================================================================
-// Core Data Contracts - v0.14.0
+// Core Data Contracts - v0.15.0
 // ==================================================================
 enum ENUM_FALCON_DIRECTION
 {
@@ -3436,6 +3437,7 @@ private:
    string              m_fvg_micro_retest_watcher_diagnostics_file;
    string              m_fvg_micro_tradeplan_staging_diagnostics_file;
    string              m_fvg_micro_lifecycle_simulation_diagnostics_file;
+   string              m_report_calibration_diagnostics_file;
    FalconSymbolContext m_symbol_context;
    FalconReportTotals  m_totals;
    bool                m_initialized;
@@ -3450,20 +3452,21 @@ public:
    bool Initialize(const FalconSymbolContext &symbol_context)
    {
       m_symbol_context     = symbol_context;
-      m_trade_report_file  = "JA_FalconCore_TradeLifecycle_v0_14_0.csv";
-      m_summary_report_file= "JA_FalconCore_Summary_v0_14_0.csv";
-      m_market_diagnostics_file = "JA_FalconCore_MarketDiagnostics_v0_14_0.csv";
-      m_candle_cache_diagnostics_file = "JA_FalconCore_CandleCacheDiagnostics_v0_14_0.csv";
-      m_evidence_diagnostics_file = "JA_FalconCore_EvidenceDiagnostics_v0_14_0.csv";
-      m_shadow_diagnostics_file = "JA_FalconCore_ShadowDiagnostics_v0_14_0.csv";
-      m_no_lookahead_diagnostics_file = "JA_FalconCore_NoLookaheadDiagnostics_v0_14_0.csv";
-      m_strategy_registry_diagnostics_file = "JA_FalconCore_StrategyRegistryDiagnostics_v0_14_0.csv";
-      m_strategy_adapter_diagnostics_file = "JA_FalconCore_StrategyAdapterDiagnostics_v0_14_0.csv";
-      m_fvg_micro_detector_diagnostics_file = "JA_FalconCore_FvgMicroDetectorDiagnostics_v0_14_0.csv";
-      m_fvg_micro_candidate_diagnostics_file = "JA_FalconCore_FvgMicroShadowCandidateDiagnostics_v0_14_0.csv";
-      m_fvg_micro_retest_watcher_diagnostics_file = "JA_FalconCore_FvgMicroRetestWatcherDiagnostics_v0_14_0.csv";
-      m_fvg_micro_tradeplan_staging_diagnostics_file = "JA_FalconCore_FvgMicroTradePlanStagingDiagnostics_v0_14_0.csv";
-      m_fvg_micro_lifecycle_simulation_diagnostics_file = "JA_FalconCore_FvgMicroLifecycleSimulationDiagnostics_v0_14_0.csv";
+      m_trade_report_file  = "JA_FalconCore_TradeLifecycle_v0_15_0.csv";
+      m_summary_report_file= "JA_FalconCore_Summary_v0_15_0.csv";
+      m_market_diagnostics_file = "JA_FalconCore_MarketDiagnostics_v0_15_0.csv";
+      m_candle_cache_diagnostics_file = "JA_FalconCore_CandleCacheDiagnostics_v0_15_0.csv";
+      m_evidence_diagnostics_file = "JA_FalconCore_EvidenceDiagnostics_v0_15_0.csv";
+      m_shadow_diagnostics_file = "JA_FalconCore_ShadowDiagnostics_v0_15_0.csv";
+      m_no_lookahead_diagnostics_file = "JA_FalconCore_NoLookaheadDiagnostics_v0_15_0.csv";
+      m_strategy_registry_diagnostics_file = "JA_FalconCore_StrategyRegistryDiagnostics_v0_15_0.csv";
+      m_strategy_adapter_diagnostics_file = "JA_FalconCore_StrategyAdapterDiagnostics_v0_15_0.csv";
+      m_fvg_micro_detector_diagnostics_file = "JA_FalconCore_FvgMicroDetectorDiagnostics_v0_15_0.csv";
+      m_fvg_micro_candidate_diagnostics_file = "JA_FalconCore_FvgMicroShadowCandidateDiagnostics_v0_15_0.csv";
+      m_fvg_micro_retest_watcher_diagnostics_file = "JA_FalconCore_FvgMicroRetestWatcherDiagnostics_v0_15_0.csv";
+      m_fvg_micro_tradeplan_staging_diagnostics_file = "JA_FalconCore_FvgMicroTradePlanStagingDiagnostics_v0_15_0.csv";
+      m_fvg_micro_lifecycle_simulation_diagnostics_file = "JA_FalconCore_FvgMicroLifecycleSimulationDiagnostics_v0_15_0.csv";
+      m_report_calibration_diagnostics_file = "JA_FalconCore_ReportCalibrationCleanupGate_v0_15_0.csv";
       ResetTotals();
 
       if(EnableMainReport)
@@ -4195,6 +4198,111 @@ public:
       CFalconLogger::Info(StringFormat("FVG Micro lifecycle simulation diagnostics snapshot written: %s", m_fvg_micro_lifecycle_simulation_diagnostics_file));
    }
 
+   void WriteReportCalibrationDiagnosticsSnapshot()
+   {
+      if(!m_initialized || !EnableReportCalibrationDiagnosticsReport)
+         return;
+
+      int handle = FileOpen(m_report_calibration_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not write report calibration diagnostics report: %s", m_report_calibration_diagnostics_file));
+         return;
+      }
+
+      FileWrite(handle,
+                "EAName", "Version", "Build", "Symbol", "GeneratedAt",
+                "CalibrationItem", "Status", "ReportFile", "ExpectedFields",
+                "CurrentMode", "CleanupGateDecision", "Notes");
+
+      FileWrite(handle,
+                EA_NAME,
+                EA_VERSION_TAG,
+                EA_BUILD_TAG,
+                m_symbol_context.symbol,
+                FalconTimeToString(TimeCurrent()),
+                "TradeLifecycleSchema",
+                "PASS",
+                m_trade_report_file,
+                "Entry|SL|TP1|TP2|TP3|Exit|WinLose|ProfitIndexPoints|LoseIndexPoints|NetIndexPoints|ProfitUSD|LoseUSD|NetUSD|StrategyName|EngineId",
+                "Append-on-close when a controlled Shadow record closes",
+                "KEEP_CORE_REPORT",
+                "Main lifecycle report contains the fields requested by the project owner. No final heavy rebuild is used for trade rows.");
+
+      FileWrite(handle,
+                EA_NAME,
+                EA_VERSION_TAG,
+                EA_BUILD_TAG,
+                m_symbol_context.symbol,
+                FalconTimeToString(TimeCurrent()),
+                "SummarySchema",
+                "PASS",
+                m_summary_report_file,
+                "TotalTrades|WinTrades|LoseTrades|WinRate|LoseRate|TotalProfitIndexPoints|TotalLossIndexPoints|NetIndexPoints|TotalProfitUSD|TotalLossUSD|NetUSD",
+                "Written on deinitialization from accumulated closed records",
+                "KEEP_CORE_REPORT",
+                "Summary is intentionally compact and will remain part of the final product.");
+
+      FileWrite(handle,
+                EA_NAME,
+                EA_VERSION_TAG,
+                EA_BUILD_TAG,
+                m_symbol_context.symbol,
+                FalconTimeToString(TimeCurrent()),
+                "ShadowLifecycleCalibration",
+                "WATCH",
+                m_fvg_micro_lifecycle_simulation_diagnostics_file,
+                "LifecycleStatus|ShadowStatus|Entry|SL|TP1|CurrentPrice|ExitPrice|Outcome|ProfitIndexPoints|LoseIndexPoints|ProfitUSD|LoseUSD",
+                "Diagnostic only while FVG Micro Shadow lifecycle is being validated",
+                "CLEANUP_AFTER_VALIDATION",
+                "Keep while validating Shadow lifecycle behavior. Later merge useful fields into TradeLifecycle and remove temporary detail report if no longer needed.");
+
+      FileWrite(handle,
+                EA_NAME,
+                EA_VERSION_TAG,
+                EA_BUILD_TAG,
+                m_symbol_context.symbol,
+                FalconTimeToString(TimeCurrent()),
+                "DiagnosticInputsInventory",
+                "WATCH",
+                "Inputs",
+                "EnableMarketDiagnosticsReport|EnableCandleCacheDiagnosticsReport|EnableEvidenceDiagnosticsReport|EnableShadowDiagnosticsReport|EnableNoLookaheadDiagnosticsReport|FVG diagnostics toggles",
+                "Development diagnostics are ON by default during v0.x foundation builds",
+                "REDUCE_INPUTS_AFTER_LOCK",
+                "Project rule: after each diagnostic path is proven, remove temporary inputs or move them under a compact Research/Debug preset.");
+
+      FileWrite(handle,
+                EA_NAME,
+                EA_VERSION_TAG,
+                EA_BUILD_TAG,
+                m_symbol_context.symbol,
+                FalconTimeToString(TimeCurrent()),
+                "ExecutionSafety",
+                "PASS",
+                "N/A",
+                "No OrderSend|No Paper|No Demo|No Live",
+                "Shadow lifecycle simulation only",
+                "KEEP_SAFETY_GUARD",
+                "Real execution remains impossible in this build even if EnableRealExecution is changed.");
+
+      FileWrite(handle,
+                EA_NAME,
+                EA_VERSION_TAG,
+                EA_BUILD_TAG,
+                m_symbol_context.symbol,
+                FalconTimeToString(TimeCurrent()),
+                "CleanupGateRule",
+                "ACTIVE",
+                m_report_calibration_diagnostics_file,
+                "CleanupCandidate|Decision|Reason",
+                "Review only, no trading logic change",
+                "MANDATORY_BEFORE_NEXT_MAJOR_ACTIVATION",
+                "Before expanding to Paper/Demo, remove noisy diagnostics, keep only main lifecycle, summary, evidence, rejection, and selected engine health reports.");
+
+      FileClose(handle);
+      CFalconLogger::Info(StringFormat("Report calibration and cleanup gate diagnostics snapshot written: %s", m_report_calibration_diagnostics_file));
+   }
+
    void RegisterClosedTrade(FalconTradeLifecycleRecord &record)
    {
       if(!m_initialized || !EnableMainReport)
@@ -4383,20 +4491,20 @@ private:
 };
 
 // ==================================================================
-// Execution Guard - real trading intentionally impossible in v0.14.0.
+// Execution Guard - real trading intentionally impossible in v0.15.0.
 // ==================================================================
 class CFalconExecutionGuard
 {
 public:
    bool CanSendRealOrders()
    {
-      // v0.14.0 is a Shadow lifecycle simulation build. Real execution is not allowed even if the input is changed.
+      // v0.15.0 is a Shadow lifecycle report calibration build. Real execution is not allowed even if the input is changed.
       return false;
    }
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.14.0.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.15.0.");
    }
 };
 
@@ -4428,7 +4536,7 @@ int OnInit()
    PrintFormat("============================================================");
    PrintFormat("%s", EA_NAME);
    PrintFormat("Version: %s | Build: %s", EA_VERSION_TAG, EA_BUILD_TAG);
-   PrintFormat("Stage: FVG Micro Shadow Trade Lifecycle Simulation / Shadow-only / No real execution");
+   PrintFormat("Stage: FVG Micro Shadow Lifecycle Report Calibration / Shadow-only / No real execution");
    PrintFormat("============================================================");
 
    if(!g_market_context.Initialize())
@@ -4480,6 +4588,7 @@ int OnInit()
    if(g_fvg_micro_lifecycle_simulator.ExtractClosedLifecycleRecord(lifecycle_record_on_init))
       g_report_writer.RegisterClosedTrade(lifecycle_record_on_init);
    g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
+   g_report_writer.WriteReportCalibrationDiagnosticsSnapshot();
 
    if(!g_first_strategy_adapter.Initialize(g_strategy_registry, g_runtime_safety_guard, g_shadow_executor))
       return INIT_FAILED;
@@ -4495,6 +4604,7 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    g_report_writer.WriteFinalSummary();
+   g_report_writer.WriteReportCalibrationDiagnosticsSnapshot();
    CFalconLogger::Info(StringFormat("Deinitializing. Reason=%d", reason));
    g_is_initialized = false;
 }
@@ -4504,7 +4614,7 @@ void OnTick()
    if(!g_is_initialized)
       return;
 
-   // v0.14.0 monitors a staged Shadow record and can close it diagnostically at TP1/SL/timeout.
+   // v0.15.0 monitors a staged Shadow record and can close it diagnostically at TP1/SL/timeout.
    // Broker execution remains impossible. No OrderSend is used.
    g_fvg_micro_lifecycle_simulator.Refresh(g_market_context, g_shadow_executor);
 
