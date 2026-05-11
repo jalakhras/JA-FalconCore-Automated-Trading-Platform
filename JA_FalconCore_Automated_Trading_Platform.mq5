@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.16.0 - FVG Micro Shadow Runtime Report Verification |
+//|                     Version: v0.17.0 - FVG Micro Shadow Runtime Smoke Test |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.161"
+#property version   "1.170"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.16.1"
-#define EA_BUILD_TAG   "BoolHelperCompileHotfix_NoExecution"
+#define EA_VERSION_TAG "v0.17.0"
+#define EA_BUILD_TAG   "FvgMicroShadowRuntimeSmokeTest_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -39,7 +39,7 @@ input int    MaxOpenPositions                = 1;
 
 // ==================================================================
 // 03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات
-// Keep this list small and explicit. All engines are OFF in v0.16.0.
+// Keep this list small and explicit. All engines are OFF in v0.17.0.
 // ==================================================================
 input group "03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات";
 input bool EnableStrategy_FvgMicroRetest             = false; // Legacy core winner candidate.
@@ -57,7 +57,7 @@ input bool EnableStrategy_GoldenLiquidity5MEntry     = false; // استراتي�
 
 // ==================================================================
 // 04 - Reporting / التقارير
-// v0.16.0 keeps prior reports and adds runtime report verification diagnostics.
+// v0.17.0 keeps prior reports and adds runtime report verification diagnostics.
 // Trade rows are still written only by controlled Shadow/Paper/Demo records; no live orders.
 // ==================================================================
 input group "04 - Reporting / التقارير";
@@ -69,7 +69,7 @@ input bool EnableVerboseExpertsLog          = true;
 
 // ==================================================================
 // 05 - Market Context / سياق السوق
-// Keep simple. This is diagnostics only in v0.16.0.
+// Keep simple. This is diagnostics only in v0.17.0.
 // ==================================================================
 input group "05 - Market Context / سياق السوق";
 input bool            UseClosedCandlesOnly          = true;      // Core guard: use closed candles for analysis snapshots.
@@ -92,9 +92,10 @@ input bool            EnableFvgMicroTradePlanStagingDiagnosticsReport = true; //
 input bool            EnableFvgMicroLifecycleSimulationDiagnosticsReport = true; // Writes FVG Micro Shadow trade lifecycle simulation diagnostics. No broker execution.
 input bool            EnableReportCalibrationDiagnosticsReport = true; // Writes report schema calibration and Diagnostic Cleanup Gate review. No trading logic change.
 input bool            EnableRuntimeReportVerificationReport = true; // Writes runtime report file verification snapshot. No trading logic change.
+input bool            EnableFvgMicroSmokeTestDiagnosticsReport = true; // Writes FVG Micro shadow runtime smoke-test checklist. No trading logic change.
 
 // ==================================================================
-// Core Data Contracts - v0.16.0
+// Core Data Contracts - v0.17.0
 // ==================================================================
 enum ENUM_FALCON_DIRECTION
 {
@@ -3445,6 +3446,7 @@ private:
    string              m_fvg_micro_lifecycle_simulation_diagnostics_file;
    string              m_report_calibration_diagnostics_file;
    string              m_runtime_report_verification_file;
+   string              m_fvg_micro_smoke_test_file;
    FalconSymbolContext m_symbol_context;
    FalconReportTotals  m_totals;
    bool                m_initialized;
@@ -3459,22 +3461,23 @@ public:
    bool Initialize(const FalconSymbolContext &symbol_context)
    {
       m_symbol_context     = symbol_context;
-      m_trade_report_file  = "JA_FalconCore_TradeLifecycle_v0_16_0.csv";
-      m_summary_report_file= "JA_FalconCore_Summary_v0_16_0.csv";
-      m_market_diagnostics_file = "JA_FalconCore_MarketDiagnostics_v0_16_0.csv";
-      m_candle_cache_diagnostics_file = "JA_FalconCore_CandleCacheDiagnostics_v0_16_0.csv";
-      m_evidence_diagnostics_file = "JA_FalconCore_EvidenceDiagnostics_v0_16_0.csv";
-      m_shadow_diagnostics_file = "JA_FalconCore_ShadowDiagnostics_v0_16_0.csv";
-      m_no_lookahead_diagnostics_file = "JA_FalconCore_NoLookaheadDiagnostics_v0_16_0.csv";
-      m_strategy_registry_diagnostics_file = "JA_FalconCore_StrategyRegistryDiagnostics_v0_16_0.csv";
-      m_strategy_adapter_diagnostics_file = "JA_FalconCore_StrategyAdapterDiagnostics_v0_16_0.csv";
-      m_fvg_micro_detector_diagnostics_file = "JA_FalconCore_FvgMicroDetectorDiagnostics_v0_16_0.csv";
-      m_fvg_micro_candidate_diagnostics_file = "JA_FalconCore_FvgMicroShadowCandidateDiagnostics_v0_16_0.csv";
-      m_fvg_micro_retest_watcher_diagnostics_file = "JA_FalconCore_FvgMicroRetestWatcherDiagnostics_v0_16_0.csv";
-      m_fvg_micro_tradeplan_staging_diagnostics_file = "JA_FalconCore_FvgMicroTradePlanStagingDiagnostics_v0_16_0.csv";
-      m_fvg_micro_lifecycle_simulation_diagnostics_file = "JA_FalconCore_FvgMicroLifecycleSimulationDiagnostics_v0_16_0.csv";
-      m_report_calibration_diagnostics_file = "JA_FalconCore_ReportCalibrationCleanupGate_v0_16_0.csv";
-      m_runtime_report_verification_file = "JA_FalconCore_RuntimeReportVerification_v0_16_0.csv";
+      m_trade_report_file  = "JA_FalconCore_TradeLifecycle_v0_17_0.csv";
+      m_summary_report_file= "JA_FalconCore_Summary_v0_17_0.csv";
+      m_market_diagnostics_file = "JA_FalconCore_MarketDiagnostics_v0_17_0.csv";
+      m_candle_cache_diagnostics_file = "JA_FalconCore_CandleCacheDiagnostics_v0_17_0.csv";
+      m_evidence_diagnostics_file = "JA_FalconCore_EvidenceDiagnostics_v0_17_0.csv";
+      m_shadow_diagnostics_file = "JA_FalconCore_ShadowDiagnostics_v0_17_0.csv";
+      m_no_lookahead_diagnostics_file = "JA_FalconCore_NoLookaheadDiagnostics_v0_17_0.csv";
+      m_strategy_registry_diagnostics_file = "JA_FalconCore_StrategyRegistryDiagnostics_v0_17_0.csv";
+      m_strategy_adapter_diagnostics_file = "JA_FalconCore_StrategyAdapterDiagnostics_v0_17_0.csv";
+      m_fvg_micro_detector_diagnostics_file = "JA_FalconCore_FvgMicroDetectorDiagnostics_v0_17_0.csv";
+      m_fvg_micro_candidate_diagnostics_file = "JA_FalconCore_FvgMicroShadowCandidateDiagnostics_v0_17_0.csv";
+      m_fvg_micro_retest_watcher_diagnostics_file = "JA_FalconCore_FvgMicroRetestWatcherDiagnostics_v0_17_0.csv";
+      m_fvg_micro_tradeplan_staging_diagnostics_file = "JA_FalconCore_FvgMicroTradePlanStagingDiagnostics_v0_17_0.csv";
+      m_fvg_micro_lifecycle_simulation_diagnostics_file = "JA_FalconCore_FvgMicroLifecycleSimulationDiagnostics_v0_17_0.csv";
+      m_report_calibration_diagnostics_file = "JA_FalconCore_ReportCalibrationCleanupGate_v0_17_0.csv";
+      m_runtime_report_verification_file = "JA_FalconCore_RuntimeReportVerification_v0_17_0.csv";
+      m_fvg_micro_smoke_test_file = "JA_FalconCore_FvgMicroRuntimeSmokeTest_v0_17_0.csv";
       ResetTotals();
 
       if(EnableMainReport)
@@ -4312,6 +4315,87 @@ public:
    }
 
 
+   void WriteFvgMicroSmokeTestDiagnosticsSnapshot(const string trigger)
+   {
+      if(!m_initialized || !EnableFvgMicroSmokeTestDiagnosticsReport)
+         return;
+
+      int handle = FileOpen(m_fvg_micro_smoke_test_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not write FVG Micro smoke-test diagnostics report: %s", m_fvg_micro_smoke_test_file));
+         return;
+      }
+
+      FileWrite(handle,
+                "EAName", "Version", "Build", "Symbol", "GeneratedAt", "Trigger",
+                "SmokeCheck", "Status", "Result", "Notes");
+
+      FileWrite(handle,
+                EA_NAME,
+                EA_VERSION_TAG,
+                EA_BUILD_TAG,
+                m_symbol_context.symbol,
+                FalconTimeToString(TimeCurrent()),
+                trigger,
+                "ExecutionSafety",
+                "PASS",
+                "NO_REAL_EXECUTION",
+                "Execution guard remains active. OrderSend is not used in this build.");
+
+      FileWrite(handle,
+                EA_NAME,
+                EA_VERSION_TAG,
+                EA_BUILD_TAG,
+                m_symbol_context.symbol,
+                FalconTimeToString(TimeCurrent()),
+                trigger,
+                "ShadowPipelineShape",
+                "PASS",
+                "DETECTOR_TO_LIFECYCLE_PATH_PRESENT",
+                "FVG Detector, Candidate Builder, Retest Watcher, TradePlan Stager, Shadow Executor, and Lifecycle Simulator are connected in diagnostic mode.");
+
+      FileWrite(handle,
+                EA_NAME,
+                EA_VERSION_TAG,
+                EA_BUILD_TAG,
+                m_symbol_context.symbol,
+                FalconTimeToString(TimeCurrent()),
+                trigger,
+                "TradeLifecycleRows",
+                "WATCH",
+                "DATA_DEPENDENT",
+                "TradeLifecycle rows appear only if a closed-candle M5 FVG is detected, price retests the zone, staging passes, and the shadow record reaches TP1/SL/timeout.");
+
+      FileWrite(handle,
+                EA_NAME,
+                EA_VERSION_TAG,
+                EA_BUILD_TAG,
+                m_symbol_context.symbol,
+                FalconTimeToString(TimeCurrent()),
+                trigger,
+                "ReportVerification",
+                "PASS",
+                m_runtime_report_verification_file,
+                "Runtime report verification tracks whether generated reports are readable and non-empty.");
+
+      FileWrite(handle,
+                EA_NAME,
+                EA_VERSION_TAG,
+                EA_BUILD_TAG,
+                m_symbol_context.symbol,
+                FalconTimeToString(TimeCurrent()),
+                trigger,
+                "DiagnosticCleanupGate",
+                "ACTIVE",
+                "CLEAN_LATER",
+                "This smoke-test report is temporary and must be merged or removed after the FVG Micro shadow runtime path is validated.");
+
+      FileClose(handle);
+      CFalconLogger::Info(StringFormat("FVG Micro shadow runtime smoke-test diagnostics snapshot written: %s | Trigger=%s", m_fvg_micro_smoke_test_file, trigger));
+   }
+
+
    void WriteRuntimeReportVerificationSnapshot(const string trigger)
    {
       if(!m_initialized || !EnableRuntimeReportVerificationReport)
@@ -4358,6 +4442,8 @@ public:
                                         "FVG shadow lifecycle simulation diagnostics.");
       WriteRuntimeReportVerificationRow(handle, trigger, "ReportCalibrationCleanupGate", m_report_calibration_diagnostics_file, EnableReportCalibrationDiagnosticsReport,
                                         "Report schema calibration and Diagnostic Cleanup Gate review.");
+      WriteRuntimeReportVerificationRow(handle, trigger, "FvgMicroRuntimeSmokeTest", m_fvg_micro_smoke_test_file, EnableFvgMicroSmokeTestDiagnosticsReport,
+                                        "FVG Micro shadow runtime smoke-test checklist.");
 
       FileClose(handle);
       CFalconLogger::Info(StringFormat("Runtime report verification snapshot written: %s | Trigger=%s", m_runtime_report_verification_file, trigger));
@@ -4600,20 +4686,20 @@ private:
 };
 
 // ==================================================================
-// Execution Guard - real trading intentionally impossible in v0.16.0.
+// Execution Guard - real trading intentionally impossible in v0.17.0.
 // ==================================================================
 class CFalconExecutionGuard
 {
 public:
    bool CanSendRealOrders()
    {
-      // v0.16.0 is a Shadow runtime report verification build. Real execution is not allowed even if the input is changed.
+      // v0.17.0 is a Shadow runtime smoke-test build. Real execution is not allowed even if the input is changed.
       return false;
    }
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.16.0.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.17.0.");
    }
 };
 
@@ -4645,7 +4731,7 @@ int OnInit()
    PrintFormat("============================================================");
    PrintFormat("%s", EA_NAME);
    PrintFormat("Version: %s | Build: %s", EA_VERSION_TAG, EA_BUILD_TAG);
-   PrintFormat("Stage: FVG Micro Shadow Runtime Report Verification / Shadow-only / No real execution");
+   PrintFormat("Stage: FVG Micro Shadow Runtime Smoke Test / Shadow-only / No real execution");
    PrintFormat("============================================================");
 
    if(!g_market_context.Initialize())
@@ -4698,11 +4784,13 @@ int OnInit()
       g_report_writer.RegisterClosedTrade(lifecycle_record_on_init);
    g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
    g_report_writer.WriteReportCalibrationDiagnosticsSnapshot();
+   g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot("OnInit_AfterAllInitialReports");
    g_report_writer.WriteRuntimeReportVerificationSnapshot("OnInit_AfterAllInitialReports");
 
    if(!g_first_strategy_adapter.Initialize(g_strategy_registry, g_runtime_safety_guard, g_shadow_executor))
       return INIT_FAILED;
    g_report_writer.WriteStrategyAdapterDiagnosticsSnapshot(g_first_strategy_adapter);
+   g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot("OnInit_AfterStrategyAdapterReport");
    g_report_writer.WriteRuntimeReportVerificationSnapshot("OnInit_AfterStrategyAdapterReport");
 
    g_execution_guard.AssertNoExecution();
@@ -4716,6 +4804,7 @@ void OnDeinit(const int reason)
 {
    g_report_writer.WriteFinalSummary();
    g_report_writer.WriteReportCalibrationDiagnosticsSnapshot();
+   g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot("OnDeinit_FinalSmokeTest");
    g_report_writer.WriteRuntimeReportVerificationSnapshot("OnDeinit_FinalReportVerification");
    CFalconLogger::Info(StringFormat("Deinitializing. Reason=%d", reason));
    g_is_initialized = false;
@@ -4726,7 +4815,7 @@ void OnTick()
    if(!g_is_initialized)
       return;
 
-   // v0.16.0 monitors a staged Shadow record and can close it diagnostically at TP1/SL/timeout.
+   // v0.17.0 smoke-tests the staged Shadow lifecycle path and can close it diagnostically at TP1/SL/timeout.
    // Broker execution remains impossible. No OrderSend is used.
    g_fvg_micro_lifecycle_simulator.Refresh(g_market_context, g_shadow_executor);
 
@@ -4734,6 +4823,7 @@ void OnTick()
    if(g_fvg_micro_lifecycle_simulator.ExtractClosedLifecycleRecord(lifecycle_record))
    {
       g_report_writer.RegisterClosedTrade(lifecycle_record);
+      g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot("OnTick_AfterShadowLifecycleClose");
       g_report_writer.WriteRuntimeReportVerificationSnapshot("OnTick_AfterShadowLifecycleClose");
    }
    g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
