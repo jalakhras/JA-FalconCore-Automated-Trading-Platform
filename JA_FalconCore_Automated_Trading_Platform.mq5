@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.18.9 - AutoPeriod Manifest CSV Sanitizer Lock |
+//|                     Version: v0.19.1 - Compact Quality Filter Impact Metrics |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.189"
+#property version   "1.191"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.18.9"
-#define EA_BUILD_TAG   "AutoPeriodManifestCsvSanitizerLock_NoExecution"
+#define EA_VERSION_TAG "v0.19.1"
+#define EA_BUILD_TAG   "CompactQualityFilterImpactMetrics_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -24,6 +24,22 @@ string   g_report_active_from_tag   = "";
 string   g_report_active_to_tag     = "";
 bool     g_report_period_initialized = false;
 bool     g_report_period_finalized   = false;
+
+// ==================================================================
+// Compact FVG Micro quality metrics - v0.19.1
+// These counters are intentionally stored in Summary instead of creating
+// another diagnostic report. They help prove whether quality filters are
+// affecting candidates while keeping ReportProfile STANDARD clean.
+// ==================================================================
+int g_fvg_micro_candidate_builder_evaluations = 0;
+int g_fvg_micro_detected_candidates           = 0;
+int g_fvg_micro_quality_evaluated             = 0;
+int g_fvg_micro_quality_passed                = 0;
+int g_fvg_micro_quality_rejected              = 0;
+int g_fvg_micro_rejected_size                 = 0;
+int g_fvg_micro_rejected_spread               = 0;
+int g_fvg_micro_rejected_age                  = 0;
+int g_fvg_micro_shadow_ready_candidates       = 0;
 
 // ==================================================================
 // Runtime performance constants - v0.18.5
@@ -168,6 +184,18 @@ string FalconReportProfileToString()
 #define PrintReportFolderHintsToLog                           FALCON_PRINT_REPORT_FOLDER_HINTS_TO_LOG
 #define EnableFvgMicroRuntimePipelineRefresh                  true
 #define ProcessFvgMicroDetectorOnlyOnNewM5ClosedBar            true
+
+// ==================================================================
+// FVG Micro quality filters - v0.19.0
+// Phase 1 keeps the filters conservative and Shadow-only. The filters are
+// internal constants to avoid input bloat. They can block clearly invalid
+// candidates before Shadow staging, but never enable broker execution.
+// ==================================================================
+#define FALCON_FVG_MICRO_QUALITY_FILTERS_ENABLED              true
+#define FALCON_FVG_MICRO_MIN_SIZE_POINTS                      1.00
+#define FALCON_FVG_MICRO_MAX_SPREAD_POINTS                    200
+#define FALCON_FVG_MICRO_MAX_FVG_AGE_BARS                     0
+#define FALCON_FVG_MICRO_RETEST_FRESHNESS_BARS                3
 
 
 // ==================================================================
@@ -500,11 +528,52 @@ struct FalconFvgMicroShadowCandidateSnapshot
    double                       entry_zone_lower;
    double                       entry_zone_upper;
    double                       fvg_size_points;
+   bool                         quality_filters_enabled;
+   bool                         quality_filters_passed;
+   double                       quality_min_fvg_size_points;
+   long                         quality_current_spread_points;
+   long                         quality_max_spread_points;
+   int                          quality_fvg_age_bars;
+   int                          quality_max_fvg_age_bars;
+   int                          quality_retest_freshness_bars;
+   string                       quality_reject_reason;
    double                       score;
    string                       block_reason;
    string                       evidence_summary;
    string                       notes;
 };
+
+void FalconRegisterFvgMicroCandidateMetrics(const FalconFvgMicroShadowCandidateSnapshot &snapshot)
+{
+   g_fvg_micro_candidate_builder_evaluations++;
+
+   if(snapshot.fvg_detected)
+      g_fvg_micro_detected_candidates++;
+
+   if(snapshot.fvg_detected && snapshot.registry_found && snapshot.input_enabled && snapshot.runtime_safety_ready)
+   {
+      g_fvg_micro_quality_evaluated++;
+
+      if(snapshot.quality_filters_passed)
+      {
+         g_fvg_micro_quality_passed++;
+      }
+      else
+      {
+         g_fvg_micro_quality_rejected++;
+
+         if(StringFind(snapshot.quality_reject_reason, "FVG_SIZE_BELOW_MIN") >= 0)
+            g_fvg_micro_rejected_size++;
+         else if(StringFind(snapshot.quality_reject_reason, "SPREAD_ABOVE_MAX") >= 0)
+            g_fvg_micro_rejected_spread++;
+         else if(StringFind(snapshot.quality_reject_reason, "FVG_AGE_ABOVE_MAX") >= 0)
+            g_fvg_micro_rejected_age++;
+      }
+   }
+
+   if(snapshot.candidate_status == FALCON_CANDIDATE_STATUS_READY_SHADOW)
+      g_fvg_micro_shadow_ready_candidates++;
+}
 
 struct FalconFvgMicroRetestWatcherSnapshot
 {
@@ -3060,6 +3129,12 @@ public:
          m_snapshot.block_reason = "STRATEGY_INPUT_DISABLED";
          m_snapshot.notes = "FVG exists, but the strategy input switch is off. Candidate remains blocked.";
       }
+      else if(!EvaluateQualityFilters(detector_snapshot))
+      {
+         m_snapshot.candidate_status = FALCON_CANDIDATE_STATUS_BLOCKED;
+         m_snapshot.block_reason = "QUALITY_FILTER_REJECTED;" + m_snapshot.quality_reject_reason;
+         m_snapshot.notes = "v0.19.1 FVG Micro quality filters blocked this candidate before Shadow staging. No OrderSend, no execution.";
+      }
       else if(!m_snapshot.shadow_allowed)
       {
          m_snapshot.candidate_status = FALCON_CANDIDATE_STATUS_BLOCKED;
@@ -3073,9 +3148,11 @@ public:
          m_snapshot.candidate_id = StringFormat("FVG_MICRO_CAND_%s_%s",
                                                  FalconTimeToString(m_snapshot.setup_time),
                                                  FalconDirectionToString(m_snapshot.direction));
-         m_snapshot.block_reason = "CANDIDATE_READY_NO_TRADEPLAN_IN_v0_12_0";
-         m_snapshot.notes = "Shadow candidate created as a research object only. No TradePlan, no Shadow staging, no OrderSend.";
+         m_snapshot.block_reason = "CANDIDATE_READY_QUALITY_FILTERS_PASSED_NO_TRADEPLAN";
+         m_snapshot.notes = "Shadow candidate created after v0.19.1 quality filters passed. Research object only. No TradePlan, no broker OrderSend.";
       }
+
+      FalconRegisterFvgMicroCandidateMetrics(m_snapshot);
 
       m_initialized = true;
       CFalconLogger::Info(StringFormat("FvgMicroCandidateBuilder initialized. Status=%s | CandidateCreated=%s | Reason=%s",
@@ -3096,6 +3173,58 @@ public:
    }
 
 private:
+   bool EvaluateQualityFilters(const FalconFvgMicroDetectorSnapshot &detector_snapshot)
+   {
+      m_snapshot.quality_filters_enabled = FALCON_FVG_MICRO_QUALITY_FILTERS_ENABLED;
+      m_snapshot.quality_filters_passed = true;
+      m_snapshot.quality_min_fvg_size_points = FALCON_FVG_MICRO_MIN_SIZE_POINTS;
+      m_snapshot.quality_max_spread_points = FALCON_FVG_MICRO_MAX_SPREAD_POINTS;
+      m_snapshot.quality_max_fvg_age_bars = FALCON_FVG_MICRO_MAX_FVG_AGE_BARS;
+      m_snapshot.quality_retest_freshness_bars = FALCON_FVG_MICRO_RETEST_FRESHNESS_BARS;
+      m_snapshot.quality_fvg_age_bars = 0; // Phase 1 detector uses the newest closed M5 FVG only.
+      m_snapshot.quality_reject_reason = "QUALITY_FILTERS_PASSED";
+
+      long spread_points = 0;
+      if(!SymbolInfoInteger(_Symbol, SYMBOL_SPREAD, spread_points))
+         spread_points = 0;
+      m_snapshot.quality_current_spread_points = spread_points;
+
+      if(!m_snapshot.quality_filters_enabled)
+      {
+         m_snapshot.quality_reject_reason = "QUALITY_FILTERS_DISABLED";
+         return true;
+      }
+
+      if(detector_snapshot.fvg_size_points < m_snapshot.quality_min_fvg_size_points)
+      {
+         m_snapshot.quality_filters_passed = false;
+         m_snapshot.quality_reject_reason = StringFormat("FVG_SIZE_BELOW_MIN;Size=%.2f;Min=%.2f",
+                                                          detector_snapshot.fvg_size_points,
+                                                          m_snapshot.quality_min_fvg_size_points);
+         return false;
+      }
+
+      if(m_snapshot.quality_max_spread_points > 0 && spread_points > m_snapshot.quality_max_spread_points)
+      {
+         m_snapshot.quality_filters_passed = false;
+         m_snapshot.quality_reject_reason = StringFormat("SPREAD_ABOVE_MAX;Spread=%d;Max=%d",
+                                                          (int)spread_points,
+                                                          (int)m_snapshot.quality_max_spread_points);
+         return false;
+      }
+
+      if(m_snapshot.quality_max_fvg_age_bars >= 0 && m_snapshot.quality_fvg_age_bars > m_snapshot.quality_max_fvg_age_bars)
+      {
+         m_snapshot.quality_filters_passed = false;
+         m_snapshot.quality_reject_reason = StringFormat("FVG_AGE_ABOVE_MAX;Age=%d;Max=%d",
+                                                          m_snapshot.quality_fvg_age_bars,
+                                                          m_snapshot.quality_max_fvg_age_bars);
+         return false;
+      }
+
+      return true;
+   }
+
    void ResetSnapshot()
    {
       m_snapshot.builder_id = "";
@@ -3120,6 +3249,15 @@ private:
       m_snapshot.entry_zone_lower = 0.0;
       m_snapshot.entry_zone_upper = 0.0;
       m_snapshot.fvg_size_points = 0.0;
+      m_snapshot.quality_filters_enabled = FALCON_FVG_MICRO_QUALITY_FILTERS_ENABLED;
+      m_snapshot.quality_filters_passed = false;
+      m_snapshot.quality_min_fvg_size_points = FALCON_FVG_MICRO_MIN_SIZE_POINTS;
+      m_snapshot.quality_current_spread_points = 0;
+      m_snapshot.quality_max_spread_points = FALCON_FVG_MICRO_MAX_SPREAD_POINTS;
+      m_snapshot.quality_fvg_age_bars = 0;
+      m_snapshot.quality_max_fvg_age_bars = FALCON_FVG_MICRO_MAX_FVG_AGE_BARS;
+      m_snapshot.quality_retest_freshness_bars = FALCON_FVG_MICRO_RETEST_FRESHNESS_BARS;
+      m_snapshot.quality_reject_reason = "NOT_EVALUATED";
       m_snapshot.score = 0.0;
       m_snapshot.block_reason = "";
       m_snapshot.evidence_summary = "";
@@ -3393,7 +3531,7 @@ public:
       m_snapshot.analysis_timeframe    = watcher_snapshot.analysis_timeframe;
       m_snapshot.setup_time            = watcher_snapshot.setup_time;
       m_snapshot.staging_time          = TimeCurrent();
-      m_snapshot.evidence_summary      = "FVG_MICRO_RETEST_SHADOW_DRY_RUN;EvidenceLayer=FVG;Permission=false;Execution=false";
+      m_snapshot.evidence_summary      = "FVG_MICRO_RETEST_SHADOW_DRY_RUN;EvidenceLayer=FVG;QualityFilters=v0.19.1;Permission=false;Execution=false";
 
       if(!m_snapshot.watcher_initialized)
       {
@@ -4459,8 +4597,11 @@ public:
                 "DetectorInitialized", "RegistryFound", "InputEnabled", "ShadowAllowed", "RuntimeSafetyReady",
                 "FvgDetected", "CandidateCreated", "TradePlanCreated", "StagedToShadowExecutor", "OrderSendUsed",
                 "Direction", "AnalysisTimeframe", "SetupTime",
-                "EntryZoneLower", "EntryZoneUpper", "FvgSizePoints", "Score",
-                "BlockReason", "EvidenceSummary", "Notes");
+                "EntryZoneLower", "EntryZoneUpper", "FvgSizePoints",
+                "QualityFiltersEnabled", "QualityFiltersPassed", "QualityMinFvgSizePoints",
+                "QualityCurrentSpreadPoints", "QualityMaxSpreadPoints", "QualityFvgAgeBars",
+                "QualityMaxFvgAgeBars", "QualityRetestFreshnessBars", "QualityRejectReason",
+                "Score", "BlockReason", "EvidenceSummary", "Notes");
 
       FileWrite(handle,
                 EA_NAME,
@@ -4491,10 +4632,19 @@ public:
                 DoubleToString(snapshot.entry_zone_lower, m_symbol_context.digits),
                 DoubleToString(snapshot.entry_zone_upper, m_symbol_context.digits),
                 DoubleToString(snapshot.fvg_size_points, 2),
+                FalconBoolToYesNo(snapshot.quality_filters_enabled),
+                FalconBoolToYesNo(snapshot.quality_filters_passed),
+                DoubleToString(snapshot.quality_min_fvg_size_points, 2),
+                IntegerToString((int)snapshot.quality_current_spread_points),
+                IntegerToString((int)snapshot.quality_max_spread_points),
+                IntegerToString(snapshot.quality_fvg_age_bars),
+                IntegerToString(snapshot.quality_max_fvg_age_bars),
+                IntegerToString(snapshot.quality_retest_freshness_bars),
+                FalconCsvSafe(snapshot.quality_reject_reason),
                 DoubleToString(snapshot.score, 2),
-                snapshot.block_reason,
-                snapshot.evidence_summary,
-                snapshot.notes);
+                FalconCsvSafe(snapshot.block_reason),
+                FalconCsvSafe(snapshot.evidence_summary),
+                FalconCsvSafe(snapshot.notes));
 
       FileClose(handle);
       CFalconLogger::Info(StringFormat("FVG Micro shadow candidate diagnostics snapshot written: %s", m_fvg_micro_candidate_diagnostics_file));
@@ -5091,7 +5241,16 @@ public:
                 "TotalTrades", "WinTrades", "LoseTrades", "BreakevenTrades",
                 "WinRate", "LoseRate",
                 "TotalProfitIndexPoints", "TotalLossIndexPoints", "NetIndexPoints",
-                "TotalProfitUSD", "TotalLossUSD", "NetUSD");
+                "TotalProfitUSD", "TotalLossUSD", "NetUSD",
+                "FvgCandidateBuilderEvaluations",
+                "FvgDetectedCandidates",
+                "FvgQualityEvaluated",
+                "FvgQualityPassed",
+                "FvgQualityRejected",
+                "FvgRejectedSize",
+                "FvgRejectedSpread",
+                "FvgRejectedAge",
+                "FvgShadowReadyCandidates");
 
       FileWrite(handle,
                 EA_NAME,
@@ -5110,7 +5269,16 @@ public:
                 DoubleToString(m_totals.net_index_points, 2),
                 DoubleToString(m_totals.total_profit_usd, 2),
                 DoubleToString(m_totals.total_loss_usd, 2),
-                DoubleToString(m_totals.net_usd, 2));
+                DoubleToString(m_totals.net_usd, 2),
+                g_fvg_micro_candidate_builder_evaluations,
+                g_fvg_micro_detected_candidates,
+                g_fvg_micro_quality_evaluated,
+                g_fvg_micro_quality_passed,
+                g_fvg_micro_quality_rejected,
+                g_fvg_micro_rejected_size,
+                g_fvg_micro_rejected_spread,
+                g_fvg_micro_rejected_age,
+                g_fvg_micro_shadow_ready_candidates);
 
       FileClose(handle);
       CFalconLogger::Info(StringFormat("Final summary written. Trades=%d | WinRate=%.2f | NetIndexPoints=%.2f | NetUSD=%.2f",
