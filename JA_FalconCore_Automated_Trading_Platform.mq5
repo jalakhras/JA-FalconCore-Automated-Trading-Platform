@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.12.0 - FVG Micro Retest Watcher & TradePlan Skeleton |
+//|                     Version: v0.13.1 - Shadow Record Reset Compile Hotfix |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.120"
+#property version   "1.131"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.12.0"
-#define EA_BUILD_TAG   "FvgMicroRetestWatcherTradePlanSkeleton_NoExecution"
+#define EA_VERSION_TAG "v0.13.1"
+#define EA_BUILD_TAG   "ShadowRecordResetCompileHotfix_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -39,7 +39,7 @@ input int    MaxOpenPositions                = 1;
 
 // ==================================================================
 // 03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات
-// Keep this list small and explicit. All engines are OFF in v0.12.0.
+// Keep this list small and explicit. All engines are OFF in v0.13.1.
 // ==================================================================
 input group "03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات";
 input bool EnableStrategy_FvgMicroRetest             = false; // Legacy core winner candidate.
@@ -57,7 +57,7 @@ input bool EnableStrategy_GoldenLiquidity5MEntry     = false; // استراتي�
 
 // ==================================================================
 // 04 - Reporting / التقارير
-// v0.12.0 keeps all previous reports and adds FVG Micro Shadow Candidate Builder diagnostics.
+// v0.13.1 keeps prior reports and adds FVG Micro Shadow TradePlan staging dry-run diagnostics.
 // Trade rows are still written only by controlled Shadow/Paper/Demo records; no live orders.
 // ==================================================================
 input group "04 - Reporting / التقارير";
@@ -69,7 +69,7 @@ input bool EnableVerboseExpertsLog          = true;
 
 // ==================================================================
 // 05 - Market Context / سياق السوق
-// Keep simple. This is diagnostics only in v0.12.0.
+// Keep simple. This is diagnostics only in v0.13.1.
 // ==================================================================
 input group "05 - Market Context / سياق السوق";
 input bool            UseClosedCandlesOnly          = true;      // Core guard: use closed candles for analysis snapshots.
@@ -88,9 +88,10 @@ input bool            EnableStrategyAdapterDiagnosticsReport = true; // Writes f
 input bool            EnableFvgMicroDetectorDiagnosticsReport = true; // Writes real FVG Micro detector diagnostics. No TradePlan, no staging.
 input bool            EnableFvgMicroCandidateDiagnosticsReport = true; // Writes FVG Micro Shadow Candidate Builder diagnostics. No TradePlan, no staging.
 input bool            EnableFvgMicroRetestWatcherDiagnosticsReport = true; // Writes FVG Micro retest watcher and TradePlan skeleton diagnostics. No staging, no execution.
+input bool            EnableFvgMicroTradePlanStagingDiagnosticsReport = true; // Writes FVG Micro TradePlan staging dry-run diagnostics. Shadow-only, no broker execution.
 
 // ==================================================================
-// Core Data Contracts - v0.12.0
+// Core Data Contracts - v0.13.1
 // ==================================================================
 enum ENUM_FALCON_DIRECTION
 {
@@ -230,6 +231,14 @@ enum ENUM_FALCON_RETEST_WATCHER_STATUS
    FALCON_RETEST_WATCHER_STATUS_WAITING         = 2,
    FALCON_RETEST_WATCHER_STATUS_RETEST_TOUCHED  = 3,
    FALCON_RETEST_WATCHER_STATUS_SKELETON_READY  = 4
+};
+
+enum ENUM_FALCON_TRADEPLAN_STAGING_STATUS
+{
+   FALCON_TRADEPLAN_STAGING_STATUS_NOT_INITIALIZED = 0,
+   FALCON_TRADEPLAN_STAGING_STATUS_BLOCKED         = 1,
+   FALCON_TRADEPLAN_STAGING_STATUS_PLAN_CREATED    = 2,
+   FALCON_TRADEPLAN_STAGING_STATUS_STAGED_SHADOW   = 3
 };
 
 struct FalconSymbolContext
@@ -443,6 +452,44 @@ struct FalconFvgMicroRetestWatcherSnapshot
    string                            block_reason;
    string                            skeleton_notes;
    string                            notes;
+};
+
+struct FalconFvgMicroTradePlanStagingSnapshot
+{
+   string                               stager_id;
+   string                               plan_id;
+   string                               candidate_id;
+   string                               shadow_id;
+   string                               strategy_id;
+   string                               strategy_name;
+   string                               engine_id;
+   ENUM_FALCON_TRADEPLAN_STAGING_STATUS staging_status;
+   ENUM_FALCON_RETEST_WATCHER_STATUS    watcher_status;
+   bool                                 watcher_initialized;
+   bool                                 retest_touched;
+   bool                                 skeleton_ready;
+   bool                                 runtime_safety_ready;
+   bool                                 shadow_executor_ready;
+   bool                                 tradeplan_created;
+   bool                                 validate_passed;
+   bool                                 staged_to_shadow_executor;
+   bool                                 order_send_used;
+   ENUM_FALCON_DIRECTION                direction;
+   ENUM_TIMEFRAMES                      analysis_timeframe;
+   datetime                             setup_time;
+   datetime                             staging_time;
+   double                               lot_size;
+   double                               entry_price;
+   double                               structural_sl;
+   double                               tp1;
+   double                               tp2;
+   double                               tp3;
+   string                               risk_profile;
+   string                               management_profile;
+   string                               validation_reason;
+   string                               staging_reason;
+   string                               evidence_summary;
+   string                               notes;
 };
 
 struct FalconEvidenceRecord
@@ -774,6 +821,17 @@ string FalconRetestWatcherStatusToString(const ENUM_FALCON_RETEST_WATCHER_STATUS
    return "NOT_INITIALIZED";
 }
 
+string FalconTradePlanStagingStatusToString(const ENUM_FALCON_TRADEPLAN_STAGING_STATUS status)
+{
+   if(status == FALCON_TRADEPLAN_STAGING_STATUS_BLOCKED)
+      return "BLOCKED";
+   if(status == FALCON_TRADEPLAN_STAGING_STATUS_PLAN_CREATED)
+      return "PLAN_CREATED";
+   if(status == FALCON_TRADEPLAN_STAGING_STATUS_STAGED_SHADOW)
+      return "STAGED_SHADOW";
+   return "NOT_INITIALIZED";
+}
+
 string FalconTimeToString(const datetime value)
 {
    if(value <= 0)
@@ -884,7 +942,7 @@ public:
 };
 
 // ==================================================================
-// Market Context Provider - v0.12.0 symbol, quote, and closed candle diagnostics
+// Market Context Provider - v0.13.1 symbol, quote, and closed candle diagnostics
 // ==================================================================
 class CFalconMarketContext
 {
@@ -1081,7 +1139,7 @@ private:
 
 
 // ==================================================================
-// Multi-Timeframe Candle Cache - v0.12.0
+// Multi-Timeframe Candle Cache - v0.13.1
 // Official analysis timeframes: M1, M5, M15, H1, H4, D1.
 // This layer is data-provider only. It does not create signals.
 // ==================================================================
@@ -1205,7 +1263,7 @@ public:
 };
 
 // ==================================================================
-// Evidence Framework Foundation - v0.12.0
+// Evidence Framework Foundation - v0.13.1
 // Contract-only layer. Evidence strengthens or weakens future engine decisions,
 // but it never opens a trade and never overrides guards.
 // ==================================================================
@@ -1266,7 +1324,7 @@ public:
       pack.has_objective_indicator_evidence = false;
       pack.has_smc_evidence                 = false;
       pack.score                            = 0.0;
-      pack.summary                          = "No runtime evidence evaluated in v0.12.0. Evidence Framework remains contract-only.";
+      pack.summary                          = "No runtime evidence evaluated in v0.13.1. Evidence Framework remains contract-only.";
       return pack;
    }
 
@@ -1305,7 +1363,7 @@ public:
    {
       if(EnableRealExecution)
       {
-         CFalconLogger::Error("HARD SAFETY BLOCK: EnableRealExecution must remain false in v0.12.0.");
+         CFalconLogger::Error("HARD SAFETY BLOCK: EnableRealExecution must remain false in v0.13.1.");
          return false;
       }
 
@@ -1364,7 +1422,7 @@ public:
 };
 
 // ==================================================================
-// First Shadow Strategy Adapter Shell - v0.12.0
+// First Shadow Strategy Adapter Shell - v0.13.1
 // This registry only describes strategies and their safety stage.
 // It does not execute detectors, does not produce signals, and does not send orders.
 // ==================================================================
@@ -1574,7 +1632,7 @@ public:
 
    void PrintRegistryState()
    {
-      CFalconLogger::Info(StringFormat("StrategyRegistry initialized. Registered=%d | EnabledByInputs=%d | CoreWinners=%d | Research=%d | Watch=%d | LiveAllowed=%s | Stage=REGISTRY_ONLY_v0.12.0",
+      CFalconLogger::Info(StringFormat("StrategyRegistry initialized. Registered=%d | EnabledByInputs=%d | CoreWinners=%d | Research=%d | Watch=%d | LiveAllowed=%s | Stage=REGISTRY_ONLY_v0.13.1",
                                        CountRegisteredStrategies(),
                                        CountEnabledStrategies(),
                                        CountByHealth(FALCON_ENGINE_HEALTH_CORE_WINNER),
@@ -1586,7 +1644,7 @@ public:
 
 
 // ==================================================================
-// Shadow Engine Framework Foundation - v0.12.0
+// Shadow Engine Framework Foundation - v0.13.1
 // Shadow is observation-only. It can stage simulated records and convert
 // them to lifecycle records, but it never sends broker orders.
 // ==================================================================
@@ -1784,7 +1842,7 @@ private:
 };
 
 // ==================================================================
-// No-Lookahead Runtime Guard & Strategy Staging Safety - v0.12.0
+// No-Lookahead Runtime Guard & Strategy Staging Safety - v0.13.1
 // This layer blocks current-candle/final-state dependency before any future
 // strategy can stage Shadow/Paper/Demo plans. It does not create signals.
 // ==================================================================
@@ -1968,7 +2026,7 @@ private:
 
 
 // ==================================================================
-// First Shadow Strategy Adapter Shell - v0.12.0
+// First Shadow Strategy Adapter Shell - v0.13.1
 // This adapter proves that a registered strategy can be discovered and
 // evaluated for future Shadow staging without running any detector.
 // It intentionally produces NO_TRADE / BLOCKED candidate diagnostics only.
@@ -2047,7 +2105,7 @@ public:
          m_snapshot.safety_reason   = "ADAPTER_SHELL_OBSERVE_ONLY";
       }
 
-      m_snapshot.notes = "v0.12.0 adapter shell only. Registry linked to Shadow Executor, but no detector, no signal, no trade plan, and no staging.";
+      m_snapshot.notes = "v0.13.1 adapter shell only. Registry linked to Shadow Executor, but no detector, no signal, no trade plan, and no staging.";
       m_initialized = true;
 
       CFalconLogger::Info(StringFormat("FirstStrategyAdapterShell initialized. Strategy=%s | InputEnabled=%s | Status=%s | Reason=%s",
@@ -2095,7 +2153,7 @@ private:
 };
 
 // ==================================================================
-// FVG Micro Real Shadow Detector Phase 1 - v0.12.0
+// FVG Micro Real Shadow Detector Phase 1 - v0.13.1
 // Detects real 3-candle M5 FVGs using closed candles only.
 // It does NOT create TradePlans, does NOT stage Shadow trades,
 // and does NOT send orders. Detection is diagnostic / shadow-only.
@@ -2242,7 +2300,7 @@ public:
          m_snapshot.safety_reason = "NO_TRADEPLAN_CREATED_IN_v0_12_0";
       }
 
-      m_snapshot.notes = "v0.12.0 FVG Micro real shadow detector Phase 1. Uses three closed M5 candles: older=shift+2, middle=shift+1, newer=shift. Bullish FVG when older.high < newer.low. Bearish FVG when older.low > newer.high. No TradePlan, no Shadow staging, no OrderSend.";
+      m_snapshot.notes = "v0.13.1 FVG Micro real shadow detector Phase 1. Uses three closed M5 candles: older=shift+2, middle=shift+1, newer=shift. Bullish FVG when older.high < newer.low. Bearish FVG when older.low > newer.high. No TradePlan, no Shadow staging, no OrderSend.";
       m_initialized = true;
 
       CFalconLogger::Info(StringFormat("FvgMicroRealDetector initialized. InputEnabled=%s | Status=%s | FVG=%s | Direction=%s | Reason=%s | M5Time=%s",
@@ -2385,7 +2443,7 @@ private:
 };
 
 // ==================================================================
-// FVG Micro Shadow Candidate Builder Phase 1 - v0.12.0
+// FVG Micro Shadow Candidate Builder Phase 1 - v0.13.1
 // Converts a valid detected FVG into a shadow candidate snapshot only.
 // It does NOT create a TradePlan, does NOT stage a Shadow trade,
 // and does NOT send orders. Candidate = structured research object.
@@ -2536,7 +2594,7 @@ private:
 };
 
 // ==================================================================
-// FVG Micro Retest Watcher & TradePlan Skeleton - v0.12.0
+// FVG Micro Retest Watcher & TradePlan Skeleton - v0.13.1
 // Observes whether the current live quote has returned to the detected FVG zone.
 // It builds a diagnostic TradePlan skeleton only. It does NOT create a real
 // FalconTradePlan, does NOT stage to ShadowExecutor, and does NOT send orders.
@@ -2755,6 +2813,232 @@ private:
    }
 };
 
+
+// ==================================================================
+// FVG Micro Shadow TradePlan Staging Dry Run - v0.13.1
+// Creates a real FalconTradePlan object from the diagnostic skeleton, validates
+// it through the No-Lookahead Guard, and stages it to ShadowExecutor only.
+// It never sends broker orders and never enables Paper/Demo/Live execution.
+// ==================================================================
+class CFalconFvgMicroTradePlanStagingDryRun
+{
+private:
+   FalconFvgMicroTradePlanStagingSnapshot m_snapshot;
+   FalconShadowTradeRecord                m_shadow_record;
+   bool                                   m_initialized;
+
+public:
+   CFalconFvgMicroTradePlanStagingDryRun()
+   {
+      ResetSnapshot();
+      ResetLocalShadowRecord(m_shadow_record);
+      m_initialized = false;
+   }
+
+   bool Initialize(CFalconFvgMicroRetestWatcher &watcher,
+                   CFalconRuntimeSafetyGuard &runtime_guard,
+                   CFalconShadowExecutor &shadow_executor)
+   {
+      ResetSnapshot();
+      ResetLocalShadowRecord(m_shadow_record);
+
+      FalconFvgMicroRetestWatcherSnapshot watcher_snapshot = watcher.GetSnapshot();
+      m_snapshot.stager_id             = "STAGER_FVG_MICRO_TRADEPLAN_DRY_RUN_v0_13_1";
+      m_snapshot.candidate_id          = watcher_snapshot.candidate_id;
+      m_snapshot.strategy_id           = watcher_snapshot.strategy_id;
+      m_snapshot.strategy_name         = watcher_snapshot.strategy_name;
+      m_snapshot.engine_id             = watcher_snapshot.engine_id;
+      m_snapshot.watcher_status        = watcher_snapshot.watcher_status;
+      m_snapshot.watcher_initialized   = watcher.IsInitialized();
+      m_snapshot.retest_touched        = watcher_snapshot.retest_touched;
+      m_snapshot.skeleton_ready        = watcher_snapshot.tradeplan_skeleton_created;
+      m_snapshot.runtime_safety_ready  = runtime_guard.IsInitialized();
+      m_snapshot.shadow_executor_ready = shadow_executor.IsInitialized();
+      m_snapshot.order_send_used       = false;
+      m_snapshot.direction             = watcher_snapshot.direction;
+      m_snapshot.analysis_timeframe    = watcher_snapshot.analysis_timeframe;
+      m_snapshot.setup_time            = watcher_snapshot.setup_time;
+      m_snapshot.staging_time          = TimeCurrent();
+      m_snapshot.evidence_summary      = "FVG_MICRO_RETEST_SHADOW_DRY_RUN;EvidenceLayer=FVG;Permission=false;Execution=false";
+
+      if(!m_snapshot.watcher_initialized)
+      {
+         Block("RETEST_WATCHER_NOT_INITIALIZED", "Staging requires a completed retest watcher snapshot.");
+         return true;
+      }
+
+      if(!m_snapshot.skeleton_ready || watcher_snapshot.watcher_status != FALCON_RETEST_WATCHER_STATUS_SKELETON_READY)
+      {
+         Block(StringFormat("SKELETON_NOT_READY;WatcherStatus=%s;Reason=%s",
+                            FalconRetestWatcherStatusToString(watcher_snapshot.watcher_status),
+                            watcher_snapshot.block_reason),
+               "No FalconTradePlan was created because the retest watcher has not produced a ready skeleton.");
+         return true;
+      }
+
+      FalconTradePlan plan;
+      BuildTradePlanFromWatcher(watcher_snapshot, plan);
+      m_snapshot.tradeplan_created = true;
+      m_snapshot.staging_status = FALCON_TRADEPLAN_STAGING_STATUS_PLAN_CREATED;
+
+      string validation_reason = "";
+      if(!runtime_guard.ValidateTradePlanForStaging(plan, validation_reason))
+      {
+         m_snapshot.validate_passed = false;
+         m_snapshot.validation_reason = validation_reason;
+         Block(validation_reason, "TradePlan object was created but failed No-Lookahead/geometry staging validation.");
+         return true;
+      }
+
+      m_snapshot.validate_passed = true;
+      m_snapshot.validation_reason = "VALIDATE_TRADEPLAN_FOR_STAGING_PASSED";
+
+      FalconEvidencePack evidence_pack;
+      evidence_pack.has_candle_evidence = false;
+      evidence_pack.has_chart_pattern_evidence = false;
+      evidence_pack.has_objective_indicator_evidence = false;
+      evidence_pack.has_smc_evidence = true;
+      evidence_pack.score = 60.0;
+      evidence_pack.summary = m_snapshot.evidence_summary;
+
+      if(!shadow_executor.StageTradePlan(plan, evidence_pack, m_shadow_record))
+      {
+         m_snapshot.staged_to_shadow_executor = false;
+         Block("SHADOW_EXECUTOR_STAGE_FAILED", "TradePlan passed validation but ShadowExecutor refused staging. No broker orders were sent.");
+         return true;
+      }
+
+      m_snapshot.shadow_id = m_shadow_record.shadow_id;
+      m_snapshot.staged_to_shadow_executor = true;
+      m_snapshot.staging_status = FALCON_TRADEPLAN_STAGING_STATUS_STAGED_SHADOW;
+      m_snapshot.staging_reason = "STAGED_TO_SHADOW_EXECUTOR_ONLY_NO_BROKER_ORDER";
+      m_snapshot.notes = "Validated FalconTradePlan was staged to ShadowExecutor only. This is not Paper/Demo/Live execution and no OrderSend is used.";
+      m_initialized = true;
+
+      CFalconLogger::Info(StringFormat("FVG Micro TradePlan staging dry run complete. Status=%s | ShadowId=%s | Entry=%.5f | SL=%.5f | TP1=%.5f",
+                                       FalconTradePlanStagingStatusToString(m_snapshot.staging_status),
+                                       m_snapshot.shadow_id,
+                                       m_snapshot.entry_price,
+                                       m_snapshot.structural_sl,
+                                       m_snapshot.tp1));
+      return true;
+   }
+
+   bool IsInitialized()
+   {
+      return m_initialized;
+   }
+
+   FalconFvgMicroTradePlanStagingSnapshot GetSnapshot()
+   {
+      return m_snapshot;
+   }
+
+   FalconShadowTradeRecord GetShadowRecord()
+   {
+      return m_shadow_record;
+   }
+
+private:
+   void ResetLocalShadowRecord(FalconShadowTradeRecord &record)
+   {
+      record.shadow_id            = "";
+      record.strategy_id          = "";
+      record.strategy_name        = "";
+      record.engine_id            = "";
+      record.direction            = FALCON_DIRECTION_NONE;
+      record.status               = FALCON_SHADOW_RECORD_NONE;
+      record.entry_time           = 0;
+      record.exit_time            = 0;
+      record.lot_size             = 0.0;
+      record.entry_price          = 0.0;
+      record.structural_sl        = 0.0;
+      record.tp1                  = 0.0;
+      record.tp2                  = 0.0;
+      record.tp3                  = 0.0;
+      record.simulated_exit_price = 0.0;
+      record.simulated_outcome    = FALCON_TRADE_OUTCOME_UNKNOWN;
+      record.close_reason         = "";
+      record.evidence_summary     = "";
+      record.is_closed            = false;
+   }
+
+   void BuildTradePlanFromWatcher(const FalconFvgMicroRetestWatcherSnapshot &watcher_snapshot, FalconTradePlan &plan)
+   {
+      plan.plan_id = StringFormat("PLAN_FVG_MICRO_%d", (int)TimeCurrent());
+      plan.strategy_id = watcher_snapshot.strategy_id;
+      plan.strategy_name = watcher_snapshot.strategy_name;
+      plan.engine_id = watcher_snapshot.engine_id;
+      plan.direction = watcher_snapshot.direction;
+      plan.lot_size = watcher_snapshot.planned_lot_size;
+      plan.entry_price = watcher_snapshot.planned_entry_price;
+      plan.structural_sl = watcher_snapshot.planned_structural_sl;
+      plan.tp1 = watcher_snapshot.planned_tp1;
+      plan.tp2 = watcher_snapshot.planned_tp2;
+      plan.tp3 = watcher_snapshot.planned_tp3;
+      plan.runner_allowed = false;
+      plan.risk_profile = "SHADOW_DIAGNOSTIC_FIXED_LOT_ONLY";
+      plan.management_profile = "NO_MANAGEMENT_YET_STAGING_DRY_RUN";
+
+      m_snapshot.plan_id = plan.plan_id;
+      m_snapshot.lot_size = plan.lot_size;
+      m_snapshot.entry_price = plan.entry_price;
+      m_snapshot.structural_sl = plan.structural_sl;
+      m_snapshot.tp1 = plan.tp1;
+      m_snapshot.tp2 = plan.tp2;
+      m_snapshot.tp3 = plan.tp3;
+      m_snapshot.risk_profile = plan.risk_profile;
+      m_snapshot.management_profile = plan.management_profile;
+   }
+
+   void Block(const string reason, const string notes)
+   {
+      m_snapshot.staging_status = FALCON_TRADEPLAN_STAGING_STATUS_BLOCKED;
+      m_snapshot.staging_reason = reason;
+      m_snapshot.notes = notes;
+      m_initialized = true;
+      CFalconLogger::Info(StringFormat("FVG Micro TradePlan staging dry run blocked. Reason=%s", reason));
+   }
+
+   void ResetSnapshot()
+   {
+      m_snapshot.stager_id = "";
+      m_snapshot.plan_id = "";
+      m_snapshot.candidate_id = "";
+      m_snapshot.shadow_id = "";
+      m_snapshot.strategy_id = "";
+      m_snapshot.strategy_name = "";
+      m_snapshot.engine_id = "";
+      m_snapshot.staging_status = FALCON_TRADEPLAN_STAGING_STATUS_NOT_INITIALIZED;
+      m_snapshot.watcher_status = FALCON_RETEST_WATCHER_STATUS_NOT_INITIALIZED;
+      m_snapshot.watcher_initialized = false;
+      m_snapshot.retest_touched = false;
+      m_snapshot.skeleton_ready = false;
+      m_snapshot.runtime_safety_ready = false;
+      m_snapshot.shadow_executor_ready = false;
+      m_snapshot.tradeplan_created = false;
+      m_snapshot.validate_passed = false;
+      m_snapshot.staged_to_shadow_executor = false;
+      m_snapshot.order_send_used = false;
+      m_snapshot.direction = FALCON_DIRECTION_NONE;
+      m_snapshot.analysis_timeframe = PERIOD_CURRENT;
+      m_snapshot.setup_time = 0;
+      m_snapshot.staging_time = 0;
+      m_snapshot.lot_size = 0.0;
+      m_snapshot.entry_price = 0.0;
+      m_snapshot.structural_sl = 0.0;
+      m_snapshot.tp1 = 0.0;
+      m_snapshot.tp2 = 0.0;
+      m_snapshot.tp3 = 0.0;
+      m_snapshot.risk_profile = "";
+      m_snapshot.management_profile = "";
+      m_snapshot.validation_reason = "";
+      m_snapshot.staging_reason = "";
+      m_snapshot.evidence_summary = "";
+      m_snapshot.notes = "";
+   }
+};
+
 // ==================================================================
 // Report Writer Foundation - append-ready CSV contracts
 // ==================================================================
@@ -2773,6 +3057,7 @@ private:
    string              m_fvg_micro_detector_diagnostics_file;
    string              m_fvg_micro_candidate_diagnostics_file;
    string              m_fvg_micro_retest_watcher_diagnostics_file;
+   string              m_fvg_micro_tradeplan_staging_diagnostics_file;
    FalconSymbolContext m_symbol_context;
    FalconReportTotals  m_totals;
    bool                m_initialized;
@@ -2787,18 +3072,19 @@ public:
    bool Initialize(const FalconSymbolContext &symbol_context)
    {
       m_symbol_context     = symbol_context;
-      m_trade_report_file  = "JA_FalconCore_TradeLifecycle_v0_12_0.csv";
-      m_summary_report_file= "JA_FalconCore_Summary_v0_12_0.csv";
-      m_market_diagnostics_file = "JA_FalconCore_MarketDiagnostics_v0_12_0.csv";
-      m_candle_cache_diagnostics_file = "JA_FalconCore_CandleCacheDiagnostics_v0_12_0.csv";
-      m_evidence_diagnostics_file = "JA_FalconCore_EvidenceDiagnostics_v0_12_0.csv";
-      m_shadow_diagnostics_file = "JA_FalconCore_ShadowDiagnostics_v0_12_0.csv";
-      m_no_lookahead_diagnostics_file = "JA_FalconCore_NoLookaheadDiagnostics_v0_12_0.csv";
-      m_strategy_registry_diagnostics_file = "JA_FalconCore_StrategyRegistryDiagnostics_v0_12_0.csv";
-      m_strategy_adapter_diagnostics_file = "JA_FalconCore_StrategyAdapterDiagnostics_v0_12_0.csv";
-      m_fvg_micro_detector_diagnostics_file = "JA_FalconCore_FvgMicroDetectorDiagnostics_v0_12_0.csv";
-      m_fvg_micro_candidate_diagnostics_file = "JA_FalconCore_FvgMicroShadowCandidateDiagnostics_v0_12_0.csv";
-      m_fvg_micro_retest_watcher_diagnostics_file = "JA_FalconCore_FvgMicroRetestWatcherDiagnostics_v0_12_0.csv";
+      m_trade_report_file  = "JA_FalconCore_TradeLifecycle_v0_13_1.csv";
+      m_summary_report_file= "JA_FalconCore_Summary_v0_13_1.csv";
+      m_market_diagnostics_file = "JA_FalconCore_MarketDiagnostics_v0_13_1.csv";
+      m_candle_cache_diagnostics_file = "JA_FalconCore_CandleCacheDiagnostics_v0_13_1.csv";
+      m_evidence_diagnostics_file = "JA_FalconCore_EvidenceDiagnostics_v0_13_1.csv";
+      m_shadow_diagnostics_file = "JA_FalconCore_ShadowDiagnostics_v0_13_1.csv";
+      m_no_lookahead_diagnostics_file = "JA_FalconCore_NoLookaheadDiagnostics_v0_13_1.csv";
+      m_strategy_registry_diagnostics_file = "JA_FalconCore_StrategyRegistryDiagnostics_v0_13_1.csv";
+      m_strategy_adapter_diagnostics_file = "JA_FalconCore_StrategyAdapterDiagnostics_v0_13_1.csv";
+      m_fvg_micro_detector_diagnostics_file = "JA_FalconCore_FvgMicroDetectorDiagnostics_v0_13_1.csv";
+      m_fvg_micro_candidate_diagnostics_file = "JA_FalconCore_FvgMicroShadowCandidateDiagnostics_v0_13_1.csv";
+      m_fvg_micro_retest_watcher_diagnostics_file = "JA_FalconCore_FvgMicroRetestWatcherDiagnostics_v0_13_1.csv";
+      m_fvg_micro_tradeplan_staging_diagnostics_file = "JA_FalconCore_FvgMicroTradePlanStagingDiagnostics_v0_13_1.csv";
       ResetTotals();
 
       if(EnableMainReport)
@@ -3008,7 +3294,7 @@ public:
                 shadow_executor.ClosedRecords(),
                 shadow_executor.CancelledRecords(),
                 "ShadowToTradeLifecycleRecord_READY",
-                "v0.12.0 is framework only. No strategy creates shadow records yet.");
+                "v0.13.1 is framework only. No strategy creates shadow records yet.");
 
       FileClose(handle);
       CFalconLogger::Info(StringFormat("Shadow diagnostics snapshot written: %s", m_shadow_diagnostics_file));
@@ -3389,6 +3675,77 @@ public:
       CFalconLogger::Info(StringFormat("FVG Micro retest watcher diagnostics snapshot written: %s", m_fvg_micro_retest_watcher_diagnostics_file));
    }
 
+
+   void WriteFvgMicroTradePlanStagingDiagnosticsSnapshot(CFalconFvgMicroTradePlanStagingDryRun &stager)
+   {
+      if(!m_initialized || !EnableFvgMicroTradePlanStagingDiagnosticsReport)
+         return;
+
+      int handle = FileOpen(m_fvg_micro_tradeplan_staging_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not write FVG Micro TradePlan staging diagnostics report: %s", m_fvg_micro_tradeplan_staging_diagnostics_file));
+         return;
+      }
+
+      FalconFvgMicroTradePlanStagingSnapshot snapshot = stager.GetSnapshot();
+
+      FileWrite(handle,
+                "EAName", "Version", "Build", "Symbol", "GeneratedAt",
+                "StagerInitialized", "StagerId", "PlanId", "CandidateId", "ShadowId",
+                "StrategyId", "StrategyName", "EngineId", "StagingStatus", "WatcherStatus",
+                "WatcherInitialized", "RetestTouched", "SkeletonReady", "RuntimeSafetyReady", "ShadowExecutorReady",
+                "TradePlanCreated", "ValidatePassed", "StagedToShadowExecutor", "OrderSendUsed",
+                "Direction", "AnalysisTimeframe", "SetupTime", "StagingTime",
+                "LotSize", "Entry", "SL", "TP1", "TP2", "TP3",
+                "RiskProfile", "ManagementProfile", "ValidationReason", "StagingReason", "EvidenceSummary", "Notes");
+
+      FileWrite(handle,
+                EA_NAME,
+                EA_VERSION_TAG,
+                EA_BUILD_TAG,
+                m_symbol_context.symbol,
+                FalconTimeToString(TimeCurrent()),
+                (stager.IsInitialized() ? "true" : "false"),
+                snapshot.stager_id,
+                snapshot.plan_id,
+                snapshot.candidate_id,
+                snapshot.shadow_id,
+                snapshot.strategy_id,
+                snapshot.strategy_name,
+                snapshot.engine_id,
+                FalconTradePlanStagingStatusToString(snapshot.staging_status),
+                FalconRetestWatcherStatusToString(snapshot.watcher_status),
+                (snapshot.watcher_initialized ? "true" : "false"),
+                (snapshot.retest_touched ? "true" : "false"),
+                (snapshot.skeleton_ready ? "true" : "false"),
+                (snapshot.runtime_safety_ready ? "true" : "false"),
+                (snapshot.shadow_executor_ready ? "true" : "false"),
+                (snapshot.tradeplan_created ? "true" : "false"),
+                (snapshot.validate_passed ? "true" : "false"),
+                (snapshot.staged_to_shadow_executor ? "true" : "false"),
+                (snapshot.order_send_used ? "true" : "false"),
+                FalconDirectionToString(snapshot.direction),
+                FalconTimeframeToString(snapshot.analysis_timeframe),
+                FalconTimeToString(snapshot.setup_time),
+                FalconTimeToString(snapshot.staging_time),
+                DoubleToString(snapshot.lot_size, 2),
+                DoubleToString(snapshot.entry_price, m_symbol_context.digits),
+                DoubleToString(snapshot.structural_sl, m_symbol_context.digits),
+                DoubleToString(snapshot.tp1, m_symbol_context.digits),
+                DoubleToString(snapshot.tp2, m_symbol_context.digits),
+                DoubleToString(snapshot.tp3, m_symbol_context.digits),
+                snapshot.risk_profile,
+                snapshot.management_profile,
+                snapshot.validation_reason,
+                snapshot.staging_reason,
+                snapshot.evidence_summary,
+                snapshot.notes);
+
+      FileClose(handle);
+      CFalconLogger::Info(StringFormat("FVG Micro TradePlan staging dry-run diagnostics snapshot written: %s", m_fvg_micro_tradeplan_staging_diagnostics_file));
+   }
+
    void RegisterClosedTrade(FalconTradeLifecycleRecord &record)
    {
       if(!m_initialized || !EnableMainReport)
@@ -3577,20 +3934,20 @@ private:
 };
 
 // ==================================================================
-// Execution Guard - real trading intentionally impossible in v0.12.0.
+// Execution Guard - real trading intentionally impossible in v0.13.1.
 // ==================================================================
 class CFalconExecutionGuard
 {
 public:
    bool CanSendRealOrders()
    {
-      // v0.12.0 is a Shadow Engine Framework foundation build. Real execution is not allowed even if the input is changed.
+      // v0.13.1 is a Shadow Engine Framework foundation build. Real execution is not allowed even if the input is changed.
       return false;
    }
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.12.0.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.13.1.");
    }
 };
 
@@ -3608,6 +3965,7 @@ CFalconFirstShadowStrategyAdapterShell g_first_strategy_adapter;
 CFalconFvgMicroShadowDetectorStub g_fvg_micro_detector_stub;
 CFalconFvgMicroShadowCandidateBuilder g_fvg_micro_candidate_builder;
 CFalconFvgMicroRetestWatcher g_fvg_micro_retest_watcher;
+CFalconFvgMicroTradePlanStagingDryRun g_fvg_micro_tradeplan_stager;
 CFalconReportWriter      g_report_writer;
 CFalconExecutionGuard    g_execution_guard;
 bool                     g_is_initialized = false;
@@ -3620,7 +3978,7 @@ int OnInit()
    PrintFormat("============================================================");
    PrintFormat("%s", EA_NAME);
    PrintFormat("Version: %s | Build: %s", EA_VERSION_TAG, EA_BUILD_TAG);
-   PrintFormat("Stage: FVG Micro Retest Watcher & TradePlan Skeleton / No staging / No real execution");
+   PrintFormat("Stage: FVG Micro Shadow TradePlan Staging Dry Run / Shadow-only / No real execution");
    PrintFormat("============================================================");
 
    if(!g_market_context.Initialize())
@@ -3662,6 +4020,10 @@ int OnInit()
    g_shadow_executor.Initialize();
    g_report_writer.WriteShadowDiagnosticsSnapshot(g_shadow_executor);
 
+   if(!g_fvg_micro_tradeplan_stager.Initialize(g_fvg_micro_retest_watcher, g_runtime_safety_guard, g_shadow_executor))
+      return INIT_FAILED;
+   g_report_writer.WriteFvgMicroTradePlanStagingDiagnosticsSnapshot(g_fvg_micro_tradeplan_stager);
+
    if(!g_first_strategy_adapter.Initialize(g_strategy_registry, g_runtime_safety_guard, g_shadow_executor))
       return INIT_FAILED;
    g_report_writer.WriteStrategyAdapterDiagnosticsSnapshot(g_first_strategy_adapter);
@@ -3685,7 +4047,7 @@ void OnTick()
    if(!g_is_initialized)
       return;
 
-   // v0.12.0 runs the FVG Micro detector, candidate builder, and retest watcher during initialization. It may build a diagnostic TradePlan skeleton only; it does not create a real TradePlan, does not stage trades, and does not send orders.
+   // v0.13.1 runs the FVG Micro detector, candidate builder, retest watcher, and TradePlan staging dry run during initialization. It may stage a Shadow-only TradePlan if all guards pass; it does not send orders.
    // Future pipeline:
    // MarketContext -> CandleCache -> Narrative -> StrategyEngine -> Evidence -> Guard -> TradePlan -> Shadow/Paper/Demo/Live Executor -> ReportWriter
    return;
