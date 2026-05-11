@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.9.0 - FVG Micro Shadow Detector Stub |
+//|                     Version: v0.10.1 - FVG Micro Snapshot Fields Compile Hotfix |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.090"
+#property version   "1.101"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.9.0"
-#define EA_BUILD_TAG   "FvgMicroShadowDetectorStub_NoExecution"
+#define EA_VERSION_TAG "v0.10.1"
+#define EA_BUILD_TAG   "FvgMicroSnapshotFieldsCompileHotfix_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -39,7 +39,7 @@ input int    MaxOpenPositions                = 1;
 
 // ==================================================================
 // 03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات
-// Keep this list small and explicit. All engines are OFF in v0.9.0.
+// Keep this list small and explicit. All engines are OFF in v0.10.1.
 // ==================================================================
 input group "03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات";
 input bool EnableStrategy_FvgMicroRetest             = false; // Legacy core winner candidate.
@@ -57,7 +57,7 @@ input bool EnableStrategy_GoldenLiquidity5MEntry     = false; // استراتي�
 
 // ==================================================================
 // 04 - Reporting / التقارير
-// v0.9.0 keeps all previous reports and adds FVG Micro detector no-trade diagnostics.
+// v0.10.1 keeps all previous reports and fixes FVG Micro diagnostic snapshot fields.
 // Trade rows are still written only by controlled Shadow/Paper/Demo records; no live orders.
 // ==================================================================
 input group "04 - Reporting / التقارير";
@@ -69,7 +69,7 @@ input bool EnableVerboseExpertsLog          = true;
 
 // ==================================================================
 // 05 - Market Context / سياق السوق
-// Keep simple. This is diagnostics only in v0.9.0.
+// Keep simple. This is diagnostics only in v0.10.1.
 // ==================================================================
 input group "05 - Market Context / سياق السوق";
 input bool            UseClosedCandlesOnly          = true;      // Core guard: use closed candles for analysis snapshots.
@@ -85,10 +85,10 @@ input group "06 - Runtime Safety / أمان التشغيل";
 input bool            EnableNoLookaheadDiagnosticsReport = true; // Writes a runtime safety snapshot. No strategy decisions use current candle/final-state.
 input bool            EnableStrategyRegistryDiagnosticsReport = true; // Writes registered strategy switches and engine health states. No engine activation.
 input bool            EnableStrategyAdapterDiagnosticsReport = true; // Writes first Strategy Adapter shell diagnostics. No detector, no staging, no execution.
-input bool            EnableFvgMicroDetectorDiagnosticsReport = true; // Writes FVG Micro detector stub diagnostics. No TradePlan, no staging.
+input bool            EnableFvgMicroDetectorDiagnosticsReport = true; // Writes real FVG Micro detector diagnostics. No TradePlan, no staging.
 
 // ==================================================================
-// Core Data Contracts - v0.9.0
+// Core Data Contracts - v0.10.1
 // ==================================================================
 enum ENUM_FALCON_DIRECTION
 {
@@ -205,10 +205,12 @@ enum ENUM_FALCON_ADAPTER_STATUS
 
 enum ENUM_FALCON_DETECTOR_STATUS
 {
-   FALCON_DETECTOR_STATUS_NOT_INITIALIZED = 0,
-   FALCON_DETECTOR_STATUS_NO_TRADE        = 1,
-   FALCON_DETECTOR_STATUS_BLOCKED         = 2,
-   FALCON_DETECTOR_STATUS_READY_STUB      = 3
+   FALCON_DETECTOR_STATUS_NOT_INITIALIZED      = 0,
+   FALCON_DETECTOR_STATUS_NO_TRADE             = 1,
+   FALCON_DETECTOR_STATUS_BLOCKED              = 2,
+   FALCON_DETECTOR_STATUS_READY_STUB           = 3,
+   FALCON_DETECTOR_STATUS_NO_FVG               = 4,
+   FALCON_DETECTOR_STATUS_FVG_FOUND_SHADOW_ONLY= 5
 };
 
 struct FalconSymbolContext
@@ -334,6 +336,21 @@ struct FalconFvgMicroDetectorSnapshot
    double                       candle_low;
    double                       candle_close;
    long                         candle_tick_volume;
+   bool                         fvg_detected;
+   ENUM_FALCON_DIRECTION        fvg_direction;
+   datetime                     older_candle_time;
+   datetime                     middle_candle_time;
+   datetime                     newer_candle_time;
+   double                       older_candle_high;
+   double                       older_candle_low;
+   double                       middle_candle_high;
+   double                       middle_candle_low;
+   double                       newer_candle_high;
+   double                       newer_candle_low;
+   double                       fvg_lower;
+   double                       fvg_upper;
+   double                       fvg_size_price;
+   double                       fvg_size_points;
    double                       evidence_score;
    string                       evidence_summary;
    string                       no_trade_reason;
@@ -639,6 +656,10 @@ string FalconDetectorStatusToString(const ENUM_FALCON_DETECTOR_STATUS status)
       return "BLOCKED";
    if(status == FALCON_DETECTOR_STATUS_READY_STUB)
       return "READY_STUB";
+   if(status == FALCON_DETECTOR_STATUS_NO_FVG)
+      return "NO_FVG";
+   if(status == FALCON_DETECTOR_STATUS_FVG_FOUND_SHADOW_ONLY)
+      return "FVG_FOUND_SHADOW_ONLY";
    return "NOT_INITIALIZED";
 }
 
@@ -752,7 +773,7 @@ public:
 };
 
 // ==================================================================
-// Market Context Provider - v0.9.0 symbol, quote, and closed candle diagnostics
+// Market Context Provider - v0.10.1 symbol, quote, and closed candle diagnostics
 // ==================================================================
 class CFalconMarketContext
 {
@@ -949,7 +970,7 @@ private:
 
 
 // ==================================================================
-// Multi-Timeframe Candle Cache - v0.9.0
+// Multi-Timeframe Candle Cache - v0.10.1
 // Official analysis timeframes: M1, M5, M15, H1, H4, D1.
 // This layer is data-provider only. It does not create signals.
 // ==================================================================
@@ -1073,7 +1094,7 @@ public:
 };
 
 // ==================================================================
-// Evidence Framework Foundation - v0.9.0
+// Evidence Framework Foundation - v0.10.1
 // Contract-only layer. Evidence strengthens or weakens future engine decisions,
 // but it never opens a trade and never overrides guards.
 // ==================================================================
@@ -1134,7 +1155,7 @@ public:
       pack.has_objective_indicator_evidence = false;
       pack.has_smc_evidence                 = false;
       pack.score                            = 0.0;
-      pack.summary                          = "No runtime evidence evaluated in v0.9.0. Evidence Framework remains contract-only.";
+      pack.summary                          = "No runtime evidence evaluated in v0.10.1. Evidence Framework remains contract-only.";
       return pack;
    }
 
@@ -1173,7 +1194,7 @@ public:
    {
       if(EnableRealExecution)
       {
-         CFalconLogger::Error("HARD SAFETY BLOCK: EnableRealExecution must remain false in v0.9.0.");
+         CFalconLogger::Error("HARD SAFETY BLOCK: EnableRealExecution must remain false in v0.10.1.");
          return false;
       }
 
@@ -1232,7 +1253,7 @@ public:
 };
 
 // ==================================================================
-// First Shadow Strategy Adapter Shell - v0.9.0
+// First Shadow Strategy Adapter Shell - v0.10.1
 // This registry only describes strategies and their safety stage.
 // It does not execute detectors, does not produce signals, and does not send orders.
 // ==================================================================
@@ -1442,7 +1463,7 @@ public:
 
    void PrintRegistryState()
    {
-      CFalconLogger::Info(StringFormat("StrategyRegistry initialized. Registered=%d | EnabledByInputs=%d | CoreWinners=%d | Research=%d | Watch=%d | LiveAllowed=%s | Stage=REGISTRY_ONLY_v0.9.0",
+      CFalconLogger::Info(StringFormat("StrategyRegistry initialized. Registered=%d | EnabledByInputs=%d | CoreWinners=%d | Research=%d | Watch=%d | LiveAllowed=%s | Stage=REGISTRY_ONLY_v0.10.1",
                                        CountRegisteredStrategies(),
                                        CountEnabledStrategies(),
                                        CountByHealth(FALCON_ENGINE_HEALTH_CORE_WINNER),
@@ -1454,7 +1475,7 @@ public:
 
 
 // ==================================================================
-// Shadow Engine Framework Foundation - v0.9.0
+// Shadow Engine Framework Foundation - v0.10.1
 // Shadow is observation-only. It can stage simulated records and convert
 // them to lifecycle records, but it never sends broker orders.
 // ==================================================================
@@ -1652,7 +1673,7 @@ private:
 };
 
 // ==================================================================
-// No-Lookahead Runtime Guard & Strategy Staging Safety - v0.9.0
+// No-Lookahead Runtime Guard & Strategy Staging Safety - v0.10.1
 // This layer blocks current-candle/final-state dependency before any future
 // strategy can stage Shadow/Paper/Demo plans. It does not create signals.
 // ==================================================================
@@ -1836,7 +1857,7 @@ private:
 
 
 // ==================================================================
-// First Shadow Strategy Adapter Shell - v0.9.0
+// First Shadow Strategy Adapter Shell - v0.10.1
 // This adapter proves that a registered strategy can be discovered and
 // evaluated for future Shadow staging without running any detector.
 // It intentionally produces NO_TRADE / BLOCKED candidate diagnostics only.
@@ -1859,7 +1880,7 @@ public:
                    CFalconShadowExecutor &shadow_executor)
    {
       ResetSnapshot();
-      m_snapshot.adapter_id         = "ADAPTER_SHELL_FVG_MICRO_RETEST_v0_8_0";
+      m_snapshot.adapter_id         = "ADAPTER_SHELL_FVG_MICRO_RETEST_v0_10_1";
       m_snapshot.target_strategy_id = "FVG_MICRO_RETEST";
       m_snapshot.runtime_safety_ready = runtime_guard.IsInitialized();
       m_snapshot.shadow_executor_ready = shadow_executor.IsInitialized();
@@ -1906,7 +1927,7 @@ public:
       {
          m_snapshot.adapter_status  = FALCON_ADAPTER_STATUS_SHADOW_CANDIDATE_BLOCKED;
          m_snapshot.no_trade_reason = "ADAPTER_SHELL_NO_DETECTOR_YET";
-         m_snapshot.safety_reason   = "NO_TRADEPLAN_CREATED_IN_v0_8_0";
+         m_snapshot.safety_reason   = "NO_TRADEPLAN_CREATED_IN_v0_10_1";
       }
       else
       {
@@ -1915,7 +1936,7 @@ public:
          m_snapshot.safety_reason   = "ADAPTER_SHELL_OBSERVE_ONLY";
       }
 
-      m_snapshot.notes = "v0.9.0 adapter shell only. Registry linked to Shadow Executor, but no detector, no signal, no trade plan, and no staging.";
+      m_snapshot.notes = "v0.10.1 adapter shell only. Registry linked to Shadow Executor, but no detector, no signal, no trade plan, and no staging.";
       m_initialized = true;
 
       CFalconLogger::Info(StringFormat("FirstStrategyAdapterShell initialized. Strategy=%s | InputEnabled=%s | Status=%s | Reason=%s",
@@ -1963,10 +1984,10 @@ private:
 };
 
 // ==================================================================
-// FVG Micro Shadow Detector Stub - v0.9.0
-// Reads safe candle-cache data and Evidence Framework contracts only.
-// It does NOT detect real FVG entries yet, does NOT create TradePlans,
-// does NOT stage Shadow trades, and does NOT send orders.
+// FVG Micro Real Shadow Detector Phase 1 - v0.10.1
+// Detects real 3-candle M5 FVGs using closed candles only.
+// It does NOT create TradePlans, does NOT stage Shadow trades,
+// and does NOT send orders. Detection is diagnostic / shadow-only.
 // ==================================================================
 class CFalconFvgMicroShadowDetectorStub
 {
@@ -1987,7 +2008,7 @@ public:
                    CFalconRuntimeSafetyGuard &runtime_guard)
    {
       ResetSnapshot();
-      m_snapshot.detector_id = "DETECTOR_STUB_FVG_MICRO_RETEST_v0_9_0";
+      m_snapshot.detector_id = "DETECTOR_FVG_MICRO_RETEST_REAL_PHASE1_v0_10_1";
       m_snapshot.strategy_id = "FVG_MICRO_RETEST";
       m_snapshot.analysis_timeframe = PERIOD_M5;
       m_snapshot.analysis_shift = candle_cache.AnalysisShift();
@@ -2002,8 +2023,8 @@ public:
          m_snapshot.registry_found = false;
          m_snapshot.detector_status = FALCON_DETECTOR_STATUS_BLOCKED;
          m_snapshot.no_trade_reason = "REGISTRY_ENTRY_NOT_FOUND";
-         m_snapshot.safety_reason = "DETECTOR_STUB_BLOCKED_BEFORE_CANDLE_READ";
-         m_snapshot.notes = "FVG Micro detector stub could not find registry entry. No TradePlan created.";
+         m_snapshot.safety_reason = "DETECTOR_BLOCKED_BEFORE_CANDLE_READ";
+         m_snapshot.notes = "FVG Micro detector could not find registry entry. No TradePlan created.";
          m_initialized = true;
          return true;
       }
@@ -2018,7 +2039,7 @@ public:
          m_snapshot.detector_status = FALCON_DETECTOR_STATUS_BLOCKED;
          m_snapshot.no_trade_reason = "CANDLE_CACHE_NOT_READY";
          m_snapshot.safety_reason = "SAFE_CANDLE_DATA_REQUIRED";
-         m_snapshot.notes = "Detector stub requires CandleCache to be loaded first.";
+         m_snapshot.notes = "Detector requires CandleCache to be loaded first.";
          m_initialized = true;
          return true;
       }
@@ -2028,7 +2049,7 @@ public:
       {
          m_snapshot.detector_status = FALCON_DETECTOR_STATUS_BLOCKED;
          m_snapshot.no_trade_reason = "M5_ANALYSIS_CANDLE_NOT_AVAILABLE";
-         m_snapshot.safety_reason = "FVG_MICRO_STUB_REQUIRES_M5_SNAPSHOT";
+         m_snapshot.safety_reason = "FVG_MICRO_REQUIRES_M5_SNAPSHOT";
          m_snapshot.notes = "No M5 closed analysis candle was available from CandleCache.";
          m_initialized = true;
          return true;
@@ -2050,46 +2071,74 @@ public:
          m_snapshot.detector_status = FALCON_DETECTOR_STATUS_BLOCKED;
          m_snapshot.no_trade_reason = candle_reject;
          m_snapshot.safety_reason = "NO_LOOKAHEAD_GUARD_BLOCKED_CANDLE";
-         m_snapshot.notes = "Detector stub refused to evaluate unsafe candle data.";
+         m_snapshot.notes = "Detector refused to evaluate unsafe candle data.";
          m_initialized = true;
          return true;
       }
-
-      FalconEvidencePack pack = evidence_framework.BuildEmptyEvidencePack();
-      m_snapshot.evidence_score = pack.score;
-      m_snapshot.evidence_summary = pack.summary;
 
       if(!m_snapshot.evidence_framework_ready)
       {
          m_snapshot.detector_status = FALCON_DETECTOR_STATUS_BLOCKED;
          m_snapshot.no_trade_reason = "EVIDENCE_FRAMEWORK_NOT_READY";
          m_snapshot.safety_reason = "EVIDENCE_CONTRACTS_REQUIRED";
+         m_snapshot.notes = "Detector requires Evidence Framework before writing FVG evidence.";
+         m_initialized = true;
+         return true;
       }
-      else if(!m_snapshot.runtime_safety_ready)
+
+      if(!m_snapshot.runtime_safety_ready)
       {
          m_snapshot.detector_status = FALCON_DETECTOR_STATUS_BLOCKED;
          m_snapshot.no_trade_reason = "RUNTIME_SAFETY_NOT_READY";
          m_snapshot.safety_reason = "NO_LOOKAHEAD_GUARD_REQUIRED";
+         m_snapshot.notes = "Detector requires No-Lookahead Guard before evaluation.";
+         m_initialized = true;
+         return true;
       }
-      else if(!m_snapshot.input_enabled)
+
+      bool detected = DetectThreeCandleM5Fvg();
+      FalconEvidencePack pack = evidence_framework.BuildEmptyEvidencePack();
+
+      if(detected)
       {
-         m_snapshot.detector_status = FALCON_DETECTOR_STATUS_NO_TRADE;
-         m_snapshot.no_trade_reason = "STRATEGY_INPUT_DISABLED";
-         m_snapshot.safety_reason = "DETECTOR_STUB_OBSERVE_ONLY";
+         m_snapshot.evidence_score = 25.0;
+         m_snapshot.evidence_summary = StringFormat("SMC_FVG_PRESENT;Direction=%s;TF=%s;Lower=%s;Upper=%s;SizePoints=%s",
+                                                    FalconDirectionToString(m_snapshot.fvg_direction),
+                                                    FalconTimeframeToString(m_snapshot.analysis_timeframe),
+                                                    DoubleToString(m_snapshot.fvg_lower, _Digits),
+                                                    DoubleToString(m_snapshot.fvg_upper, _Digits),
+                                                    DoubleToString(m_snapshot.fvg_size_points, 2));
+
+         if(!m_snapshot.input_enabled)
+         {
+            m_snapshot.detector_status = FALCON_DETECTOR_STATUS_NO_TRADE;
+            m_snapshot.no_trade_reason = "FVG_DETECTED_BUT_STRATEGY_INPUT_DISABLED";
+            m_snapshot.safety_reason = "SHADOW_OBSERVE_ONLY_INPUT_OFF";
+         }
+         else
+         {
+            m_snapshot.detector_status = FALCON_DETECTOR_STATUS_FVG_FOUND_SHADOW_ONLY;
+            m_snapshot.no_trade_reason = "FVG_FOUND_NO_TRADEPLAN_IN_v0_10_1";
+            m_snapshot.safety_reason = "SHADOW_DETECTION_ONLY_NO_STAGING";
+         }
       }
       else
       {
-         m_snapshot.detector_status = FALCON_DETECTOR_STATUS_NO_TRADE;
-         m_snapshot.no_trade_reason = "DETECTOR_STUB_NO_RUNTIME_LOGIC_YET";
-         m_snapshot.safety_reason = "NO_TRADEPLAN_CREATED_IN_v0_9_0";
+         m_snapshot.evidence_score = pack.score;
+         m_snapshot.evidence_summary = "SMC_FVG_ABSENT;" + pack.summary;
+         m_snapshot.detector_status = FALCON_DETECTOR_STATUS_NO_FVG;
+         m_snapshot.no_trade_reason = "NO_THREE_CANDLE_M5_FVG_DETECTED";
+         m_snapshot.safety_reason = "NO_TRADEPLAN_CREATED_IN_v0_10_1";
       }
 
-      m_snapshot.notes = "v0.9.0 FVG Micro detector stub only. Safe M5 closed candle was read, EvidencePack linked, but no FVG logic, no signal, no TradePlan, no Shadow staging.";
+      m_snapshot.notes = "v0.10.1 FVG Micro real shadow detector Phase 1 compile hotfix. Uses three closed M5 candles: older=shift+2, middle=shift+1, newer=shift. Bullish FVG when older.high < newer.low. Bearish FVG when older.low > newer.high. No TradePlan, no Shadow staging, no OrderSend.";
       m_initialized = true;
 
-      CFalconLogger::Info(StringFormat("FvgMicroDetectorStub initialized. InputEnabled=%s | Status=%s | Reason=%s | M5Time=%s",
+      CFalconLogger::Info(StringFormat("FvgMicroRealDetector initialized. InputEnabled=%s | Status=%s | FVG=%s | Direction=%s | Reason=%s | M5Time=%s",
                                        (m_snapshot.input_enabled ? "true" : "false"),
                                        FalconDetectorStatusToString(m_snapshot.detector_status),
+                                       (m_snapshot.fvg_detected ? "true" : "false"),
+                                       FalconDirectionToString(m_snapshot.fvg_direction),
                                        m_snapshot.no_trade_reason,
                                        FalconTimeToString(m_snapshot.candle_time)));
       return true;
@@ -2106,6 +2155,79 @@ public:
    }
 
 private:
+   bool DetectThreeCandleM5Fvg()
+   {
+      const int shift = m_snapshot.analysis_shift;
+      if(shift <= 0)
+      {
+         m_snapshot.safety_reason = "FVG_DETECTION_REQUIRES_CLOSED_CANDLE_SHIFT";
+         return false;
+      }
+
+      MqlRates newer[];
+      MqlRates middle[];
+      MqlRates older[];
+      ArrayResize(newer, 1);
+      ArrayResize(middle, 1);
+      ArrayResize(older, 1);
+      ArraySetAsSeries(newer, true);
+      ArraySetAsSeries(middle, true);
+      ArraySetAsSeries(older, true);
+
+      int copied_newer = CopyRates(_Symbol, PERIOD_M5, shift,     1, newer);
+      int copied_mid   = CopyRates(_Symbol, PERIOD_M5, shift + 1, 1, middle);
+      int copied_old   = CopyRates(_Symbol, PERIOD_M5, shift + 2, 1, older);
+
+      if(copied_newer != 1 || copied_mid != 1 || copied_old != 1)
+      {
+         m_snapshot.safety_reason = "FVG_THREE_CANDLE_COPYRATES_FAILED";
+         m_snapshot.notes = "Could not read three closed M5 candles for FVG detection.";
+         return false;
+      }
+
+      m_snapshot.newer_candle_time  = newer[0].time;
+      m_snapshot.middle_candle_time = middle[0].time;
+      m_snapshot.older_candle_time  = older[0].time;
+      m_snapshot.newer_candle_high  = newer[0].high;
+      m_snapshot.newer_candle_low   = newer[0].low;
+      m_snapshot.middle_candle_high = middle[0].high;
+      m_snapshot.middle_candle_low  = middle[0].low;
+      m_snapshot.older_candle_high  = older[0].high;
+      m_snapshot.older_candle_low   = older[0].low;
+
+      const bool bullish_fvg = (older[0].high < newer[0].low);
+      const bool bearish_fvg = (older[0].low  > newer[0].high);
+
+      if(bullish_fvg)
+      {
+         m_snapshot.fvg_detected = true;
+         m_snapshot.fvg_direction = FALCON_DIRECTION_BUY;
+         m_snapshot.fvg_lower = older[0].high;
+         m_snapshot.fvg_upper = newer[0].low;
+      }
+      else if(bearish_fvg)
+      {
+         m_snapshot.fvg_detected = true;
+         m_snapshot.fvg_direction = FALCON_DIRECTION_SELL;
+         m_snapshot.fvg_lower = newer[0].high;
+         m_snapshot.fvg_upper = older[0].low;
+      }
+      else
+      {
+         m_snapshot.fvg_detected = false;
+         m_snapshot.fvg_direction = FALCON_DIRECTION_NONE;
+         m_snapshot.fvg_lower = 0.0;
+         m_snapshot.fvg_upper = 0.0;
+         m_snapshot.fvg_size_price = 0.0;
+         m_snapshot.fvg_size_points = 0.0;
+         return false;
+      }
+
+      m_snapshot.fvg_size_price = MathAbs(m_snapshot.fvg_upper - m_snapshot.fvg_lower);
+      m_snapshot.fvg_size_points = (m_snapshot.fvg_size_price / _Point);
+      return true;
+   }
+
    void ResetSnapshot()
    {
       m_snapshot.detector_id = "";
@@ -2128,6 +2250,21 @@ private:
       m_snapshot.candle_low = 0.0;
       m_snapshot.candle_close = 0.0;
       m_snapshot.candle_tick_volume = 0;
+      m_snapshot.fvg_detected = false;
+      m_snapshot.fvg_direction = FALCON_DIRECTION_NONE;
+      m_snapshot.older_candle_time = 0;
+      m_snapshot.middle_candle_time = 0;
+      m_snapshot.newer_candle_time = 0;
+      m_snapshot.older_candle_high = 0.0;
+      m_snapshot.older_candle_low = 0.0;
+      m_snapshot.middle_candle_high = 0.0;
+      m_snapshot.middle_candle_low = 0.0;
+      m_snapshot.newer_candle_high = 0.0;
+      m_snapshot.newer_candle_low = 0.0;
+      m_snapshot.fvg_lower = 0.0;
+      m_snapshot.fvg_upper = 0.0;
+      m_snapshot.fvg_size_price = 0.0;
+      m_snapshot.fvg_size_points = 0.0;
       m_snapshot.evidence_score = 0.0;
       m_snapshot.evidence_summary = "";
       m_snapshot.no_trade_reason = "";
@@ -2166,15 +2303,16 @@ public:
    bool Initialize(const FalconSymbolContext &symbol_context)
    {
       m_symbol_context     = symbol_context;
-      m_trade_report_file  = "JA_FalconCore_TradeLifecycle_v0_8_0.csv";
-      m_summary_report_file= "JA_FalconCore_Summary_v0_8_0.csv";
-      m_market_diagnostics_file = "JA_FalconCore_MarketDiagnostics_v0_8_0.csv";
-      m_candle_cache_diagnostics_file = "JA_FalconCore_CandleCacheDiagnostics_v0_8_0.csv";
-      m_evidence_diagnostics_file = "JA_FalconCore_EvidenceDiagnostics_v0_8_0.csv";
-      m_shadow_diagnostics_file = "JA_FalconCore_ShadowDiagnostics_v0_8_0.csv";
-      m_no_lookahead_diagnostics_file = "JA_FalconCore_NoLookaheadDiagnostics_v0_8_0.csv";
-      m_strategy_registry_diagnostics_file = "JA_FalconCore_StrategyRegistryDiagnostics_v0_8_0.csv";
-      m_strategy_adapter_diagnostics_file = "JA_FalconCore_StrategyAdapterDiagnostics_v0_8_0.csv";
+      m_trade_report_file  = "JA_FalconCore_TradeLifecycle_v0_10_1.csv";
+      m_summary_report_file= "JA_FalconCore_Summary_v0_10_1.csv";
+      m_market_diagnostics_file = "JA_FalconCore_MarketDiagnostics_v0_10_1.csv";
+      m_candle_cache_diagnostics_file = "JA_FalconCore_CandleCacheDiagnostics_v0_10_1.csv";
+      m_evidence_diagnostics_file = "JA_FalconCore_EvidenceDiagnostics_v0_10_1.csv";
+      m_shadow_diagnostics_file = "JA_FalconCore_ShadowDiagnostics_v0_10_1.csv";
+      m_no_lookahead_diagnostics_file = "JA_FalconCore_NoLookaheadDiagnostics_v0_10_1.csv";
+      m_strategy_registry_diagnostics_file = "JA_FalconCore_StrategyRegistryDiagnostics_v0_10_1.csv";
+      m_strategy_adapter_diagnostics_file = "JA_FalconCore_StrategyAdapterDiagnostics_v0_10_1.csv";
+      m_fvg_micro_detector_diagnostics_file = "JA_FalconCore_FvgMicroDetectorDiagnostics_v0_10_1.csv";
       ResetTotals();
 
       if(EnableMainReport)
@@ -2384,7 +2522,7 @@ public:
                 shadow_executor.ClosedRecords(),
                 shadow_executor.CancelledRecords(),
                 "ShadowToTradeLifecycleRecord_READY",
-                "v0.9.0 is framework only. No strategy creates shadow records yet.");
+                "v0.10.1 is framework only. No strategy creates shadow records yet.");
 
       FileClose(handle);
       CFalconLogger::Info(StringFormat("Shadow diagnostics snapshot written: %s", m_shadow_diagnostics_file));
@@ -2575,6 +2713,9 @@ public:
                 "CandleCacheReady", "EvidenceFrameworkReady", "RuntimeSafetyReady",
                 "UsedClosedCandle", "OrderSendUsed", "AnalysisTimeframe", "AnalysisShift",
                 "CandleTime", "Open", "High", "Low", "Close", "TickVolume",
+                "FvgDetected", "FvgDirection", "OlderCandleTime", "MiddleCandleTime", "NewerCandleTime",
+                "OlderHigh", "OlderLow", "MiddleHigh", "MiddleLow", "NewerHigh", "NewerLow",
+                "FvgLower", "FvgUpper", "FvgSizePrice", "FvgSizePoints",
                 "EvidenceScore", "EvidenceSummary", "NoTradeReason", "SafetyReason", "Notes");
 
       FileWrite(handle,
@@ -2604,6 +2745,21 @@ public:
                 DoubleToString(snapshot.candle_low, m_symbol_context.digits),
                 DoubleToString(snapshot.candle_close, m_symbol_context.digits),
                 snapshot.candle_tick_volume,
+                (snapshot.fvg_detected ? "true" : "false"),
+                FalconDirectionToString(snapshot.fvg_direction),
+                FalconTimeToString(snapshot.older_candle_time),
+                FalconTimeToString(snapshot.middle_candle_time),
+                FalconTimeToString(snapshot.newer_candle_time),
+                DoubleToString(snapshot.older_candle_high, m_symbol_context.digits),
+                DoubleToString(snapshot.older_candle_low, m_symbol_context.digits),
+                DoubleToString(snapshot.middle_candle_high, m_symbol_context.digits),
+                DoubleToString(snapshot.middle_candle_low, m_symbol_context.digits),
+                DoubleToString(snapshot.newer_candle_high, m_symbol_context.digits),
+                DoubleToString(snapshot.newer_candle_low, m_symbol_context.digits),
+                DoubleToString(snapshot.fvg_lower, m_symbol_context.digits),
+                DoubleToString(snapshot.fvg_upper, m_symbol_context.digits),
+                DoubleToString(snapshot.fvg_size_price, m_symbol_context.digits),
+                DoubleToString(snapshot.fvg_size_points, 2),
                 DoubleToString(snapshot.evidence_score, 2),
                 snapshot.evidence_summary,
                 snapshot.no_trade_reason,
@@ -2802,20 +2958,20 @@ private:
 };
 
 // ==================================================================
-// Execution Guard - real trading intentionally impossible in v0.9.0.
+// Execution Guard - real trading intentionally impossible in v0.10.1.
 // ==================================================================
 class CFalconExecutionGuard
 {
 public:
    bool CanSendRealOrders()
    {
-      // v0.9.0 is a Shadow Engine Framework foundation build. Real execution is not allowed even if the input is changed.
+      // v0.10.1 is a Shadow Engine Framework foundation build. Real execution is not allowed even if the input is changed.
       return false;
    }
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.9.0.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.10.1.");
    }
 };
 
@@ -2843,7 +2999,7 @@ int OnInit()
    PrintFormat("============================================================");
    PrintFormat("%s", EA_NAME);
    PrintFormat("Version: %s | Build: %s", EA_VERSION_TAG, EA_BUILD_TAG);
-   PrintFormat("Stage: FVG Micro Shadow Detector Stub / No TradePlan / No real execution");
+   PrintFormat("Stage: FVG Micro Real Shadow Detector Phase 1 / No TradePlan / No real execution");
    PrintFormat("============================================================");
 
    if(!g_market_context.Initialize())
@@ -2900,7 +3056,7 @@ void OnTick()
    if(!g_is_initialized)
       return;
 
-   // v0.9.0 runs only the FVG Micro Detector Stub during initialization. It does not create TradePlans, does not stage trades, and does not send orders.
+   // v0.10.1 runs only the FVG Micro Real Shadow Detector Phase 1 during initialization. It detects M5 FVGs in diagnostics only; it does not create TradePlans, does not stage trades, and does not send orders.
    // Future pipeline:
    // MarketContext -> CandleCache -> Narrative -> StrategyEngine -> Evidence -> Guard -> TradePlan -> Shadow/Paper/Demo/Live Executor -> ReportWriter
    return;
