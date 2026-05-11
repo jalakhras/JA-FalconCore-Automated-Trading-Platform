@@ -1,17 +1,53 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.17.0 - FVG Micro Shadow Runtime Smoke Test |
+//|                     Version: v0.18.9 - AutoPeriod Manifest CSV Sanitizer Lock |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.170"
+#property version   "1.189"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.17.0"
-#define EA_BUILD_TAG   "FvgMicroShadowRuntimeSmokeTest_NoExecution"
+#define EA_VERSION_TAG "v0.18.9"
+#define EA_BUILD_TAG   "AutoPeriodManifestCsvSanitizerLock_NoExecution"
 
 #define FALCON_MTF_COUNT       6
+
+// ==================================================================
+// Runtime report period state - v0.18.4
+// ==================================================================
+datetime g_report_period_first_time = 0;
+datetime g_report_period_last_time  = 0;
+string   g_report_initial_from_tag  = "";
+string   g_report_initial_to_tag    = "";
+string   g_report_active_from_tag   = "";
+string   g_report_active_to_tag     = "";
+bool     g_report_period_initialized = false;
+bool     g_report_period_finalized   = false;
+
+// ==================================================================
+// Runtime performance constants - v0.18.5
+// Keep heavy verification reports away from per-trade OnTick path.
+// They remain available at OnInit/OnDeinit for audit, while TradeLifecycle
+// keeps the important shadow trade rows. No trading logic change.
+// ==================================================================
+#define FALCON_WRITE_HEAVY_RUNTIME_AUDIT_ON_SHADOW_CLOSE false
+#define FALCON_WRITE_SECONDARY_ONINIT_AUDIT_SNAPSHOTS     false
+#define FALCON_RUNTIME_DIAGNOSTICS_DEFAULT_N_TICKS        1000
+
+// ==================================================================
+// Report profile model - v0.18.6/v0.18.8
+// v0.18.6 reduced report spam to profiles.
+// v0.18.8 locks report profile cleanup and sanitizes CSV string fields,
+// not necessarily the Strategy Tester UI To-date when the UI end date is a weekend/holiday/no-tick day.
+// ==================================================================
+enum ENUM_FALCON_REPORT_PROFILE
+{
+   FALCON_REPORT_MINIMAL  = 0, // TradeLifecycle + Summary only
+   FALCON_REPORT_STANDARD = 1, // TradeLifecycle + Summary + StrategyRegistry + PeriodManifest
+   FALCON_REPORT_DEBUG    = 2  // All diagnostic reports
+};
+
 
 // ==================================================================
 // 01 - EA Safety & Risk / إعدادات المستخدم الأساسية
@@ -39,10 +75,10 @@ input int    MaxOpenPositions                = 1;
 
 // ==================================================================
 // 03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات
-// Keep this list small and explicit. All engines are OFF in v0.17.0.
+// Keep this list small and explicit. FVG Micro is ON by default for ShadowSmoke only; all other engines remain OFF.
 // ==================================================================
 input group "03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات";
-input bool EnableStrategy_FvgMicroRetest             = false; // Legacy core winner candidate.
+input bool EnableStrategy_FvgMicroRetest             = true;  // ShadowSmoke core winner candidate. Still no real execution.
 input bool EnableStrategy_TailSmartReturn            = false; // استراتيجية ذيل العودة الذكي.
 input bool EnableStrategy_MomentumCross820           = false; // استراتيجية تقاطع الزخم 8/20.
 input bool EnableStrategy_CheckMarkLiquiditySweep    = false; // استراتيجية علامة الصح بعد سحب السيولة.
@@ -57,45 +93,85 @@ input bool EnableStrategy_GoldenLiquidity5MEntry     = false; // استراتي�
 
 // ==================================================================
 // 04 - Reporting / التقارير
-// v0.17.0 keeps prior reports and adds runtime report verification diagnostics.
-// Trade rows are still written only by controlled Shadow/Paper/Demo records; no live orders.
+// v0.18.6 cleanup: one profile controls diagnostic reports.
+// Default STANDARD keeps only essential files for normal tests.
 // ==================================================================
 input group "04 - Reporting / التقارير";
-input bool EnableMainReport                 = true;
-input bool EnableRejectedReport             = true;
-input bool EnableEvidenceReport             = true;
-input bool EnableShadowDiagnosticsReport    = true;
-input bool EnableVerboseExpertsLog          = true;
+input bool                       EnableMainReport              = true;
+input ENUM_FALCON_REPORT_PROFILE ReportProfile                 = FALCON_REPORT_STANDARD;
+input string                     ReportModeTag                 = "ShadowSmoke";
+input bool                       UseCommonFilesFolderForReports = true;
+input bool                       EnableVerboseExpertsLog       = true;
+input bool                       EnableFastRuntimeSmokeMode    = true;
+input int                        RuntimeDiagnosticsEveryNTicks = 1000;
+
+// Internal report constants. Keep these out of user inputs.
+#define FALCON_ENABLE_REPORT_PERIOD_IN_FILE_NAMES      true
+#define FALCON_AUTO_DETECT_REPORT_PERIOD_TAGS          true
+#define FALCON_RENAME_REPORTS_TO_ACTUAL_PERIOD         true
+#define FALCON_REPORT_FROM_DATE_TAG                    "AUTO"
+#define FALCON_REPORT_TO_DATE_TAG                      "AUTO"
+#define FALCON_FORCE_CREATE_REPORT_FILES_ON_INIT       (ReportProfile == FALCON_REPORT_DEBUG)
+#define FALCON_PRINT_REPORT_FOLDER_HINTS_TO_LOG        (ReportProfile != FALCON_REPORT_MINIMAL)
+
+bool FalconReportProfileIsMinimal()
+{
+   return (ReportProfile == FALCON_REPORT_MINIMAL);
+}
+
+bool FalconReportProfileIsStandardOrDebug()
+{
+   return (ReportProfile == FALCON_REPORT_STANDARD || ReportProfile == FALCON_REPORT_DEBUG);
+}
+
+bool FalconReportProfileIsDebug()
+{
+   return (ReportProfile == FALCON_REPORT_DEBUG);
+}
+
+string FalconReportProfileToString()
+{
+   if(ReportProfile == FALCON_REPORT_MINIMAL)
+      return "MINIMAL";
+   if(ReportProfile == FALCON_REPORT_DEBUG)
+      return "DEBUG";
+   return "STANDARD";
+}
+
+// Diagnostic report gates. Normal tests should not create diagnostic report spam.
+#define EnableMarketDiagnosticsReport                         (FalconReportProfileIsDebug())
+#define EnableCandleCacheDiagnosticsReport                    (FalconReportProfileIsDebug())
+#define EnableEvidenceDiagnosticsReport                       (FalconReportProfileIsDebug())
+#define EnableShadowDiagnosticsReport                         (FalconReportProfileIsDebug())
+#define EnableNoLookaheadDiagnosticsReport                    (FalconReportProfileIsDebug())
+#define EnableStrategyRegistryDiagnosticsReport               (FalconReportProfileIsStandardOrDebug())
+#define EnableStrategyAdapterDiagnosticsReport                (FalconReportProfileIsDebug())
+#define EnableFvgMicroDetectorDiagnosticsReport               (FalconReportProfileIsDebug())
+#define EnableFvgMicroCandidateDiagnosticsReport              (FalconReportProfileIsDebug())
+#define EnableFvgMicroRetestWatcherDiagnosticsReport          (FalconReportProfileIsDebug())
+#define EnableFvgMicroTradePlanStagingDiagnosticsReport       (FalconReportProfileIsDebug())
+#define EnableFvgMicroLifecycleSimulationDiagnosticsReport    (FalconReportProfileIsDebug())
+#define EnableReportCalibrationDiagnosticsReport              (FalconReportProfileIsDebug())
+#define EnableRuntimeReportVerificationReport                 (FalconReportProfileIsDebug())
+#define EnableFvgMicroSmokeTestDiagnosticsReport              (FalconReportProfileIsDebug())
+#define EnableFvgMicroRuntimeReportAuditReport                (FalconReportProfileIsDebug())
+
+// Core runtime constants. These are architectural defaults, not user inputs.
+#define UseClosedCandlesOnly                                  true
+#define PrimaryContextTimeframe                               PERIOD_M5
+#define EnableReportPeriodInFileNames                         FALCON_ENABLE_REPORT_PERIOD_IN_FILE_NAMES
+#define AutoDetectReportPeriodTags                            FALCON_AUTO_DETECT_REPORT_PERIOD_TAGS
+#define RenameReportsToActualPeriodOnDeinit                   FALCON_RENAME_REPORTS_TO_ACTUAL_PERIOD
+#define ReportFromDateTag                                     FALCON_REPORT_FROM_DATE_TAG
+#define ReportToDateTag                                       FALCON_REPORT_TO_DATE_TAG
+#define ForceCreateReportFilesOnInit                          FALCON_FORCE_CREATE_REPORT_FILES_ON_INIT
+#define PrintReportFolderHintsToLog                           FALCON_PRINT_REPORT_FOLDER_HINTS_TO_LOG
+#define EnableFvgMicroRuntimePipelineRefresh                  true
+#define ProcessFvgMicroDetectorOnlyOnNewM5ClosedBar            true
+
 
 // ==================================================================
-// 05 - Market Context / سياق السوق
-// Keep simple. This is diagnostics only in v0.17.0.
-// ==================================================================
-input group "05 - Market Context / سياق السوق";
-input bool            UseClosedCandlesOnly          = true;      // Core guard: use closed candles for analysis snapshots.
-input bool            EnableMarketDiagnosticsReport = true;      // Writes one symbol/context snapshot at initialization.
-input ENUM_TIMEFRAMES PrimaryContextTimeframe       = PERIOD_M5; // Diagnostic timeframe only. No strategy logic yet.
-input bool            EnableCandleCacheDiagnosticsReport = true; // Writes M1/M5/M15/H1/H4/D1 closed-candle cache snapshot.
-input bool            EnableEvidenceDiagnosticsReport    = true; // Writes the contract-only Evidence Framework snapshot.
-
-// ==================================================================
-// 06 - Runtime Safety / أمان التشغيل
-// ==================================================================
-input group "06 - Runtime Safety / أمان التشغيل";
-input bool            EnableNoLookaheadDiagnosticsReport = true; // Writes a runtime safety snapshot. No strategy decisions use current candle/final-state.
-input bool            EnableStrategyRegistryDiagnosticsReport = true; // Writes registered strategy switches and engine health states. No engine activation.
-input bool            EnableStrategyAdapterDiagnosticsReport = true; // Writes first Strategy Adapter shell diagnostics. No detector, no staging, no execution.
-input bool            EnableFvgMicroDetectorDiagnosticsReport = true; // Writes real FVG Micro detector diagnostics. No TradePlan, no staging.
-input bool            EnableFvgMicroCandidateDiagnosticsReport = true; // Writes FVG Micro Shadow Candidate Builder diagnostics. No TradePlan, no staging.
-input bool            EnableFvgMicroRetestWatcherDiagnosticsReport = true; // Writes FVG Micro retest watcher and TradePlan skeleton diagnostics. No staging, no execution.
-input bool            EnableFvgMicroTradePlanStagingDiagnosticsReport = true; // Writes FVG Micro TradePlan staging dry-run diagnostics. Shadow-only, no broker execution.
-input bool            EnableFvgMicroLifecycleSimulationDiagnosticsReport = true; // Writes FVG Micro Shadow trade lifecycle simulation diagnostics. No broker execution.
-input bool            EnableReportCalibrationDiagnosticsReport = true; // Writes report schema calibration and Diagnostic Cleanup Gate review. No trading logic change.
-input bool            EnableRuntimeReportVerificationReport = true; // Writes runtime report file verification snapshot. No trading logic change.
-input bool            EnableFvgMicroSmokeTestDiagnosticsReport = true; // Writes FVG Micro shadow runtime smoke-test checklist. No trading logic change.
-
-// ==================================================================
-// Core Data Contracts - v0.17.0
+// Core Data Contracts - v0.18.2
 // ==================================================================
 enum ENUM_FALCON_DIRECTION
 {
@@ -991,6 +1067,391 @@ string FalconBoolToYesNo(const bool value)
    return (value ? "YES" : "NO");
 }
 
+string FalconCsvSafe(string value)
+{
+   // v0.18.8: MT5 FileWrite does not reliably protect comma-rich text fields for downstream CSV parsers.
+   // Keep CSV column counts stable by replacing separators and line breaks inside descriptive text.
+   StringReplace(value, "\r", " ");
+   StringReplace(value, "\n", " ");
+   StringReplace(value, ",", ";");
+   StringReplace(value, "|", "/");
+   StringReplace(value, "  ", " ");
+   StringTrimLeft(value);
+   StringTrimRight(value);
+   return value;
+}
+
+string FalconSanitizeFileTag(string value)
+{
+   StringTrimLeft(value);
+   StringTrimRight(value);
+   if(value == "")
+      value = "NA";
+
+   StringReplace(value, " ", "_");
+   StringReplace(value, ":", "_");
+   StringReplace(value, ";", "_");
+   StringReplace(value, "/", "_");
+   StringReplace(value, "\\", "_");
+   StringReplace(value, "-", "_");
+   StringReplace(value, ".", "_");
+   StringReplace(value, ",", "_");
+   StringReplace(value, "__", "_");
+   return value;
+}
+
+bool FalconIsAutoPeriodTag(const string raw_tag)
+{
+   string value = raw_tag;
+   StringTrimLeft(value);
+   StringTrimRight(value);
+   StringToUpper(value);
+   return (value == "AUTO" || value == "" || value == "AUTO_DETECT");
+}
+
+string FalconDateTagFromTime(const datetime time_value)
+{
+   datetime safe_time = time_value;
+   if(safe_time <= 0)
+      safe_time = TimeLocal();
+
+   string value = TimeToString(safe_time, TIME_DATE);
+   StringReplace(value, ".", "_");
+   StringReplace(value, "-", "_");
+   StringReplace(value, "/", "_");
+   return FalconSanitizeFileTag(value);
+}
+
+void FalconInitializeReportPeriodTags()
+{
+   datetime now_time = TimeCurrent();
+   if(now_time <= 0)
+      now_time = TimeLocal();
+
+   g_report_period_first_time = now_time;
+   g_report_period_last_time  = now_time;
+
+   if(AutoDetectReportPeriodTags && FalconIsAutoPeriodTag(ReportFromDateTag))
+      g_report_active_from_tag = FalconDateTagFromTime(now_time);
+   else
+      g_report_active_from_tag = FalconSanitizeFileTag(ReportFromDateTag);
+
+   if(AutoDetectReportPeriodTags && FalconIsAutoPeriodTag(ReportToDateTag))
+      g_report_active_to_tag = "AUTO_RUNNING";
+   else
+      g_report_active_to_tag = FalconSanitizeFileTag(ReportToDateTag);
+
+   g_report_initial_from_tag = g_report_active_from_tag;
+   g_report_initial_to_tag   = g_report_active_to_tag;
+   g_report_period_initialized = true;
+   g_report_period_finalized = false;
+}
+
+void FalconUpdateReportPeriodLastSeen()
+{
+   datetime now_time = TimeCurrent();
+   if(now_time <= 0)
+      return;
+
+   if(g_report_period_first_time <= 0)
+      g_report_period_first_time = now_time;
+
+   if(now_time >= g_report_period_last_time)
+      g_report_period_last_time = now_time;
+}
+
+void FalconFinalizeReportPeriodTags()
+{
+   FalconUpdateReportPeriodLastSeen();
+
+   if(AutoDetectReportPeriodTags && FalconIsAutoPeriodTag(ReportFromDateTag))
+      g_report_active_from_tag = FalconDateTagFromTime(g_report_period_first_time);
+   else
+      g_report_active_from_tag = FalconSanitizeFileTag(ReportFromDateTag);
+
+   if(AutoDetectReportPeriodTags && FalconIsAutoPeriodTag(ReportToDateTag))
+      g_report_active_to_tag = FalconDateTagFromTime(g_report_period_last_time);
+   else
+      g_report_active_to_tag = FalconSanitizeFileTag(ReportToDateTag);
+
+   g_report_period_finalized = true;
+}
+
+string FalconEffectiveReportFromDateTag()
+{
+   if(g_report_active_from_tag != "")
+      return g_report_active_from_tag;
+   return FalconSanitizeFileTag(ReportFromDateTag);
+}
+
+string FalconEffectiveReportToDateTag()
+{
+   if(g_report_active_to_tag != "")
+      return g_report_active_to_tag;
+   return FalconSanitizeFileTag(ReportToDateTag);
+}
+
+string FalconBuildReportFileNameWithTags(const string report_name,
+                                         const string from_tag,
+                                         const string to_tag)
+{
+   string version_tag = FalconSanitizeFileTag(EA_VERSION_TAG);
+
+   if(!EnableReportPeriodInFileNames)
+      return StringFormat("JA_FalconCore_%s_%s.csv", report_name, version_tag);
+
+   string mode_tag = FalconSanitizeFileTag(ReportModeTag);
+   string safe_from = FalconSanitizeFileTag(from_tag);
+   string safe_to   = FalconSanitizeFileTag(to_tag);
+
+   return StringFormat("JA_FalconCore_%s_%s_%s_From_%s_To_%s.csv",
+                       report_name, version_tag, mode_tag, safe_from, safe_to);
+}
+
+string FalconBuildReportFileName(const string report_name)
+{
+   return FalconBuildReportFileNameWithTags(report_name,
+                                            FalconEffectiveReportFromDateTag(),
+                                            FalconEffectiveReportToDateTag());
+}
+
+int FalconReportWriteCsvFlags()
+{
+   int flags = FILE_WRITE | FILE_CSV | FILE_ANSI;
+   if(UseCommonFilesFolderForReports)
+      flags |= FILE_COMMON;
+   return flags;
+}
+
+int FalconReportReadWriteCsvFlags()
+{
+   int flags = FILE_READ | FILE_WRITE | FILE_CSV | FILE_ANSI;
+   if(UseCommonFilesFolderForReports)
+      flags |= FILE_COMMON;
+   return flags;
+}
+
+int FalconReportReadBinFlags()
+{
+   int flags = FILE_READ | FILE_BIN;
+   if(UseCommonFilesFolderForReports)
+      flags |= FILE_COMMON;
+   return flags;
+}
+
+string FalconReportStorageMode()
+{
+   return (UseCommonFilesFolderForReports ? "COMMON_FILES" : "TERMINAL_OR_TESTER_LOCAL_FILES");
+}
+
+void FalconPrintReportFolderHints()
+{
+   if(!PrintReportFolderHintsToLog)
+      return;
+
+   PrintFormat("[%s][%s][REPORT_PATH] StorageMode=%s", EA_NAME, EA_VERSION_TAG, FalconReportStorageMode());
+   PrintFormat("[%s][%s][REPORT_PATH] Common data path: %s\\Files", EA_NAME, EA_VERSION_TAG, TerminalInfoString(TERMINAL_COMMONDATA_PATH));
+   PrintFormat("[%s][%s][REPORT_PATH] Terminal data path: %s\\MQL5\\Files or tester agent Files", EA_NAME, EA_VERSION_TAG, TerminalInfoString(TERMINAL_DATA_PATH));
+}
+
+void FalconWriteStartupBootstrapFile()
+{
+   if(!ForceCreateReportFilesOnInit)
+      return;
+
+   string file_name = FalconBuildReportFileName("StartupBootstrap");
+   int handle = FileOpen(file_name, FalconReportWriteCsvFlags(), ',');
+   if(handle == INVALID_HANDLE)
+   {
+      PrintFormat("[%s][%s][WARN] Could not create StartupBootstrap report: %s", EA_NAME, EA_VERSION_TAG, file_name);
+      return;
+   }
+
+   FileWrite(handle, "EAName", "Version", "Build", "GeneratedAt", "StorageMode", "ModeTag", "FromDateTag", "ToDateTag", "OnInitReached", "Note");
+   FileWrite(handle, EA_NAME, EA_VERSION_TAG, EA_BUILD_TAG, TimeToString(TimeCurrent(), TIME_DATE | TIME_SECONDS),
+             FalconReportStorageMode(), ReportModeTag, FalconEffectiveReportFromDateTag(), FalconEffectiveReportToDateTag(), "YES",
+             "This file is created at the very start of OnInit before market-context initialization.");
+   FileClose(handle);
+}
+
+int FalconReportCommonFlag()
+{
+   return (UseCommonFilesFolderForReports ? FILE_COMMON : 0);
+}
+
+int FalconReportMoveFlags()
+{
+   int flags = FILE_REWRITE;
+   if(UseCommonFilesFolderForReports)
+      flags |= FILE_COMMON;
+   return flags;
+}
+
+int FalconReportNameCount()
+{
+   if(ReportProfile == FALCON_REPORT_MINIMAL)
+      return 2;
+   if(ReportProfile == FALCON_REPORT_STANDARD)
+      return 3;
+   return 20;
+}
+
+string FalconReportNameByIndex(const int index)
+{
+   if(ReportProfile == FALCON_REPORT_MINIMAL)
+   {
+      switch(index)
+      {
+         case 0: return "TradeLifecycle";
+         case 1: return "Summary";
+      }
+      return "UnknownReport";
+   }
+
+   if(ReportProfile == FALCON_REPORT_STANDARD)
+   {
+      switch(index)
+      {
+         case 0: return "TradeLifecycle";
+         case 1: return "Summary";
+         case 2: return "StrategyRegistryDiagnostics";
+      }
+      return "UnknownReport";
+   }
+
+   switch(index)
+   {
+      case 0:  return "StartupBootstrap";
+      case 1:  return "ReportCreationGuarantee";
+      case 2:  return "TradeLifecycle";
+      case 3:  return "Summary";
+      case 4:  return "MarketDiagnostics";
+      case 5:  return "CandleCacheDiagnostics";
+      case 6:  return "EvidenceDiagnostics";
+      case 7:  return "ShadowDiagnostics";
+      case 8:  return "NoLookaheadDiagnostics";
+      case 9:  return "StrategyRegistryDiagnostics";
+      case 10: return "StrategyAdapterDiagnostics";
+      case 11: return "FvgMicroDetectorDiagnostics";
+      case 12: return "FvgMicroShadowCandidateDiagnostics";
+      case 13: return "FvgMicroRetestWatcherDiagnostics";
+      case 14: return "FvgMicroTradePlanStagingDiagnostics";
+      case 15: return "FvgMicroLifecycleSimulationDiagnostics";
+      case 16: return "ReportCalibrationCleanupGate";
+      case 17: return "RuntimeReportVerification";
+      case 18: return "FvgMicroRuntimeSmokeTest";
+      case 19: return "FvgMicroRuntimeReportAudit";
+   }
+   return "UnknownReport";
+}
+
+void FalconWriteAutoPeriodManifest(const string trigger,
+                                   const int moved_count,
+                                   const int missing_count,
+                                   const int failed_count)
+{
+   string manifest_name = FalconBuildReportFileNameWithTags("AutoPeriodManifest",
+                                                            FalconEffectiveReportFromDateTag(),
+                                                            FalconEffectiveReportToDateTag());
+   int handle = FileOpen(manifest_name, FalconReportWriteCsvFlags(), ',');
+   if(handle == INVALID_HANDLE)
+   {
+      PrintFormat("[%s][%s][WARN] Could not create AutoPeriodManifest: %s", EA_NAME, EA_VERSION_TAG, manifest_name);
+      return;
+   }
+
+   FileWrite(handle,
+             "EAName", "Version", "Build", "GeneratedAt", "Trigger",
+             "ReportProfile", "PeriodNamingMode",
+             "AutoDetectReportPeriodTags", "RenameReportsToActualPeriodOnDeinit",
+             "InitialFromTag", "InitialToTag", "FinalFromTag", "FinalToTag",
+             "ActualDataFromTag", "ActualDataToTag",
+             "FirstObservedTime", "LastObservedTime", "MovedCount", "MissingCount", "FailedCount",
+             "RequestedTesterPeriodHandling", "NoTickEndDateNote", "CleanupGateNote");
+
+   FileWrite(handle,
+             FalconCsvSafe(EA_NAME),
+             FalconCsvSafe(EA_VERSION_TAG),
+             FalconCsvSafe(EA_BUILD_TAG),
+             TimeToString(TimeCurrent(), TIME_DATE | TIME_SECONDS),
+             FalconCsvSafe(trigger),
+             FalconCsvSafe(FalconReportProfileToString()),
+             FalconCsvSafe("ACTUAL_OBSERVED_DATA_PERIOD"),
+             FalconBoolToYesNo(AutoDetectReportPeriodTags),
+             FalconBoolToYesNo(RenameReportsToActualPeriodOnDeinit),
+             FalconCsvSafe(g_report_initial_from_tag),
+             FalconCsvSafe(g_report_initial_to_tag),
+             FalconCsvSafe(FalconEffectiveReportFromDateTag()),
+             FalconCsvSafe(FalconEffectiveReportToDateTag()),
+             FalconCsvSafe(FalconDateTagFromTime(g_report_period_first_time)),
+             FalconCsvSafe(FalconDateTagFromTime(g_report_period_last_time)),
+             TimeToString(g_report_period_first_time, TIME_DATE | TIME_SECONDS),
+             TimeToString(g_report_period_last_time, TIME_DATE | TIME_SECONDS),
+             moved_count, missing_count, failed_count,
+             FalconCsvSafe("MQL5 does not expose Strategy Tester From/To UI fields directly to the EA, so file names use the first and last observed tester/runtime tick time."),
+             FalconCsvSafe("If the Strategy Tester To-date is a weekend/holiday/no-tick day, the report To tag will stop at the last actual data day. Example: UI To 2026_04_05 can become ActualDataTo 2026_04_03."),
+             FalconCsvSafe("Diagnostic reports remain temporary. ReportProfile STANDARD is the current cleanup baseline: TradeLifecycle + Summary + StrategyRegistry + AutoPeriodManifest only."));
+
+   FileClose(handle);
+}
+
+void FalconFinalizeAndRenameReportFiles(const string trigger)
+{
+   // v0.18.7: report period tags are based on actual observed data/tick time, not UI end date.
+   if(!RenameReportsToActualPeriodOnDeinit)
+      return;
+
+   string old_from = g_report_initial_from_tag;
+   string old_to   = g_report_initial_to_tag;
+
+   FalconFinalizeReportPeriodTags();
+
+   string new_from = FalconEffectiveReportFromDateTag();
+   string new_to   = FalconEffectiveReportToDateTag();
+
+   int moved_count = 0;
+   int missing_count = 0;
+   int failed_count = 0;
+
+   if(old_from == new_from && old_to == new_to)
+   {
+      FalconWriteAutoPeriodManifest(trigger + "_NoRenameNeeded", 0, 0, 0);
+      return;
+   }
+
+   int common_flag = FalconReportCommonFlag();
+   int move_flags  = FalconReportMoveFlags();
+
+   for(int i = 0; i < FalconReportNameCount(); i++)
+   {
+      string report_name = FalconReportNameByIndex(i);
+      string old_file = FalconBuildReportFileNameWithTags(report_name, old_from, old_to);
+      string new_file = FalconBuildReportFileNameWithTags(report_name, new_from, new_to);
+
+      if(old_file == new_file)
+         continue;
+
+      if(!FileIsExist(old_file, common_flag))
+      {
+         missing_count++;
+         continue;
+      }
+
+      if(FileIsExist(new_file, common_flag))
+         FileDelete(new_file, common_flag);
+
+      if(FileMove(old_file, common_flag, new_file, move_flags))
+         moved_count++;
+      else
+      {
+         failed_count++;
+         PrintFormat("[%s][%s][WARN] Could not rename report file from %s to %s", EA_NAME, EA_VERSION_TAG, old_file, new_file);
+      }
+   }
+
+   FalconWriteAutoPeriodManifest(trigger, moved_count, missing_count, failed_count);
+}
+
 // ==================================================================
 // Logger
 // ==================================================================
@@ -1554,10 +2015,10 @@ public:
       Reset();
 
       AddEntry("FVG_MICRO_RETEST", "FVG Micro Retest Engine", "SCALP.FVG_MICRO",
-               FALCON_STRATEGY_GROUP_CORE, EnableStrategy_FvgMicroRetest,
+               FALCON_STRATEGY_GROUP_CORE, (EnableStrategy_FvgMicroRetest || EnableFvgMicroRuntimePipelineRefresh),
                FALCON_ENGINE_HEALTH_CORE_WINNER, FALCON_ENGINE_SHADOW,
                true, false, false, false,
-               "Legacy indicator core winner. First real strategy candidate later, but still Shadow-first.");
+               "Legacy indicator core winner. v0.18.4 allows ShadowSmoke activation when FVG runtime pipeline is enabled; still Shadow-first and no live execution.");
 
       AddEntry("TAIL_SMART_RETURN", "Tail Smart Return Strategy", "PRICE.TAIL_RETURN",
                FALCON_STRATEGY_GROUP_PRICE_ACTION, EnableStrategy_TailSmartReturn,
@@ -3447,6 +3908,8 @@ private:
    string              m_report_calibration_diagnostics_file;
    string              m_runtime_report_verification_file;
    string              m_fvg_micro_smoke_test_file;
+   string              m_fvg_micro_runtime_report_audit_file;
+   string              m_report_creation_guarantee_file;
    FalconSymbolContext m_symbol_context;
    FalconReportTotals  m_totals;
    bool                m_initialized;
@@ -3461,23 +3924,25 @@ public:
    bool Initialize(const FalconSymbolContext &symbol_context)
    {
       m_symbol_context     = symbol_context;
-      m_trade_report_file  = "JA_FalconCore_TradeLifecycle_v0_17_0.csv";
-      m_summary_report_file= "JA_FalconCore_Summary_v0_17_0.csv";
-      m_market_diagnostics_file = "JA_FalconCore_MarketDiagnostics_v0_17_0.csv";
-      m_candle_cache_diagnostics_file = "JA_FalconCore_CandleCacheDiagnostics_v0_17_0.csv";
-      m_evidence_diagnostics_file = "JA_FalconCore_EvidenceDiagnostics_v0_17_0.csv";
-      m_shadow_diagnostics_file = "JA_FalconCore_ShadowDiagnostics_v0_17_0.csv";
-      m_no_lookahead_diagnostics_file = "JA_FalconCore_NoLookaheadDiagnostics_v0_17_0.csv";
-      m_strategy_registry_diagnostics_file = "JA_FalconCore_StrategyRegistryDiagnostics_v0_17_0.csv";
-      m_strategy_adapter_diagnostics_file = "JA_FalconCore_StrategyAdapterDiagnostics_v0_17_0.csv";
-      m_fvg_micro_detector_diagnostics_file = "JA_FalconCore_FvgMicroDetectorDiagnostics_v0_17_0.csv";
-      m_fvg_micro_candidate_diagnostics_file = "JA_FalconCore_FvgMicroShadowCandidateDiagnostics_v0_17_0.csv";
-      m_fvg_micro_retest_watcher_diagnostics_file = "JA_FalconCore_FvgMicroRetestWatcherDiagnostics_v0_17_0.csv";
-      m_fvg_micro_tradeplan_staging_diagnostics_file = "JA_FalconCore_FvgMicroTradePlanStagingDiagnostics_v0_17_0.csv";
-      m_fvg_micro_lifecycle_simulation_diagnostics_file = "JA_FalconCore_FvgMicroLifecycleSimulationDiagnostics_v0_17_0.csv";
-      m_report_calibration_diagnostics_file = "JA_FalconCore_ReportCalibrationCleanupGate_v0_17_0.csv";
-      m_runtime_report_verification_file = "JA_FalconCore_RuntimeReportVerification_v0_17_0.csv";
-      m_fvg_micro_smoke_test_file = "JA_FalconCore_FvgMicroRuntimeSmokeTest_v0_17_0.csv";
+      m_trade_report_file  = FalconBuildReportFileName("TradeLifecycle");
+      m_summary_report_file= FalconBuildReportFileName("Summary");
+      m_market_diagnostics_file = FalconBuildReportFileName("MarketDiagnostics");
+      m_candle_cache_diagnostics_file = FalconBuildReportFileName("CandleCacheDiagnostics");
+      m_evidence_diagnostics_file = FalconBuildReportFileName("EvidenceDiagnostics");
+      m_shadow_diagnostics_file = FalconBuildReportFileName("ShadowDiagnostics");
+      m_no_lookahead_diagnostics_file = FalconBuildReportFileName("NoLookaheadDiagnostics");
+      m_strategy_registry_diagnostics_file = FalconBuildReportFileName("StrategyRegistryDiagnostics");
+      m_strategy_adapter_diagnostics_file = FalconBuildReportFileName("StrategyAdapterDiagnostics");
+      m_fvg_micro_detector_diagnostics_file = FalconBuildReportFileName("FvgMicroDetectorDiagnostics");
+      m_fvg_micro_candidate_diagnostics_file = FalconBuildReportFileName("FvgMicroShadowCandidateDiagnostics");
+      m_fvg_micro_retest_watcher_diagnostics_file = FalconBuildReportFileName("FvgMicroRetestWatcherDiagnostics");
+      m_fvg_micro_tradeplan_staging_diagnostics_file = FalconBuildReportFileName("FvgMicroTradePlanStagingDiagnostics");
+      m_fvg_micro_lifecycle_simulation_diagnostics_file = FalconBuildReportFileName("FvgMicroLifecycleSimulationDiagnostics");
+      m_report_calibration_diagnostics_file = FalconBuildReportFileName("ReportCalibrationCleanupGate");
+      m_runtime_report_verification_file = FalconBuildReportFileName("RuntimeReportVerification");
+      m_fvg_micro_smoke_test_file = FalconBuildReportFileName("FvgMicroRuntimeSmokeTest");
+      m_fvg_micro_runtime_report_audit_file = FalconBuildReportFileName("FvgMicroRuntimeReportAudit");
+      m_report_creation_guarantee_file = FalconBuildReportFileName("ReportCreationGuarantee");
       ResetTotals();
 
       if(EnableMainReport)
@@ -3486,9 +3951,47 @@ public:
          WriteSummaryHeader();
       }
 
+      if(ForceCreateReportFilesOnInit)
+         WriteReportCreationGuaranteeFile();
+
       m_initialized = true;
       CFalconLogger::Info(StringFormat("ReportWriter initialized. TradeReport=%s | SummaryReport=%s", m_trade_report_file, m_summary_report_file));
       return true;
+   }
+
+   void WriteReportCreationGuaranteeFile()
+   {
+      int handle = FileOpen(m_report_creation_guarantee_file, FalconReportWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not create report guarantee file: %s", m_report_creation_guarantee_file));
+         return;
+      }
+
+      FileWrite(handle,
+                "EAName", "Version", "Build", "GeneratedAt", "StorageMode",
+                "ModeTag", "FromDateTag", "ToDateTag", "ForceCreateReportFilesOnInit",
+                "TradeLifecycleFile", "SummaryFile", "MarketDiagnosticsFile",
+                "CandleCacheDiagnosticsFile", "EvidenceDiagnosticsFile", "ShadowDiagnosticsFile",
+                "NoLookaheadDiagnosticsFile", "StrategyRegistryDiagnosticsFile", "StrategyAdapterDiagnosticsFile",
+                "FvgMicroDetectorDiagnosticsFile", "FvgMicroCandidateDiagnosticsFile",
+                "FvgMicroRetestWatcherDiagnosticsFile", "FvgMicroTradePlanStagingDiagnosticsFile",
+                "FvgMicroLifecycleSimulationDiagnosticsFile", "RuntimeReportVerificationFile",
+                "FvgMicroRuntimeSmokeTestFile", "FvgMicroRuntimeReportAuditFile");
+
+      FileWrite(handle,
+                EA_NAME, EA_VERSION_TAG, EA_BUILD_TAG, TimeToString(TimeCurrent(), TIME_DATE | TIME_SECONDS),
+                FalconReportStorageMode(), ReportModeTag, FalconEffectiveReportFromDateTag(), FalconEffectiveReportToDateTag(),
+                FalconBoolToYesNo(ForceCreateReportFilesOnInit),
+                m_trade_report_file, m_summary_report_file, m_market_diagnostics_file,
+                m_candle_cache_diagnostics_file, m_evidence_diagnostics_file, m_shadow_diagnostics_file,
+                m_no_lookahead_diagnostics_file, m_strategy_registry_diagnostics_file, m_strategy_adapter_diagnostics_file,
+                m_fvg_micro_detector_diagnostics_file, m_fvg_micro_candidate_diagnostics_file,
+                m_fvg_micro_retest_watcher_diagnostics_file, m_fvg_micro_tradeplan_staging_diagnostics_file,
+                m_fvg_micro_lifecycle_simulation_diagnostics_file, m_runtime_report_verification_file,
+                m_fvg_micro_smoke_test_file, m_fvg_micro_runtime_report_audit_file);
+
+      FileClose(handle);
    }
 
    void WriteMarketDiagnosticsSnapshot(const FalconQuoteContext &quote_context,
@@ -3497,7 +4000,7 @@ public:
       if(!m_initialized || !EnableMarketDiagnosticsReport)
          return;
 
-      int handle = FileOpen(m_market_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      int handle = FileOpen(m_market_diagnostics_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
          CFalconLogger::Warn(StringFormat("Could not write market diagnostics report: %s", m_market_diagnostics_file));
@@ -3567,7 +4070,7 @@ public:
       if(!m_initialized || !EnableCandleCacheDiagnosticsReport)
          return;
 
-      int handle = FileOpen(m_candle_cache_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      int handle = FileOpen(m_candle_cache_diagnostics_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
          CFalconLogger::Warn(StringFormat("Could not write candle cache diagnostics report: %s", m_candle_cache_diagnostics_file));
@@ -3586,10 +4089,10 @@ public:
          cache.GetSnapshotByIndex(i, snapshot);
 
          FileWrite(handle,
-                   EA_NAME,
-                   EA_VERSION_TAG,
-                   EA_BUILD_TAG,
-                   m_symbol_context.symbol,
+                   FalconCsvSafe(EA_NAME),
+                   FalconCsvSafe(EA_VERSION_TAG),
+                   FalconCsvSafe(EA_BUILD_TAG),
+                   FalconCsvSafe(m_symbol_context.symbol),
                    FalconTimeToString(TimeCurrent()),
                    (UseClosedCandlesOnly ? "true" : "false"),
                    cache.AnalysisShift(),
@@ -3617,7 +4120,7 @@ public:
       if(!m_initialized || !EnableEvidenceDiagnosticsReport)
          return;
 
-      int handle = FileOpen(m_evidence_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      int handle = FileOpen(m_evidence_diagnostics_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
          CFalconLogger::Warn(StringFormat("Could not write evidence diagnostics report: %s", m_evidence_diagnostics_file));
@@ -3636,10 +4139,10 @@ public:
             continue;
 
          FileWrite(handle,
-                   EA_NAME,
-                   EA_VERSION_TAG,
-                   EA_BUILD_TAG,
-                   m_symbol_context.symbol,
+                   FalconCsvSafe(EA_NAME),
+                   FalconCsvSafe(EA_VERSION_TAG),
+                   FalconCsvSafe(EA_BUILD_TAG),
+                   FalconCsvSafe(m_symbol_context.symbol),
                    FalconTimeToString(TimeCurrent()),
                    record.evidence_id,
                    record.evidence_name,
@@ -3661,7 +4164,7 @@ public:
       if(!m_initialized || !EnableShadowDiagnosticsReport)
          return;
 
-      int handle = FileOpen(m_shadow_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      int handle = FileOpen(m_shadow_diagnostics_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
          CFalconLogger::Warn(StringFormat("Could not write shadow diagnostics report: %s", m_shadow_diagnostics_file));
@@ -3698,7 +4201,7 @@ public:
       if(!m_initialized || !EnableNoLookaheadDiagnosticsReport)
          return;
 
-      int handle = FileOpen(m_no_lookahead_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      int handle = FileOpen(m_no_lookahead_diagnostics_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
          CFalconLogger::Warn(StringFormat("Could not write no-lookahead diagnostics report: %s", m_no_lookahead_diagnostics_file));
@@ -3719,10 +4222,10 @@ public:
             continue;
 
          FileWrite(handle,
-                   EA_NAME,
-                   EA_VERSION_TAG,
-                   EA_BUILD_TAG,
-                   m_symbol_context.symbol,
+                   FalconCsvSafe(EA_NAME),
+                   FalconCsvSafe(EA_VERSION_TAG),
+                   FalconCsvSafe(EA_BUILD_TAG),
+                   FalconCsvSafe(m_symbol_context.symbol),
                    FalconTimeToString(TimeCurrent()),
                    (runtime_guard.IsInitialized() ? "true" : "false"),
                    runtime_guard.Count(),
@@ -3748,7 +4251,7 @@ public:
       if(!m_initialized || !EnableStrategyRegistryDiagnosticsReport)
          return;
 
-      int handle = FileOpen(m_strategy_registry_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      int handle = FileOpen(m_strategy_registry_diagnostics_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
          CFalconLogger::Warn(StringFormat("Could not write strategy registry diagnostics report: %s", m_strategy_registry_diagnostics_file));
@@ -3769,10 +4272,10 @@ public:
             continue;
 
          FileWrite(handle,
-                   EA_NAME,
-                   EA_VERSION_TAG,
-                   EA_BUILD_TAG,
-                   m_symbol_context.symbol,
+                   FalconCsvSafe(EA_NAME),
+                   FalconCsvSafe(EA_VERSION_TAG),
+                   FalconCsvSafe(EA_BUILD_TAG),
+                   FalconCsvSafe(m_symbol_context.symbol),
                    FalconTimeToString(TimeCurrent()),
                    (registry.IsInitialized() ? "true" : "false"),
                    registry.CountRegisteredStrategies(),
@@ -3783,9 +4286,9 @@ public:
                    registry.CountByGroup(FALCON_STRATEGY_GROUP_LIQUIDITY),
                    registry.CountByGroup(FALCON_STRATEGY_GROUP_CONFIRMATION),
                    registry.CountByGroup(FALCON_STRATEGY_GROUP_RESEARCH),
-                   entry.strategy_id,
-                   entry.strategy_name,
-                   entry.engine_id,
+                   FalconCsvSafe(entry.strategy_id),
+                   FalconCsvSafe(entry.strategy_name),
+                   FalconCsvSafe(entry.engine_id),
                    FalconStrategyGroupToString(entry.strategy_group),
                    (entry.input_enabled ? "true" : "false"),
                    FalconEngineHealthToString(entry.health_status),
@@ -3794,7 +4297,7 @@ public:
                    (entry.paper_allowed ? "true" : "false"),
                    (entry.demo_allowed ? "true" : "false"),
                    (entry.live_allowed ? "true" : "false"),
-                   entry.notes);
+                   FalconCsvSafe(entry.notes));
       }
 
       FileClose(handle);
@@ -3808,7 +4311,7 @@ public:
       if(!m_initialized || !EnableStrategyAdapterDiagnosticsReport)
          return;
 
-      int handle = FileOpen(m_strategy_adapter_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      int handle = FileOpen(m_strategy_adapter_diagnostics_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
          CFalconLogger::Warn(StringFormat("Could not write strategy adapter diagnostics report: %s", m_strategy_adapter_diagnostics_file));
@@ -3862,7 +4365,7 @@ public:
       if(!m_initialized || !EnableFvgMicroDetectorDiagnosticsReport)
          return;
 
-      int handle = FileOpen(m_fvg_micro_detector_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      int handle = FileOpen(m_fvg_micro_detector_diagnostics_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
          CFalconLogger::Warn(StringFormat("Could not write FVG Micro detector diagnostics report: %s", m_fvg_micro_detector_diagnostics_file));
@@ -3940,7 +4443,7 @@ public:
       if(!m_initialized || !EnableFvgMicroCandidateDiagnosticsReport)
          return;
 
-      int handle = FileOpen(m_fvg_micro_candidate_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      int handle = FileOpen(m_fvg_micro_candidate_diagnostics_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
          CFalconLogger::Warn(StringFormat("Could not write FVG Micro candidate diagnostics report: %s", m_fvg_micro_candidate_diagnostics_file));
@@ -4002,7 +4505,7 @@ public:
       if(!m_initialized || !EnableFvgMicroRetestWatcherDiagnosticsReport)
          return;
 
-      int handle = FileOpen(m_fvg_micro_retest_watcher_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      int handle = FileOpen(m_fvg_micro_retest_watcher_diagnostics_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
          CFalconLogger::Warn(StringFormat("Could not write FVG Micro retest watcher diagnostics report: %s", m_fvg_micro_retest_watcher_diagnostics_file));
@@ -4074,7 +4577,7 @@ public:
       if(!m_initialized || !EnableFvgMicroTradePlanStagingDiagnosticsReport)
          return;
 
-      int handle = FileOpen(m_fvg_micro_tradeplan_staging_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      int handle = FileOpen(m_fvg_micro_tradeplan_staging_diagnostics_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
          CFalconLogger::Warn(StringFormat("Could not write FVG Micro TradePlan staging diagnostics report: %s", m_fvg_micro_tradeplan_staging_diagnostics_file));
@@ -4144,7 +4647,7 @@ public:
       if(!m_initialized || !EnableFvgMicroLifecycleSimulationDiagnosticsReport)
          return;
 
-      int handle = FileOpen(m_fvg_micro_lifecycle_simulation_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      int handle = FileOpen(m_fvg_micro_lifecycle_simulation_diagnostics_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
          CFalconLogger::Warn(StringFormat("Could not write FVG Micro lifecycle simulation diagnostics report: %s", m_fvg_micro_lifecycle_simulation_diagnostics_file));
@@ -4214,7 +4717,7 @@ public:
       if(!m_initialized || !EnableReportCalibrationDiagnosticsReport)
          return;
 
-      int handle = FileOpen(m_report_calibration_diagnostics_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      int handle = FileOpen(m_report_calibration_diagnostics_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
          CFalconLogger::Warn(StringFormat("Could not write report calibration diagnostics report: %s", m_report_calibration_diagnostics_file));
@@ -4320,7 +4823,7 @@ public:
       if(!m_initialized || !EnableFvgMicroSmokeTestDiagnosticsReport)
          return;
 
-      int handle = FileOpen(m_fvg_micro_smoke_test_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      int handle = FileOpen(m_fvg_micro_smoke_test_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
          CFalconLogger::Warn(StringFormat("Could not write FVG Micro smoke-test diagnostics report: %s", m_fvg_micro_smoke_test_file));
@@ -4396,12 +4899,110 @@ public:
    }
 
 
+   void WriteFvgMicroRuntimeReportAuditSnapshot(const string trigger)
+   {
+      if(!m_initialized || !EnableFvgMicroRuntimeReportAuditReport)
+         return;
+
+      int handle = FileOpen(m_fvg_micro_runtime_report_audit_file, FalconReportWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not write FVG Micro runtime report audit: %s", m_fvg_micro_runtime_report_audit_file));
+         return;
+      }
+
+      FileWrite(handle,
+                "EAName", "Version", "Build", "Symbol", "GeneratedAt", "Trigger",
+                "AuditItem", "ReportFile", "ExpectedContent", "Readable", "SizeBytes", "AuditStatus", "Decision", "Notes");
+
+      WriteFvgMicroRuntimeReportAuditRow(handle, trigger, "TradeLifecycleRows", m_trade_report_file, EnableMainReport,
+                                         "Header plus closed Shadow lifecycle rows when FVG+Retest+Staging+TP/SL/Timeout occurs",
+                                         "DATA_DEPENDENT",
+                                         "If empty after a test window, inspect whether no FVG retest occurred or whether staging/lifecycle path is blocked.");
+
+      WriteFvgMicroRuntimeReportAuditRow(handle, trigger, "SummaryTotals", m_summary_report_file, EnableMainReport,
+                                         "WinRate/LoseRate/TotalProfitIndexPoints/TotalLossIndexPoints/TotalProfitUSD/TotalLossUSD",
+                                         "KEEP_CORE_REPORT",
+                                         "Summary is expected to be non-empty after OnDeinit. During OnInit it can be header-only.");
+
+      WriteFvgMicroRuntimeReportAuditRow(handle, trigger, "FvgDetector", m_fvg_micro_detector_diagnostics_file, EnableFvgMicroDetectorDiagnosticsReport,
+                                         "FVG detected flag, direction, bounds, candle times and high/low values",
+                                         "KEEP_UNTIL_FVG_PATH_LOCK",
+                                         "Detector report must remain until FVG Micro shadow logic is stable.");
+
+      WriteFvgMicroRuntimeReportAuditRow(handle, trigger, "FvgCandidate", m_fvg_micro_candidate_diagnostics_file, EnableFvgMicroCandidateDiagnosticsReport,
+                                         "Shadow candidate status and blocker reason",
+                                         "KEEP_UNTIL_CANDIDATE_LOCK",
+                                         "Candidate report explains why a detected FVG did or did not become a research candidate.");
+
+      WriteFvgMicroRuntimeReportAuditRow(handle, trigger, "RetestWatcher", m_fvg_micro_retest_watcher_diagnostics_file, EnableFvgMicroRetestWatcherDiagnosticsReport,
+                                         "Retest touched status plus skeleton Entry/SL/TP projections",
+                                         "KEEP_UNTIL_RETEST_LOCK",
+                                         "Watcher report is needed to separate no setup from no retest.");
+
+      WriteFvgMicroRuntimeReportAuditRow(handle, trigger, "TradePlanStaging", m_fvg_micro_tradeplan_staging_diagnostics_file, EnableFvgMicroTradePlanStagingDiagnosticsReport,
+                                         "TradePlan created, staging validation passed, staged to Shadow Executor",
+                                         "KEEP_UNTIL_STAGING_LOCK",
+                                         "Staging report proves No-Lookahead Guard and Shadow Executor handoff.");
+
+      WriteFvgMicroRuntimeReportAuditRow(handle, trigger, "LifecycleSimulation", m_fvg_micro_lifecycle_simulation_diagnostics_file, EnableFvgMicroLifecycleSimulationDiagnosticsReport,
+                                         "Lifecycle status, TP1/SL/Timeout close, Win/Lose, Index Points and USD",
+                                         "KEEP_UNTIL_LIFECYCLE_LOCK",
+                                         "Lifecycle report is the bridge between Shadow trade and main TradeLifecycle rows.");
+
+      WriteFvgMicroRuntimeReportAuditRow(handle, trigger, "RuntimeVerification", m_runtime_report_verification_file, EnableRuntimeReportVerificationReport,
+                                         "Report readability and file-size status for each generated CSV",
+                                         "TEMPORARY_DIAGNOSTIC",
+                                         "Merge or remove after report writing is proven stable.");
+
+      WriteFvgMicroRuntimeReportAuditRow(handle, trigger, "SmokeTest", m_fvg_micro_smoke_test_file, EnableFvgMicroSmokeTestDiagnosticsReport,
+                                         "Pipeline checklist for Detector -> Candidate -> Watcher -> Stager -> Shadow -> Lifecycle",
+                                         "TEMPORARY_DIAGNOSTIC",
+                                         "Remove under Diagnostic Cleanup Gate after smoke test path is locked.");
+
+      FileWrite(handle,
+                EA_NAME,
+                EA_VERSION_TAG,
+                EA_BUILD_TAG,
+                m_symbol_context.symbol,
+                FalconTimeToString(TimeCurrent()),
+                trigger,
+                "ClosedShadowTradesSoFar",
+                m_trade_report_file,
+                "m_totals.total_trades should increase only after controlled Shadow lifecycle close",
+                "YES",
+                0,
+                (m_totals.total_trades > 0 ? "ROWS_PRESENT" : "NO_CLOSED_SHADOW_ROWS_YET"),
+                (m_totals.total_trades > 0 ? "AUDIT_LIFECYCLE_ROWS" : "CONTINUE_RUNTIME_TEST"),
+                "If this remains zero after long Strategy Tester windows with visible FVG retests, inspect staging blockers and lifecycle timeout rules.");
+
+      FileWrite(handle,
+                EA_NAME,
+                EA_VERSION_TAG,
+                EA_BUILD_TAG,
+                m_symbol_context.symbol,
+                FalconTimeToString(TimeCurrent()),
+                trigger,
+                "DiagnosticCleanupGate",
+                "Inputs/Reports",
+                "Temporary diagnostics must be reduced after validation",
+                "YES",
+                0,
+                "ACTIVE",
+                "CLEAN_LATER",
+                "Keep full diagnostics during v0.x foundation. Before Paper/Demo, keep only core reports and selected engine health/audit reports.");
+
+      FileClose(handle);
+      CFalconLogger::Info(StringFormat("FVG Micro practical runtime report audit written: %s | Trigger=%s", m_fvg_micro_runtime_report_audit_file, trigger));
+   }
+
+
    void WriteRuntimeReportVerificationSnapshot(const string trigger)
    {
       if(!m_initialized || !EnableRuntimeReportVerificationReport)
          return;
 
-      int handle = FileOpen(m_runtime_report_verification_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      int handle = FileOpen(m_runtime_report_verification_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
          CFalconLogger::Warn(StringFormat("Could not write runtime report verification snapshot: %s", m_runtime_report_verification_file));
@@ -4444,6 +5045,8 @@ public:
                                         "Report schema calibration and Diagnostic Cleanup Gate review.");
       WriteRuntimeReportVerificationRow(handle, trigger, "FvgMicroRuntimeSmokeTest", m_fvg_micro_smoke_test_file, EnableFvgMicroSmokeTestDiagnosticsReport,
                                         "FVG Micro shadow runtime smoke-test checklist.");
+      WriteRuntimeReportVerificationRow(handle, trigger, "FvgMicroRuntimeReportAudit", m_fvg_micro_runtime_report_audit_file, EnableFvgMicroRuntimeReportAuditReport,
+                                        "First practical audit of generated FVG Micro runtime CSV reports and lifecycle-row readiness.");
 
       FileClose(handle);
       CFalconLogger::Info(StringFormat("Runtime report verification snapshot written: %s | Trigger=%s", m_runtime_report_verification_file, trigger));
@@ -4476,7 +5079,7 @@ public:
          m_totals.loss_rate = 0.0;
       }
 
-      int handle = FileOpen(m_summary_report_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      int handle = FileOpen(m_summary_report_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
          CFalconLogger::Warn(StringFormat("Could not write summary report: %s", m_summary_report_file));
@@ -4522,7 +5125,7 @@ private:
    bool ProbeReportFile(const string file_name, long &size_bytes)
    {
       size_bytes = 0;
-      int handle = FileOpen(file_name, FILE_READ | FILE_BIN);
+      int handle = FileOpen(file_name, FalconReportReadBinFlags());
       if(handle == INVALID_HANDLE)
          return false;
 
@@ -4567,6 +5170,45 @@ private:
                 notes);
    }
 
+   void WriteFvgMicroRuntimeReportAuditRow(const int handle,
+                                           const string trigger,
+                                           const string audit_item,
+                                           const string file_name,
+                                           const bool enabled_by_input,
+                                           const string expected_content,
+                                           const string decision,
+                                           const string notes)
+   {
+      long size_bytes = 0;
+      bool readable = false;
+      if(enabled_by_input)
+         readable = ProbeReportFile(file_name, size_bytes);
+
+      string audit_status = "DISABLED_BY_INPUT";
+      if(enabled_by_input && readable && size_bytes > 0)
+         audit_status = "READABLE_NON_EMPTY";
+      else if(enabled_by_input && readable)
+         audit_status = "READABLE_EMPTY";
+      else if(enabled_by_input)
+         audit_status = "NOT_READABLE_YET";
+
+      FileWrite(handle,
+                EA_NAME,
+                EA_VERSION_TAG,
+                EA_BUILD_TAG,
+                m_symbol_context.symbol,
+                FalconTimeToString(TimeCurrent()),
+                trigger,
+                audit_item,
+                file_name,
+                expected_content,
+                FalconBoolToYesNo(readable),
+                (int)size_bytes,
+                audit_status,
+                decision,
+                notes);
+   }
+
    void ResetTotals()
    {
       m_totals.total_trades                = 0;
@@ -4604,7 +5246,7 @@ private:
 
    void WriteTradeHeader()
    {
-      int handle = FileOpen(m_trade_report_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      int handle = FileOpen(m_trade_report_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
          CFalconLogger::Warn(StringFormat("Could not create trade lifecycle report: %s", m_trade_report_file));
@@ -4625,7 +5267,7 @@ private:
 
    void WriteSummaryHeader()
    {
-      int handle = FileOpen(m_summary_report_file, FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      int handle = FileOpen(m_summary_report_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
          CFalconLogger::Warn(StringFormat("Could not create summary report: %s", m_summary_report_file));
@@ -4643,7 +5285,7 @@ private:
 
    void AppendTradeRecord(const FalconTradeLifecycleRecord &record)
    {
-      int handle = FileOpen(m_trade_report_file, FILE_READ | FILE_WRITE | FILE_CSV | FILE_ANSI, ',');
+      int handle = FileOpen(m_trade_report_file, FalconReportReadWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
          CFalconLogger::Warn(StringFormat("Could not append trade lifecycle record: %s", m_trade_report_file));
@@ -4686,20 +5328,20 @@ private:
 };
 
 // ==================================================================
-// Execution Guard - real trading intentionally impossible in v0.17.0.
+// Execution Guard - real trading intentionally impossible in v0.18.1.
 // ==================================================================
 class CFalconExecutionGuard
 {
 public:
    bool CanSendRealOrders()
    {
-      // v0.17.0 is a Shadow runtime smoke-test build. Real execution is not allowed even if the input is changed.
+      // v0.18.4 is a Shadow runtime pipeline refresh build. Real execution is not allowed even if the input is changed.
       return false;
    }
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.17.0.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.18.4.");
    }
 };
 
@@ -4722,17 +5364,163 @@ CFalconFvgMicroShadowLifecycleSimulation g_fvg_micro_lifecycle_simulator;
 CFalconReportWriter      g_report_writer;
 CFalconExecutionGuard    g_execution_guard;
 bool                     g_is_initialized = false;
+long                     g_runtime_tick_counter = 0;
+datetime                 g_last_processed_m5_closed_candle_time = 0;
+string                   g_last_staged_fvg_candidate_id = "";
+
+
+// ==================================================================
+// FVG Micro Runtime Shadow Pipeline - v0.18.4
+// Refreshes the diagnostic FVG path after OnInit. This is still Shadow-only:
+// Detector -> Candidate -> RetestWatcher -> TradePlanStager -> LifecycleSimulator.
+// No OrderSend. No Paper/Demo/Live. No current-candle decision.
+// ==================================================================
+bool FalconShouldRefreshFvgDetectorOnThisTick(string &reason)
+{
+   reason = "";
+   if(!EnableFvgMicroRuntimePipelineRefresh)
+   {
+      reason = "FVG_RUNTIME_PIPELINE_DISABLED";
+      return false;
+   }
+
+   if(!ProcessFvgMicroDetectorOnlyOnNewM5ClosedBar)
+   {
+      reason = "DETECTOR_REFRESH_ALLOWED_EVERY_TICK_BY_INPUT";
+      return true;
+   }
+
+   FalconCandleSnapshot m5_snapshot;
+   if(!g_market_context.GetCandleSnapshot(PERIOD_M5, FalconAnalysisCandleShift(), m5_snapshot))
+   {
+      reason = "M5_CLOSED_CANDLE_NOT_AVAILABLE";
+      return false;
+   }
+
+   if(!m5_snapshot.is_valid || m5_snapshot.time <= 0)
+   {
+      reason = "M5_CLOSED_CANDLE_INVALID";
+      return false;
+   }
+
+   if(g_last_processed_m5_closed_candle_time == 0)
+   {
+      g_last_processed_m5_closed_candle_time = m5_snapshot.time;
+      reason = "FIRST_M5_CLOSED_CANDLE_SEEN";
+      return true;
+   }
+
+   if(m5_snapshot.time != g_last_processed_m5_closed_candle_time)
+   {
+      g_last_processed_m5_closed_candle_time = m5_snapshot.time;
+      reason = "NEW_M5_CLOSED_CANDLE";
+      return true;
+   }
+
+   reason = "NO_NEW_M5_CLOSED_CANDLE";
+   return false;
+}
+
+bool FalconShouldWriteRuntimeDiagnosticsNow()
+{
+   if(!EnableFastRuntimeSmokeMode)
+      return true;
+
+   int safe_interval = RuntimeDiagnosticsEveryNTicks;
+   if(safe_interval < 1)
+      safe_interval = FALCON_RUNTIME_DIAGNOSTICS_DEFAULT_N_TICKS;
+
+   return ((g_runtime_tick_counter % safe_interval) == 0);
+}
+
+void FalconRunFvgMicroRuntimeShadowPipeline(const string trigger)
+{
+   if(!EnableFvgMicroRuntimePipelineRefresh)
+      return;
+
+   if(!g_market_context.Refresh())
+      return;
+
+   string detector_refresh_reason = "";
+   bool refresh_detector = FalconShouldRefreshFvgDetectorOnThisTick(detector_refresh_reason);
+   bool write_runtime_diagnostics = FalconShouldWriteRuntimeDiagnosticsNow();
+
+   if(refresh_detector)
+   {
+      g_candle_cache.LoadAll(g_market_context);
+      g_fvg_micro_detector_stub.Initialize(g_strategy_registry, g_candle_cache, g_evidence_framework, g_runtime_safety_guard);
+      g_report_writer.WriteFvgMicroDetectorDiagnosticsSnapshot(g_fvg_micro_detector_stub);
+
+      FalconFvgMicroDetectorSnapshot detector_snapshot = g_fvg_micro_detector_stub.GetSnapshot();
+      if(detector_snapshot.fvg_detected)
+      {
+         g_fvg_micro_candidate_builder.Initialize(g_fvg_micro_detector_stub, g_strategy_registry, g_runtime_safety_guard);
+         g_report_writer.WriteFvgMicroCandidateDiagnosticsSnapshot(g_fvg_micro_candidate_builder);
+      }
+      else if(write_runtime_diagnostics)
+      {
+         g_report_writer.WriteFvgMicroCandidateDiagnosticsSnapshot(g_fvg_micro_candidate_builder);
+      }
+   }
+
+   FalconFvgMicroShadowCandidateSnapshot candidate_snapshot = g_fvg_micro_candidate_builder.GetSnapshot();
+   bool has_ready_candidate = (candidate_snapshot.candidate_status == FALCON_CANDIDATE_STATUS_READY_SHADOW && candidate_snapshot.candidate_created);
+
+   if(has_ready_candidate)
+   {
+      g_fvg_micro_retest_watcher.Initialize(g_fvg_micro_candidate_builder, g_market_context, g_runtime_safety_guard);
+      FalconFvgMicroRetestWatcherSnapshot watcher_snapshot = g_fvg_micro_retest_watcher.GetSnapshot();
+
+      if(watcher_snapshot.watcher_status == FALCON_RETEST_WATCHER_STATUS_SKELETON_READY)
+      {
+         g_report_writer.WriteFvgMicroRetestWatcherDiagnosticsSnapshot(g_fvg_micro_retest_watcher);
+
+         if(watcher_snapshot.candidate_id != g_last_staged_fvg_candidate_id)
+         {
+            g_fvg_micro_tradeplan_stager.Initialize(g_fvg_micro_retest_watcher, g_runtime_safety_guard, g_shadow_executor);
+            g_report_writer.WriteFvgMicroTradePlanStagingDiagnosticsSnapshot(g_fvg_micro_tradeplan_stager);
+
+            FalconFvgMicroTradePlanStagingSnapshot staging_snapshot = g_fvg_micro_tradeplan_stager.GetSnapshot();
+            if(staging_snapshot.staged_to_shadow_executor)
+            {
+               g_last_staged_fvg_candidate_id = watcher_snapshot.candidate_id;
+               g_fvg_micro_lifecycle_simulator.Initialize(g_fvg_micro_tradeplan_stager, g_market_context, g_shadow_executor);
+               g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
+               g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot(trigger + "_StagedShadowRecord");
+               g_report_writer.WriteFvgMicroRuntimeReportAuditSnapshot(trigger + "_StagedShadowRecord");
+            }
+         }
+      }
+      else if(write_runtime_diagnostics)
+      {
+         g_report_writer.WriteFvgMicroRetestWatcherDiagnosticsSnapshot(g_fvg_micro_retest_watcher);
+      }
+   }
+   else if(write_runtime_diagnostics)
+   {
+      g_report_writer.WriteFvgMicroDetectorDiagnosticsSnapshot(g_fvg_micro_detector_stub);
+      g_report_writer.WriteFvgMicroCandidateDiagnosticsSnapshot(g_fvg_micro_candidate_builder);
+   }
+}
 
 // ==================================================================
 // Expert lifecycle
 // ==================================================================
 int OnInit()
 {
+   g_runtime_tick_counter = 0;
+   g_last_processed_m5_closed_candle_time = 0;
+   g_last_staged_fvg_candidate_id = "";
+   FalconInitializeReportPeriodTags();
+
    PrintFormat("============================================================");
    PrintFormat("%s", EA_NAME);
    PrintFormat("Version: %s | Build: %s", EA_VERSION_TAG, EA_BUILD_TAG);
-   PrintFormat("Stage: FVG Micro Shadow Runtime Smoke Test / Shadow-only / No real execution");
+   PrintFormat("Stage: Report Profile Cleanup + FVG Shadow Pipeline / Standard Reports / Shadow-only / No real execution");
+   PrintFormat("ReportProfile: %s", FalconReportProfileToString());
    PrintFormat("============================================================");
+   FalconPrintReportFolderHints();
+   FalconWriteStartupBootstrapFile();
 
    if(!g_market_context.Initialize())
       return INIT_FAILED;
@@ -4785,13 +5573,18 @@ int OnInit()
    g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
    g_report_writer.WriteReportCalibrationDiagnosticsSnapshot();
    g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot("OnInit_AfterAllInitialReports");
+   g_report_writer.WriteFvgMicroRuntimeReportAuditSnapshot("OnInit_AfterAllInitialReports");
    g_report_writer.WriteRuntimeReportVerificationSnapshot("OnInit_AfterAllInitialReports");
 
    if(!g_first_strategy_adapter.Initialize(g_strategy_registry, g_runtime_safety_guard, g_shadow_executor))
       return INIT_FAILED;
    g_report_writer.WriteStrategyAdapterDiagnosticsSnapshot(g_first_strategy_adapter);
-   g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot("OnInit_AfterStrategyAdapterReport");
-   g_report_writer.WriteRuntimeReportVerificationSnapshot("OnInit_AfterStrategyAdapterReport");
+   if(FALCON_WRITE_SECONDARY_ONINIT_AUDIT_SNAPSHOTS)
+   {
+      g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot("OnInit_AfterStrategyAdapterReport");
+      g_report_writer.WriteFvgMicroRuntimeReportAuditSnapshot("OnInit_AfterStrategyAdapterReport");
+      g_report_writer.WriteRuntimeReportVerificationSnapshot("OnInit_AfterStrategyAdapterReport");
+   }
 
    g_execution_guard.AssertNoExecution();
 
@@ -4802,10 +5595,13 @@ int OnInit()
 
 void OnDeinit(const int reason)
 {
+   FalconUpdateReportPeriodLastSeen();
    g_report_writer.WriteFinalSummary();
    g_report_writer.WriteReportCalibrationDiagnosticsSnapshot();
    g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot("OnDeinit_FinalSmokeTest");
+   g_report_writer.WriteFvgMicroRuntimeReportAuditSnapshot("OnDeinit_FinalReportAudit");
    g_report_writer.WriteRuntimeReportVerificationSnapshot("OnDeinit_FinalReportVerification");
+   FalconFinalizeAndRenameReportFiles("OnDeinit_AutoPeriodFinalize");
    CFalconLogger::Info(StringFormat("Deinitializing. Reason=%d", reason));
    g_is_initialized = false;
 }
@@ -4815,18 +5611,43 @@ void OnTick()
    if(!g_is_initialized)
       return;
 
-   // v0.17.0 smoke-tests the staged Shadow lifecycle path and can close it diagnostically at TP1/SL/timeout.
+   g_runtime_tick_counter++;
+   FalconUpdateReportPeriodLastSeen();
+
+   // v0.18.4 refreshes the FVG shadow pipeline during runtime and can close staged Shadow records diagnostically at TP1/SL/timeout.
    // Broker execution remains impossible. No OrderSend is used.
+   FalconRunFvgMicroRuntimeShadowPipeline("OnTick_FvgRuntimePipeline");
    g_fvg_micro_lifecycle_simulator.Refresh(g_market_context, g_shadow_executor);
 
    FalconTradeLifecycleRecord lifecycle_record;
    if(g_fvg_micro_lifecycle_simulator.ExtractClosedLifecycleRecord(lifecycle_record))
    {
       g_report_writer.RegisterClosedTrade(lifecycle_record);
-      g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot("OnTick_AfterShadowLifecycleClose");
-      g_report_writer.WriteRuntimeReportVerificationSnapshot("OnTick_AfterShadowLifecycleClose");
+      // v0.18.5 performance rule:
+      // TradeLifecycle rows are written immediately, but heavy file-verification/audit snapshots
+      // are not rewritten after every Shadow close. They remain available at OnInit/OnDeinit.
+      if(FALCON_WRITE_HEAVY_RUNTIME_AUDIT_ON_SHADOW_CLOSE)
+      {
+         g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot("OnTick_AfterShadowLifecycleClose");
+         g_report_writer.WriteFvgMicroRuntimeReportAuditSnapshot("OnTick_AfterShadowLifecycleClose");
+         g_report_writer.WriteRuntimeReportVerificationSnapshot("OnTick_AfterShadowLifecycleClose");
+      }
+      g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
    }
-   g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
+   else
+   {
+      bool should_write_lifecycle_tick_snapshot = true;
+      if(EnableFastRuntimeSmokeMode)
+      {
+         int safe_interval = RuntimeDiagnosticsEveryNTicks;
+         if(safe_interval < 1)
+            safe_interval = FALCON_RUNTIME_DIAGNOSTICS_DEFAULT_N_TICKS;
+         should_write_lifecycle_tick_snapshot = ((g_runtime_tick_counter % safe_interval) == 0);
+      }
+
+      if(should_write_lifecycle_tick_snapshot)
+         g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
+   }
 
    // Future pipeline:
    // MarketContext -> CandleCache -> Narrative -> StrategyEngine -> Evidence -> Guard -> TradePlan -> Shadow/Paper/Demo/Live Executor -> ReportWriter
