@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.19.1 - Compact Quality Filter Impact Metrics |
+//|                     Version: v0.19.4 - FVG Direction Outcome Breakdown Summary |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.191"
+#property version   "1.194"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.19.1"
-#define EA_BUILD_TAG   "CompactQualityFilterImpactMetrics_NoExecution"
+#define EA_VERSION_TAG "v0.19.4"
+#define EA_BUILD_TAG   "FvgDirectionOutcomeBreakdownSummary_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -40,6 +40,39 @@ int g_fvg_micro_rejected_size                 = 0;
 int g_fvg_micro_rejected_spread               = 0;
 int g_fvg_micro_rejected_age                  = 0;
 int g_fvg_micro_shadow_ready_candidates       = 0;
+
+// ==================================================================
+// FVG Micro quality calibration shadow metrics - v0.19.2/v0.19.3
+// These counters simulate stricter quality thresholds WITHOUT changing
+// the live Shadow candidate path. They are reported only in Summary.
+// ==================================================================
+int g_fvg_quality_calibration_evaluated             = 0;
+int g_fvg_quality_profile_balanced_passed           = 0;
+int g_fvg_quality_profile_balanced_rejected         = 0;
+int g_fvg_quality_profile_strict_size_passed        = 0;
+int g_fvg_quality_profile_strict_size_rejected      = 0;
+int g_fvg_quality_profile_tight_spread_passed       = 0;
+int g_fvg_quality_profile_tight_spread_rejected     = 0;
+int g_fvg_quality_profile_strict_combo_passed       = 0;
+int g_fvg_quality_profile_strict_combo_rejected     = 0;
+
+// ==================================================================
+// FVG Micro quality distribution metrics - v0.19.3
+// These are Summary-only metrics. They explain WHY a calibration profile
+// passes/rejects without adding diagnostic CSV files or new inputs.
+// ==================================================================
+int    g_fvg_quality_distribution_count             = 0;
+double g_fvg_quality_size_min_points                = 0.0;
+double g_fvg_quality_size_max_points                = 0.0;
+double g_fvg_quality_size_total_points              = 0.0;
+long   g_fvg_quality_spread_min_points              = -1;
+long   g_fvg_quality_spread_max_points              = 0;
+long   g_fvg_quality_spread_total_points            = 0;
+int    g_fvg_quality_spread_le_50_count             = 0;
+int    g_fvg_quality_spread_le_75_count             = 0;
+int    g_fvg_quality_spread_le_100_count            = 0;
+int    g_fvg_quality_spread_le_150_count            = 0;
+int    g_fvg_quality_spread_le_200_count            = 0;
 
 // ==================================================================
 // Runtime performance constants - v0.18.5
@@ -196,6 +229,17 @@ string FalconReportProfileToString()
 #define FALCON_FVG_MICRO_MAX_SPREAD_POINTS                    200
 #define FALCON_FVG_MICRO_MAX_FVG_AGE_BARS                     0
 #define FALCON_FVG_MICRO_RETEST_FRESHNESS_BARS                3
+
+// v0.19.2/v0.19.3 calibration profiles. These do NOT block trades yet.
+// They only answer: what would have happened if thresholds were tighter?
+#define FALCON_FVG_CALIB_BALANCED_MIN_SIZE_POINTS             2.00
+#define FALCON_FVG_CALIB_BALANCED_MAX_SPREAD_POINTS           200
+#define FALCON_FVG_CALIB_STRICT_SIZE_MIN_SIZE_POINTS          5.00
+#define FALCON_FVG_CALIB_STRICT_SIZE_MAX_SPREAD_POINTS        200
+#define FALCON_FVG_CALIB_TIGHT_SPREAD_MIN_SIZE_POINTS         1.00
+#define FALCON_FVG_CALIB_TIGHT_SPREAD_MAX_SPREAD_POINTS       50
+#define FALCON_FVG_CALIB_STRICT_COMBO_MIN_SIZE_POINTS         5.00
+#define FALCON_FVG_CALIB_STRICT_COMBO_MAX_SPREAD_POINTS       50
 
 
 // ==================================================================
@@ -543,6 +587,108 @@ struct FalconFvgMicroShadowCandidateSnapshot
    string                       notes;
 };
 
+double FalconSafeAverageDouble(const double total, const int count)
+{
+   if(count <= 0)
+      return 0.0;
+   return (total / (double)count);
+}
+
+double FalconSafeAverageLongAsDouble(const long total, const int count)
+{
+   if(count <= 0)
+      return 0.0;
+   return ((double)total / (double)count);
+}
+
+void FalconRegisterFvgQualityDistributionMetrics(const FalconFvgMicroShadowCandidateSnapshot &snapshot)
+{
+   if(!(snapshot.fvg_detected && snapshot.registry_found && snapshot.input_enabled && snapshot.runtime_safety_ready))
+      return;
+
+   const double size_points = snapshot.fvg_size_points;
+   const long spread_points = snapshot.quality_current_spread_points;
+
+   g_fvg_quality_distribution_count++;
+   g_fvg_quality_size_total_points += size_points;
+
+   if(g_fvg_quality_distribution_count == 1 || size_points < g_fvg_quality_size_min_points)
+      g_fvg_quality_size_min_points = size_points;
+   if(g_fvg_quality_distribution_count == 1 || size_points > g_fvg_quality_size_max_points)
+      g_fvg_quality_size_max_points = size_points;
+
+   g_fvg_quality_spread_total_points += spread_points;
+   if(g_fvg_quality_spread_min_points < 0 || spread_points < g_fvg_quality_spread_min_points)
+      g_fvg_quality_spread_min_points = spread_points;
+   if(spread_points > g_fvg_quality_spread_max_points)
+      g_fvg_quality_spread_max_points = spread_points;
+
+   if(spread_points <= 50)
+      g_fvg_quality_spread_le_50_count++;
+   if(spread_points <= 75)
+      g_fvg_quality_spread_le_75_count++;
+   if(spread_points <= 100)
+      g_fvg_quality_spread_le_100_count++;
+   if(spread_points <= 150)
+      g_fvg_quality_spread_le_150_count++;
+   if(spread_points <= 200)
+      g_fvg_quality_spread_le_200_count++;
+}
+
+bool FalconFvgQualityCalibrationProfilePassed(const FalconFvgMicroShadowCandidateSnapshot &snapshot,
+                                              const double min_size_points,
+                                              const long max_spread_points)
+{
+   if(snapshot.fvg_size_points < min_size_points)
+      return false;
+
+   if(max_spread_points > 0 && snapshot.quality_current_spread_points > max_spread_points)
+      return false;
+
+   return true;
+}
+
+void FalconRegisterFvgQualityCalibrationMetrics(const FalconFvgMicroShadowCandidateSnapshot &snapshot)
+{
+   if(!(snapshot.fvg_detected && snapshot.registry_found && snapshot.input_enabled && snapshot.runtime_safety_ready))
+      return;
+
+   g_fvg_quality_calibration_evaluated++;
+   FalconRegisterFvgQualityDistributionMetrics(snapshot);
+
+   bool balanced_pass = FalconFvgQualityCalibrationProfilePassed(snapshot,
+                                                                 FALCON_FVG_CALIB_BALANCED_MIN_SIZE_POINTS,
+                                                                 FALCON_FVG_CALIB_BALANCED_MAX_SPREAD_POINTS);
+   if(balanced_pass)
+      g_fvg_quality_profile_balanced_passed++;
+   else
+      g_fvg_quality_profile_balanced_rejected++;
+
+   bool strict_size_pass = FalconFvgQualityCalibrationProfilePassed(snapshot,
+                                                                    FALCON_FVG_CALIB_STRICT_SIZE_MIN_SIZE_POINTS,
+                                                                    FALCON_FVG_CALIB_STRICT_SIZE_MAX_SPREAD_POINTS);
+   if(strict_size_pass)
+      g_fvg_quality_profile_strict_size_passed++;
+   else
+      g_fvg_quality_profile_strict_size_rejected++;
+
+   bool tight_spread_pass = FalconFvgQualityCalibrationProfilePassed(snapshot,
+                                                                     FALCON_FVG_CALIB_TIGHT_SPREAD_MIN_SIZE_POINTS,
+                                                                     FALCON_FVG_CALIB_TIGHT_SPREAD_MAX_SPREAD_POINTS);
+   if(tight_spread_pass)
+      g_fvg_quality_profile_tight_spread_passed++;
+   else
+      g_fvg_quality_profile_tight_spread_rejected++;
+
+   bool strict_combo_pass = FalconFvgQualityCalibrationProfilePassed(snapshot,
+                                                                     FALCON_FVG_CALIB_STRICT_COMBO_MIN_SIZE_POINTS,
+                                                                     FALCON_FVG_CALIB_STRICT_COMBO_MAX_SPREAD_POINTS);
+   if(strict_combo_pass)
+      g_fvg_quality_profile_strict_combo_passed++;
+   else
+      g_fvg_quality_profile_strict_combo_rejected++;
+}
+
 void FalconRegisterFvgMicroCandidateMetrics(const FalconFvgMicroShadowCandidateSnapshot &snapshot)
 {
    g_fvg_micro_candidate_builder_evaluations++;
@@ -570,6 +716,8 @@ void FalconRegisterFvgMicroCandidateMetrics(const FalconFvgMicroShadowCandidateS
             g_fvg_micro_rejected_age++;
       }
    }
+
+   FalconRegisterFvgQualityCalibrationMetrics(snapshot);
 
    if(snapshot.candidate_status == FALCON_CANDIDATE_STATUS_READY_SHADOW)
       g_fvg_micro_shadow_ready_candidates++;
@@ -824,6 +972,14 @@ struct FalconReportTotals
    double net_usd;
    double win_rate;
    double loss_rate;
+
+   int    buy_trades;
+   int    buy_win_trades;
+   double buy_net_index_points;
+
+   int    sell_trades;
+   int    sell_win_trades;
+   double sell_net_index_points;
 };
 
 // ==================================================================
@@ -3133,7 +3289,7 @@ public:
       {
          m_snapshot.candidate_status = FALCON_CANDIDATE_STATUS_BLOCKED;
          m_snapshot.block_reason = "QUALITY_FILTER_REJECTED;" + m_snapshot.quality_reject_reason;
-         m_snapshot.notes = "v0.19.1 FVG Micro quality filters blocked this candidate before Shadow staging. No OrderSend, no execution.";
+         m_snapshot.notes = "v0.19.3 FVG Micro quality filters blocked this candidate before Shadow staging. No OrderSend, no execution.";
       }
       else if(!m_snapshot.shadow_allowed)
       {
@@ -3149,7 +3305,7 @@ public:
                                                  FalconTimeToString(m_snapshot.setup_time),
                                                  FalconDirectionToString(m_snapshot.direction));
          m_snapshot.block_reason = "CANDIDATE_READY_QUALITY_FILTERS_PASSED_NO_TRADEPLAN";
-         m_snapshot.notes = "Shadow candidate created after v0.19.1 quality filters passed. Research object only. No TradePlan, no broker OrderSend.";
+         m_snapshot.notes = "Shadow candidate created after v0.19.3 quality filters passed. Research object only. No TradePlan, no broker OrderSend.";
       }
 
       FalconRegisterFvgMicroCandidateMetrics(m_snapshot);
@@ -5229,6 +5385,14 @@ public:
          m_totals.loss_rate = 0.0;
       }
 
+      double buy_win_rate = 0.0;
+      if(m_totals.buy_trades > 0)
+         buy_win_rate = (100.0 * (double)m_totals.buy_win_trades) / (double)m_totals.buy_trades;
+
+      double sell_win_rate = 0.0;
+      if(m_totals.sell_trades > 0)
+         sell_win_rate = (100.0 * (double)m_totals.sell_win_trades) / (double)m_totals.sell_trades;
+
       int handle = FileOpen(m_summary_report_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -5242,6 +5406,8 @@ public:
                 "WinRate", "LoseRate",
                 "TotalProfitIndexPoints", "TotalLossIndexPoints", "NetIndexPoints",
                 "TotalProfitUSD", "TotalLossUSD", "NetUSD",
+                "BuyTrades", "BuyWinRate", "BuyNetIndexPoints",
+                "SellTrades", "SellWinRate", "SellNetIndexPoints",
                 "FvgCandidateBuilderEvaluations",
                 "FvgDetectedCandidates",
                 "FvgQualityEvaluated",
@@ -5250,7 +5416,20 @@ public:
                 "FvgRejectedSize",
                 "FvgRejectedSpread",
                 "FvgRejectedAge",
-                "FvgShadowReadyCandidates");
+                "FvgShadowReadyCandidates",
+                "FvgQualityCalibrationEvaluated",
+                "FvgQualityDistributionCount",
+                "FvgSizeMinPoints", "FvgSizeAvgPoints", "FvgSizeMaxPoints",
+                "SpreadMinPoints", "SpreadAvgPoints", "SpreadMaxPoints",
+                "SpreadLE50", "SpreadLE75", "SpreadLE100", "SpreadLE150", "SpreadLE200",
+                "QualityProfileBalancedMinSize", "QualityProfileBalancedMaxSpread",
+                "QualityProfileBalancedPassed", "QualityProfileBalancedRejected",
+                "QualityProfileStrictSizeMinSize", "QualityProfileStrictSizeMaxSpread",
+                "QualityProfileStrictSizePassed", "QualityProfileStrictSizeRejected",
+                "QualityProfileTightSpreadMinSize", "QualityProfileTightSpreadMaxSpread",
+                "QualityProfileTightSpreadPassed", "QualityProfileTightSpreadRejected",
+                "QualityProfileStrictComboMinSize", "QualityProfileStrictComboMaxSpread",
+                "QualityProfileStrictComboPassed", "QualityProfileStrictComboRejected");
 
       FileWrite(handle,
                 EA_NAME,
@@ -5270,6 +5449,12 @@ public:
                 DoubleToString(m_totals.total_profit_usd, 2),
                 DoubleToString(m_totals.total_loss_usd, 2),
                 DoubleToString(m_totals.net_usd, 2),
+                m_totals.buy_trades,
+                DoubleToString(buy_win_rate, 2),
+                DoubleToString(m_totals.buy_net_index_points, 2),
+                m_totals.sell_trades,
+                DoubleToString(sell_win_rate, 2),
+                DoubleToString(m_totals.sell_net_index_points, 2),
                 g_fvg_micro_candidate_builder_evaluations,
                 g_fvg_micro_detected_candidates,
                 g_fvg_micro_quality_evaluated,
@@ -5278,7 +5463,36 @@ public:
                 g_fvg_micro_rejected_size,
                 g_fvg_micro_rejected_spread,
                 g_fvg_micro_rejected_age,
-                g_fvg_micro_shadow_ready_candidates);
+                g_fvg_micro_shadow_ready_candidates,
+                g_fvg_quality_calibration_evaluated,
+                g_fvg_quality_distribution_count,
+                DoubleToString(g_fvg_quality_size_min_points, 2),
+                DoubleToString(FalconSafeAverageDouble(g_fvg_quality_size_total_points, g_fvg_quality_distribution_count), 2),
+                DoubleToString(g_fvg_quality_size_max_points, 2),
+                (int)g_fvg_quality_spread_min_points,
+                DoubleToString(FalconSafeAverageLongAsDouble(g_fvg_quality_spread_total_points, g_fvg_quality_distribution_count), 2),
+                (int)g_fvg_quality_spread_max_points,
+                g_fvg_quality_spread_le_50_count,
+                g_fvg_quality_spread_le_75_count,
+                g_fvg_quality_spread_le_100_count,
+                g_fvg_quality_spread_le_150_count,
+                g_fvg_quality_spread_le_200_count,
+                DoubleToString(FALCON_FVG_CALIB_BALANCED_MIN_SIZE_POINTS, 2),
+                FALCON_FVG_CALIB_BALANCED_MAX_SPREAD_POINTS,
+                g_fvg_quality_profile_balanced_passed,
+                g_fvg_quality_profile_balanced_rejected,
+                DoubleToString(FALCON_FVG_CALIB_STRICT_SIZE_MIN_SIZE_POINTS, 2),
+                FALCON_FVG_CALIB_STRICT_SIZE_MAX_SPREAD_POINTS,
+                g_fvg_quality_profile_strict_size_passed,
+                g_fvg_quality_profile_strict_size_rejected,
+                DoubleToString(FALCON_FVG_CALIB_TIGHT_SPREAD_MIN_SIZE_POINTS, 2),
+                FALCON_FVG_CALIB_TIGHT_SPREAD_MAX_SPREAD_POINTS,
+                g_fvg_quality_profile_tight_spread_passed,
+                g_fvg_quality_profile_tight_spread_rejected,
+                DoubleToString(FALCON_FVG_CALIB_STRICT_COMBO_MIN_SIZE_POINTS, 2),
+                FALCON_FVG_CALIB_STRICT_COMBO_MAX_SPREAD_POINTS,
+                g_fvg_quality_profile_strict_combo_passed,
+                g_fvg_quality_profile_strict_combo_rejected);
 
       FileClose(handle);
       CFalconLogger::Info(StringFormat("Final summary written. Trades=%d | WinRate=%.2f | NetIndexPoints=%.2f | NetUSD=%.2f",
@@ -5391,6 +5605,13 @@ private:
       m_totals.net_usd                     = 0.0;
       m_totals.win_rate                    = 0.0;
       m_totals.loss_rate                   = 0.0;
+
+      m_totals.buy_trades                  = 0;
+      m_totals.buy_win_trades              = 0;
+      m_totals.buy_net_index_points        = 0.0;
+      m_totals.sell_trades                 = 0;
+      m_totals.sell_win_trades             = 0;
+      m_totals.sell_net_index_points       = 0.0;
    }
 
    void UpdateTotals(const FalconTradeLifecycleRecord &record)
@@ -5410,6 +5631,21 @@ private:
       m_totals.total_profit_usd          += record.profit_usd;
       m_totals.total_loss_usd            += record.loss_usd;
       m_totals.net_usd                   += record.net_usd;
+
+      if(record.direction == FALCON_DIRECTION_BUY)
+      {
+         m_totals.buy_trades++;
+         if(record.outcome == FALCON_TRADE_OUTCOME_WIN)
+            m_totals.buy_win_trades++;
+         m_totals.buy_net_index_points += record.net_index_points;
+      }
+      else if(record.direction == FALCON_DIRECTION_SELL)
+      {
+         m_totals.sell_trades++;
+         if(record.outcome == FALCON_TRADE_OUTCOME_WIN)
+            m_totals.sell_win_trades++;
+         m_totals.sell_net_index_points += record.net_index_points;
+      }
    }
 
    void WriteTradeHeader()
