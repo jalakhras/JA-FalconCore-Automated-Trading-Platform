@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.21.2 - FVG Micro Quality Attribution Lock |
+//|                     Version: v0.21.3 - FVG Quality Attribution Cleanup Lock |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.212"
+#property version   "1.213"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.21.2"
-#define EA_BUILD_TAG   "FvgMicroQualityAttributionLock_NoExecution"
+#define EA_VERSION_TAG "v0.21.3"
+#define EA_BUILD_TAG   "FvgQualityAttributionCleanupLock_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -1049,7 +1049,7 @@ struct FalconShadowTradeRecord
    string                           close_reason;
    string                           evidence_summary;
 
-   // v0.21.0: carried forward from TradePlan for closed lifecycle attribution.
+   // v0.21.3: official FVG attribution fields carried into closed TradeLifecycle records.
    double                           fvg_size_points;
    long                             fvg_spread_points;
    int                              fvg_retest_age_bars;
@@ -5838,9 +5838,8 @@ public:
          return;
       }
 
-      // v0.20.1: Summary now contains many compact metrics. MQL5 FileWrite has a practical
-      // vararg limit, so write the summary header/row as explicit CSV strings to keep compile clean
-      // without splitting the report into extra files.
+      // v0.21.3 Lock cleanup: Summary now keeps only stable baseline and official FVG attribution counters.
+      // Temporary calibration/profile distribution columns stay out of Lock reports.
       string summary_header =
          "EAName,Version,Build,Symbol,GeneratedAt,"
          "TotalTrades,WinTrades,LoseTrades,BreakevenTrades,"
@@ -5856,18 +5855,7 @@ public:
          "FvgHoldQualityScoreMin,FvgHoldQualityScoreAvg,FvgHoldQualityScoreMax,"
          "FvgCandidateBuilderEvaluations,FvgDetectedCandidates,FvgQualityEvaluated,"
          "FvgQualityPassed,FvgQualityRejected,FvgRejectedSize,FvgRejectedSpread,FvgRejectedAge,"
-         "FvgShadowReadyCandidates,FvgQualityCalibrationEvaluated,FvgQualityDistributionCount,"
-         "FvgSizeMinPoints,FvgSizeAvgPoints,FvgSizeMaxPoints,"
-         "SpreadMinPoints,SpreadAvgPoints,SpreadMaxPoints,"
-         "SpreadLE50,SpreadLE75,SpreadLE100,SpreadLE150,SpreadLE200,"
-         "QualityProfileBalancedMinSize,QualityProfileBalancedMaxSpread,"
-         "QualityProfileBalancedPassed,QualityProfileBalancedRejected,"
-         "QualityProfileStrictSizeMinSize,QualityProfileStrictSizeMaxSpread,"
-         "QualityProfileStrictSizePassed,QualityProfileStrictSizeRejected,"
-         "QualityProfileTightSpreadMinSize,QualityProfileTightSpreadMaxSpread,"
-         "QualityProfileTightSpreadPassed,QualityProfileTightSpreadRejected,"
-         "QualityProfileStrictComboMinSize,QualityProfileStrictComboMaxSpread,"
-         "QualityProfileStrictComboPassed,QualityProfileStrictComboRejected";
+         "FvgShadowReadyCandidates";
 
       string summary_row =
          FalconCsvSafe(EA_NAME) + "," +
@@ -5916,36 +5904,7 @@ public:
          IntegerToString(g_fvg_micro_rejected_size) + "," +
          IntegerToString(g_fvg_micro_rejected_spread) + "," +
          IntegerToString(g_fvg_micro_rejected_age) + "," +
-         IntegerToString(g_fvg_micro_shadow_ready_candidates) + "," +
-         IntegerToString(g_fvg_quality_calibration_evaluated) + "," +
-         IntegerToString(g_fvg_quality_distribution_count) + "," +
-         DoubleToString(g_fvg_quality_size_min_points, 2) + "," +
-         DoubleToString(FalconSafeAverageDouble(g_fvg_quality_size_total_points, g_fvg_quality_distribution_count), 2) + "," +
-         DoubleToString(g_fvg_quality_size_max_points, 2) + "," +
-         IntegerToString((int)g_fvg_quality_spread_min_points) + "," +
-         DoubleToString(FalconSafeAverageLongAsDouble(g_fvg_quality_spread_total_points, g_fvg_quality_distribution_count), 2) + "," +
-         IntegerToString((int)g_fvg_quality_spread_max_points) + "," +
-         IntegerToString(g_fvg_quality_spread_le_50_count) + "," +
-         IntegerToString(g_fvg_quality_spread_le_75_count) + "," +
-         IntegerToString(g_fvg_quality_spread_le_100_count) + "," +
-         IntegerToString(g_fvg_quality_spread_le_150_count) + "," +
-         IntegerToString(g_fvg_quality_spread_le_200_count) + "," +
-         DoubleToString(FALCON_FVG_CALIB_BALANCED_MIN_SIZE_POINTS, 2) + "," +
-         IntegerToString(FALCON_FVG_CALIB_BALANCED_MAX_SPREAD_POINTS) + "," +
-         IntegerToString(g_fvg_quality_profile_balanced_passed) + "," +
-         IntegerToString(g_fvg_quality_profile_balanced_rejected) + "," +
-         DoubleToString(FALCON_FVG_CALIB_STRICT_SIZE_MIN_SIZE_POINTS, 2) + "," +
-         IntegerToString(FALCON_FVG_CALIB_STRICT_SIZE_MAX_SPREAD_POINTS) + "," +
-         IntegerToString(g_fvg_quality_profile_strict_size_passed) + "," +
-         IntegerToString(g_fvg_quality_profile_strict_size_rejected) + "," +
-         DoubleToString(FALCON_FVG_CALIB_TIGHT_SPREAD_MIN_SIZE_POINTS, 2) + "," +
-         IntegerToString(FALCON_FVG_CALIB_TIGHT_SPREAD_MAX_SPREAD_POINTS) + "," +
-         IntegerToString(g_fvg_quality_profile_tight_spread_passed) + "," +
-         IntegerToString(g_fvg_quality_profile_tight_spread_rejected) + "," +
-         DoubleToString(FALCON_FVG_CALIB_STRICT_COMBO_MIN_SIZE_POINTS, 2) + "," +
-         IntegerToString(FALCON_FVG_CALIB_STRICT_COMBO_MAX_SPREAD_POINTS) + "," +
-         IntegerToString(g_fvg_quality_profile_strict_combo_passed) + "," +
-         IntegerToString(g_fvg_quality_profile_strict_combo_rejected);
+         IntegerToString(g_fvg_micro_shadow_ready_candidates);
 
       // v0.20.2: Write CRLF explicitly as separate strings. This prevents MetaTrader/CSV
       // readers from receiving the header and summary row concatenated on a single line.
@@ -6129,8 +6088,7 @@ private:
                 "FvgSizePoints", "FvgSpreadPoints", "FvgRetestAgeBars",
                 "FvgSetupTime", "FvgRetestWatchTime", "FvgAgeBarsAtWatch", "FvgAgeSource",
                 "FvgRetestFreshState", "FvgHoldQualityScore", "FvgHoldQualityBucket",
-                "QualityFiltersPassed", "QualityBalancedPassed", "QualityStrictSizePassed",
-                "QualityTightSpreadPassed", "QualityStrictComboPassed",
+                "QualityFiltersPassed",
                 "CloseReason", "EvidenceSummary");
       FileClose(handle);
    }
@@ -6202,10 +6160,6 @@ private:
                 record.fvg_hold_quality_score,
                 record.fvg_hold_quality_bucket,
                 FalconBoolToYesNo(record.quality_filters_passed),
-                FalconBoolToYesNo(record.quality_profile_balanced_passed),
-                FalconBoolToYesNo(record.quality_profile_strict_size_passed),
-                FalconBoolToYesNo(record.quality_profile_tight_spread_passed),
-                FalconBoolToYesNo(record.quality_profile_strict_combo_passed),
                 record.close_reason,
                 record.evidence_summary);
       FileClose(handle);
