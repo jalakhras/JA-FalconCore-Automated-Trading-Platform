@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.19.4 - FVG Direction Outcome Breakdown Summary |
+//|                     Version: v0.21.2 - FVG Micro Quality Attribution Lock |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.194"
+#property version   "1.212"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.19.4"
-#define EA_BUILD_TAG   "FvgDirectionOutcomeBreakdownSummary_NoExecution"
+#define EA_VERSION_TAG "v0.21.2"
+#define EA_BUILD_TAG   "FvgMicroQualityAttributionLock_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -73,6 +73,31 @@ int    g_fvg_quality_spread_le_75_count             = 0;
 int    g_fvg_quality_spread_le_100_count            = 0;
 int    g_fvg_quality_spread_le_150_count            = 0;
 int    g_fvg_quality_spread_le_200_count            = 0;
+
+// ==================================================================
+// FVG Micro retest freshness + hold/reject quality metrics - v0.20.0
+// Summary-only shadow metrics. They DO NOT change entries, SL, TP, staging,
+// or lifecycle behavior. They measure whether FVG retests are fresh and
+// whether the first closed-candle context around retest shows hold/rejection.
+// ==================================================================
+int    g_fvg_retest_watch_evaluated                  = 0;
+int    g_fvg_retest_touched                          = 0;
+int    g_fvg_retest_waiting                          = 0;
+int    g_fvg_retest_fresh                            = 0;
+int    g_fvg_retest_stale                            = 0;
+int    g_fvg_retest_age_min_bars                     = -1;
+int    g_fvg_retest_age_max_bars                     = 0;
+long   g_fvg_retest_age_total_bars                   = 0;
+int    g_fvg_hold_quality_evaluated                  = 0;
+int    g_fvg_hold_quality_strong                     = 0;
+int    g_fvg_hold_quality_neutral                    = 0;
+int    g_fvg_hold_quality_weak                       = 0;
+int    g_fvg_hold_quality_score_min                  = -1;
+int    g_fvg_hold_quality_score_max                  = 0;
+long   g_fvg_hold_quality_score_total                = 0;
+
+#define FALCON_FVG_HOLD_QUALITY_STRONG_SCORE         70
+#define FALCON_FVG_HOLD_QUALITY_NEUTRAL_SCORE        40
 
 // ==================================================================
 // Runtime performance constants - v0.18.5
@@ -581,6 +606,18 @@ struct FalconFvgMicroShadowCandidateSnapshot
    int                          quality_max_fvg_age_bars;
    int                          quality_retest_freshness_bars;
    string                       quality_reject_reason;
+   int                          fvg_retest_age_bars;
+   datetime                     fvg_setup_time;
+   datetime                     fvg_retest_watch_time;
+   int                          fvg_age_bars_at_watch;
+   string                       fvg_age_source;
+   string                       fvg_retest_fresh_state;
+   int                          fvg_hold_quality_score;
+   string                       fvg_hold_quality_bucket;
+   bool                         quality_profile_balanced_passed;
+   bool                         quality_profile_strict_size_passed;
+   bool                         quality_profile_tight_spread_passed;
+   bool                         quality_profile_strict_combo_passed;
    double                       score;
    string                       block_reason;
    string                       evidence_summary;
@@ -749,6 +786,27 @@ struct FalconFvgMicroRetestWatcherSnapshot
    double                            fvg_lower;
    double                            fvg_upper;
    double                            fvg_size_points;
+   bool                              quality_filters_enabled;
+   bool                              quality_filters_passed;
+   double                            quality_min_fvg_size_points;
+   long                              quality_current_spread_points;
+   long                              quality_max_spread_points;
+   int                               quality_fvg_age_bars;
+   int                               quality_max_fvg_age_bars;
+   int                               quality_retest_freshness_bars;
+   string                            quality_reject_reason;
+   int                               fvg_retest_age_bars;
+   datetime                          fvg_setup_time;
+   datetime                          fvg_retest_watch_time;
+   int                               fvg_age_bars_at_watch;
+   string                            fvg_age_source;
+   string                            fvg_retest_fresh_state;
+   int                               fvg_hold_quality_score;
+   string                            fvg_hold_quality_bucket;
+   bool                              quality_profile_balanced_passed;
+   bool                              quality_profile_strict_size_passed;
+   bool                              quality_profile_tight_spread_passed;
+   bool                              quality_profile_strict_combo_passed;
    double                            planned_entry_price;
    double                            planned_structural_sl;
    double                            planned_tp1;
@@ -904,6 +962,24 @@ struct FalconTradePlan
    bool                  runner_allowed;
    string                risk_profile;
    string                management_profile;
+
+   // v0.21.0: FVG Micro per-trade quality attribution.
+   // Metadata only: no entry, SL, TP, routing, or lifecycle close behavior changes.
+   double                fvg_size_points;
+   long                  fvg_spread_points;
+   int                   fvg_retest_age_bars;
+   datetime              fvg_setup_time;
+   datetime              fvg_retest_watch_time;
+   int                   fvg_age_bars_at_watch;
+   string                fvg_age_source;
+   string                fvg_retest_fresh_state;
+   int                   fvg_hold_quality_score;
+   string                fvg_hold_quality_bucket;
+   bool                  quality_filters_passed;
+   bool                  quality_profile_balanced_passed;
+   bool                  quality_profile_strict_size_passed;
+   bool                  quality_profile_tight_spread_passed;
+   bool                  quality_profile_strict_combo_passed;
 };
 
 struct FalconTradeLifecycleRecord
@@ -932,6 +1008,23 @@ struct FalconTradeLifecycleRecord
    double                    net_usd;
    string                    close_reason;
    string                    evidence_summary;
+
+   // v0.21.0: FVG Micro quality attribution carried into TradeLifecycle rows.
+   double                    fvg_size_points;
+   long                      fvg_spread_points;
+   int                       fvg_retest_age_bars;
+   datetime                  fvg_setup_time;
+   datetime                  fvg_retest_watch_time;
+   int                       fvg_age_bars_at_watch;
+   string                    fvg_age_source;
+   string                    fvg_retest_fresh_state;
+   int                       fvg_hold_quality_score;
+   string                    fvg_hold_quality_bucket;
+   bool                      quality_filters_passed;
+   bool                      quality_profile_balanced_passed;
+   bool                      quality_profile_strict_size_passed;
+   bool                      quality_profile_tight_spread_passed;
+   bool                      quality_profile_strict_combo_passed;
 };
 
 
@@ -955,6 +1048,24 @@ struct FalconShadowTradeRecord
    ENUM_FALCON_TRADE_OUTCOME        simulated_outcome;
    string                           close_reason;
    string                           evidence_summary;
+
+   // v0.21.0: carried forward from TradePlan for closed lifecycle attribution.
+   double                           fvg_size_points;
+   long                             fvg_spread_points;
+   int                              fvg_retest_age_bars;
+   datetime                         fvg_setup_time;
+   datetime                         fvg_retest_watch_time;
+   int                              fvg_age_bars_at_watch;
+   string                           fvg_age_source;
+   string                           fvg_retest_fresh_state;
+   int                              fvg_hold_quality_score;
+   string                           fvg_hold_quality_bucket;
+   bool                             quality_filters_passed;
+   bool                             quality_profile_balanced_passed;
+   bool                             quality_profile_strict_size_passed;
+   bool                             quality_profile_tight_spread_passed;
+   bool                             quality_profile_strict_combo_passed;
+
    bool                             is_closed;
 };
 
@@ -2489,6 +2600,21 @@ public:
       record.simulated_outcome    = FALCON_TRADE_OUTCOME_OPEN;
       record.close_reason         = "STAGED_ONLY_NO_EXECUTION";
       record.evidence_summary     = evidence_pack.summary;
+      record.fvg_size_points      = plan.fvg_size_points;
+      record.fvg_spread_points    = plan.fvg_spread_points;
+      record.fvg_retest_age_bars  = plan.fvg_retest_age_bars;
+      record.fvg_setup_time = plan.fvg_setup_time;
+      record.fvg_retest_watch_time = plan.fvg_retest_watch_time;
+      record.fvg_age_bars_at_watch = plan.fvg_age_bars_at_watch;
+      record.fvg_age_source = plan.fvg_age_source;
+      record.fvg_retest_fresh_state = plan.fvg_retest_fresh_state;
+      record.fvg_hold_quality_score = plan.fvg_hold_quality_score;
+      record.fvg_hold_quality_bucket = plan.fvg_hold_quality_bucket;
+      record.quality_filters_passed = plan.quality_filters_passed;
+      record.quality_profile_balanced_passed = plan.quality_profile_balanced_passed;
+      record.quality_profile_strict_size_passed = plan.quality_profile_strict_size_passed;
+      record.quality_profile_tight_spread_passed = plan.quality_profile_tight_spread_passed;
+      record.quality_profile_strict_combo_passed = plan.quality_profile_strict_combo_passed;
       record.is_closed            = false;
 
       m_staged_records++;
@@ -2567,6 +2693,21 @@ private:
       record.simulated_outcome    = FALCON_TRADE_OUTCOME_UNKNOWN;
       record.close_reason         = "";
       record.evidence_summary     = "";
+      record.fvg_size_points      = 0.0;
+      record.fvg_spread_points    = 0;
+      record.fvg_retest_age_bars  = 0;
+      record.fvg_setup_time = 0;
+      record.fvg_retest_watch_time = 0;
+      record.fvg_age_bars_at_watch = 0;
+      record.fvg_age_source = "";
+      record.fvg_retest_fresh_state = "";
+      record.fvg_hold_quality_score = 0;
+      record.fvg_hold_quality_bucket = "";
+      record.quality_filters_passed = false;
+      record.quality_profile_balanced_passed = false;
+      record.quality_profile_strict_size_passed = false;
+      record.quality_profile_tight_spread_passed = false;
+      record.quality_profile_strict_combo_passed = false;
       record.is_closed            = false;
    }
 
@@ -2597,6 +2738,21 @@ private:
       lifecycle_record.net_usd             = 0.0;
       lifecycle_record.close_reason        = record.close_reason;
       lifecycle_record.evidence_summary    = record.evidence_summary;
+      lifecycle_record.fvg_size_points     = record.fvg_size_points;
+      lifecycle_record.fvg_spread_points   = record.fvg_spread_points;
+      lifecycle_record.fvg_retest_age_bars = record.fvg_retest_age_bars;
+      lifecycle_record.fvg_setup_time = record.fvg_setup_time;
+      lifecycle_record.fvg_retest_watch_time = record.fvg_retest_watch_time;
+      lifecycle_record.fvg_age_bars_at_watch = record.fvg_age_bars_at_watch;
+      lifecycle_record.fvg_age_source = record.fvg_age_source;
+      lifecycle_record.fvg_retest_fresh_state = record.fvg_retest_fresh_state;
+      lifecycle_record.fvg_hold_quality_score = record.fvg_hold_quality_score;
+      lifecycle_record.fvg_hold_quality_bucket = record.fvg_hold_quality_bucket;
+      lifecycle_record.quality_filters_passed = record.quality_filters_passed;
+      lifecycle_record.quality_profile_balanced_passed = record.quality_profile_balanced_passed;
+      lifecycle_record.quality_profile_strict_size_passed = record.quality_profile_strict_size_passed;
+      lifecycle_record.quality_profile_tight_spread_passed = record.quality_profile_tight_spread_passed;
+      lifecycle_record.quality_profile_strict_combo_passed = record.quality_profile_strict_combo_passed;
    }
 };
 
@@ -3414,6 +3570,18 @@ private:
       m_snapshot.quality_max_fvg_age_bars = FALCON_FVG_MICRO_MAX_FVG_AGE_BARS;
       m_snapshot.quality_retest_freshness_bars = FALCON_FVG_MICRO_RETEST_FRESHNESS_BARS;
       m_snapshot.quality_reject_reason = "NOT_EVALUATED";
+      m_snapshot.fvg_retest_age_bars = 0;
+      m_snapshot.fvg_setup_time = 0;
+      m_snapshot.fvg_retest_watch_time = 0;
+      m_snapshot.fvg_age_bars_at_watch = 0;
+      m_snapshot.fvg_age_source = "NOT_EVALUATED";
+      m_snapshot.fvg_retest_fresh_state = "NOT_EVALUATED";
+      m_snapshot.fvg_hold_quality_score = 0;
+      m_snapshot.fvg_hold_quality_bucket = "NOT_EVALUATED";
+      m_snapshot.quality_profile_balanced_passed = false;
+      m_snapshot.quality_profile_strict_size_passed = false;
+      m_snapshot.quality_profile_tight_spread_passed = false;
+      m_snapshot.quality_profile_strict_combo_passed = false;
       m_snapshot.score = 0.0;
       m_snapshot.block_reason = "";
       m_snapshot.evidence_summary = "";
@@ -3467,8 +3635,29 @@ public:
       m_snapshot.fvg_lower          = candidate.entry_zone_lower;
       m_snapshot.fvg_upper          = candidate.entry_zone_upper;
       m_snapshot.fvg_size_points    = candidate.fvg_size_points;
+      m_snapshot.quality_filters_enabled       = candidate.quality_filters_enabled;
+      m_snapshot.quality_filters_passed        = candidate.quality_filters_passed;
+      m_snapshot.quality_min_fvg_size_points   = candidate.quality_min_fvg_size_points;
+      m_snapshot.quality_current_spread_points = candidate.quality_current_spread_points;
+      m_snapshot.quality_max_spread_points     = candidate.quality_max_spread_points;
+      m_snapshot.quality_fvg_age_bars          = candidate.quality_fvg_age_bars;
+      m_snapshot.quality_max_fvg_age_bars      = candidate.quality_max_fvg_age_bars;
+      m_snapshot.quality_retest_freshness_bars = candidate.quality_retest_freshness_bars;
+      m_snapshot.quality_reject_reason         = candidate.quality_reject_reason;
+      m_snapshot.quality_profile_balanced_passed     = FalconFvgQualityCalibrationProfilePassed(candidate, FALCON_FVG_CALIB_BALANCED_MIN_SIZE_POINTS, FALCON_FVG_CALIB_BALANCED_MAX_SPREAD_POINTS);
+      m_snapshot.quality_profile_strict_size_passed  = FalconFvgQualityCalibrationProfilePassed(candidate, FALCON_FVG_CALIB_STRICT_SIZE_MIN_SIZE_POINTS, FALCON_FVG_CALIB_STRICT_SIZE_MAX_SPREAD_POINTS);
+      m_snapshot.quality_profile_tight_spread_passed = FalconFvgQualityCalibrationProfilePassed(candidate, FALCON_FVG_CALIB_TIGHT_SPREAD_MIN_SIZE_POINTS, FALCON_FVG_CALIB_TIGHT_SPREAD_MAX_SPREAD_POINTS);
+      m_snapshot.quality_profile_strict_combo_passed = FalconFvgQualityCalibrationProfilePassed(candidate, FALCON_FVG_CALIB_STRICT_COMBO_MIN_SIZE_POINTS, FALCON_FVG_CALIB_STRICT_COMBO_MAX_SPREAD_POINTS);
       m_snapshot.quote_valid        = quote.is_valid;
       m_snapshot.watch_time         = TimeCurrent();
+      m_snapshot.fvg_setup_time     = m_snapshot.setup_time;
+      m_snapshot.fvg_retest_watch_time = m_snapshot.watch_time;
+      m_snapshot.fvg_retest_age_bars = FalconCalculateRetestAgeBars(m_snapshot.fvg_setup_time, m_snapshot.fvg_retest_watch_time, m_snapshot.analysis_timeframe);
+      m_snapshot.fvg_age_bars_at_watch = m_snapshot.fvg_retest_age_bars;
+      m_snapshot.fvg_age_source = "SETUP_TIME_TO_WATCH_TIME_PRIOR_BAR_SAFE";
+      m_snapshot.fvg_retest_fresh_state = FalconFvgRetestFreshState(false, m_snapshot.fvg_retest_age_bars, m_snapshot.quality_retest_freshness_bars);
+      m_snapshot.fvg_hold_quality_score = 0;
+      m_snapshot.fvg_hold_quality_bucket = "NOT_TOUCHED";
       m_snapshot.watch_price        = SelectWatchPrice(candidate.direction, quote);
       m_snapshot.planned_lot_size   = FixedLotSize;
 
@@ -3523,6 +3712,12 @@ public:
       }
 
       m_snapshot.retest_touched = PriceInsideZone(m_snapshot.watch_price, m_snapshot.fvg_lower, m_snapshot.fvg_upper);
+      m_snapshot.fvg_retest_fresh_state = FalconFvgRetestFreshState(m_snapshot.retest_touched,
+                                                                    m_snapshot.fvg_retest_age_bars,
+                                                                    m_snapshot.quality_retest_freshness_bars);
+      m_snapshot.fvg_hold_quality_score = FalconBuildFvgHoldQualityScoreForWatcher(m_snapshot, market_context);
+      m_snapshot.fvg_hold_quality_bucket = FalconFvgHoldQualityBucket(m_snapshot.fvg_hold_quality_score,
+                                                                      m_snapshot.retest_touched);
 
       if(!m_snapshot.retest_touched)
       {
@@ -3628,6 +3823,27 @@ private:
       m_snapshot.fvg_lower = 0.0;
       m_snapshot.fvg_upper = 0.0;
       m_snapshot.fvg_size_points = 0.0;
+      m_snapshot.quality_filters_enabled = FALCON_FVG_MICRO_QUALITY_FILTERS_ENABLED;
+      m_snapshot.quality_filters_passed = false;
+      m_snapshot.quality_min_fvg_size_points = FALCON_FVG_MICRO_MIN_SIZE_POINTS;
+      m_snapshot.quality_current_spread_points = 0;
+      m_snapshot.quality_max_spread_points = FALCON_FVG_MICRO_MAX_SPREAD_POINTS;
+      m_snapshot.quality_fvg_age_bars = 0;
+      m_snapshot.quality_max_fvg_age_bars = FALCON_FVG_MICRO_MAX_FVG_AGE_BARS;
+      m_snapshot.quality_retest_freshness_bars = FALCON_FVG_MICRO_RETEST_FRESHNESS_BARS;
+      m_snapshot.quality_reject_reason = "NOT_EVALUATED";
+      m_snapshot.fvg_retest_age_bars = 0;
+      m_snapshot.fvg_setup_time = 0;
+      m_snapshot.fvg_retest_watch_time = 0;
+      m_snapshot.fvg_age_bars_at_watch = 0;
+      m_snapshot.fvg_age_source = "NOT_EVALUATED";
+      m_snapshot.fvg_retest_fresh_state = "NOT_EVALUATED";
+      m_snapshot.fvg_hold_quality_score = 0;
+      m_snapshot.fvg_hold_quality_bucket = "NOT_EVALUATED";
+      m_snapshot.quality_profile_balanced_passed = false;
+      m_snapshot.quality_profile_strict_size_passed = false;
+      m_snapshot.quality_profile_tight_spread_passed = false;
+      m_snapshot.quality_profile_strict_combo_passed = false;
       m_snapshot.planned_entry_price = 0.0;
       m_snapshot.planned_structural_sl = 0.0;
       m_snapshot.planned_tp1 = 0.0;
@@ -3640,6 +3856,165 @@ private:
       m_snapshot.notes = "";
    }
 };
+
+
+// ==================================================================
+// FVG Micro Retest Freshness & Hold Quality Summary Metrics - v0.20.0
+// Measures the retest age and an initial closed-candle hold/rejection proxy.
+// This is metrics-only: no entry, SL, TP, staging, or lifecycle behavior changes.
+// ==================================================================
+int FalconSafeTimeframeSeconds(const ENUM_TIMEFRAMES timeframe)
+{
+   int seconds = PeriodSeconds(timeframe);
+   if(seconds <= 0)
+      seconds = PeriodSeconds(PERIOD_M5);
+   if(seconds <= 0)
+      seconds = 300;
+   return seconds;
+}
+
+int FalconCalculateRetestAgeBars(const datetime setup_time,
+                                 const datetime watch_time,
+                                 const ENUM_TIMEFRAMES timeframe)
+{
+   if(setup_time <= 0 || watch_time <= 0 || watch_time < setup_time)
+      return 0;
+
+   const int seconds = FalconSafeTimeframeSeconds(timeframe);
+   return (int)((watch_time - setup_time) / seconds);
+}
+
+int FalconCalculateFvgHoldQualityScore(const FalconFvgMicroRetestWatcherSnapshot &snapshot,
+                                       const FalconCandleSnapshot &closed_candle)
+{
+   if(!snapshot.retest_touched || !closed_candle.is_valid)
+      return 0;
+
+   const double zone_size = MathAbs(snapshot.fvg_upper - snapshot.fvg_lower);
+   if(zone_size <= 0.0)
+      return 0;
+
+   const double midpoint = (snapshot.fvg_lower + snapshot.fvg_upper) / 2.0;
+   int score = 25; // baseline: retest touched, but no hold proof yet.
+
+   if(snapshot.direction == FALCON_DIRECTION_BUY)
+   {
+      if(closed_candle.close >= snapshot.fvg_lower)
+         score += 15;
+      if(closed_candle.close >= midpoint)
+         score += 20;
+      if(closed_candle.close > closed_candle.open)
+         score += 20;
+      if(closed_candle.low <= snapshot.fvg_upper && closed_candle.close > closed_candle.low)
+         score += 20;
+   }
+   else if(snapshot.direction == FALCON_DIRECTION_SELL)
+   {
+      if(closed_candle.close <= snapshot.fvg_upper)
+         score += 15;
+      if(closed_candle.close <= midpoint)
+         score += 20;
+      if(closed_candle.close < closed_candle.open)
+         score += 20;
+      if(closed_candle.high >= snapshot.fvg_lower && closed_candle.close < closed_candle.high)
+         score += 20;
+   }
+
+   if(score > 100)
+      score = 100;
+   if(score < 0)
+      score = 0;
+   return score;
+}
+
+string FalconFvgRetestFreshState(const bool retest_touched,
+                                 const int age_bars,
+                                 const int freshness_bars)
+{
+   if(!retest_touched)
+      return "WAITING";
+   if(freshness_bars < 0)
+      return "FRESHNESS_DISABLED";
+   if(age_bars <= freshness_bars)
+      return "FRESH";
+   return "STALE";
+}
+
+string FalconFvgHoldQualityBucket(const int score,
+                                  const bool retest_touched)
+{
+   if(!retest_touched)
+      return "NOT_TOUCHED";
+   if(score >= FALCON_FVG_HOLD_QUALITY_STRONG_SCORE)
+      return "STRONG";
+   if(score >= FALCON_FVG_HOLD_QUALITY_NEUTRAL_SCORE)
+      return "NEUTRAL";
+   return "WEAK";
+}
+
+int FalconBuildFvgHoldQualityScoreForWatcher(const FalconFvgMicroRetestWatcherSnapshot &snapshot,
+                                             CFalconMarketContext &market_context)
+{
+   if(!snapshot.retest_touched)
+      return 0;
+
+   FalconCandleSnapshot closed_candle;
+   const int shift = FalconAnalysisCandleShift();
+   if(!market_context.GetCandleSnapshot(PERIOD_M5, shift, closed_candle))
+      return 0;
+
+   return FalconCalculateFvgHoldQualityScore(snapshot, closed_candle);
+}
+
+void FalconRegisterFvgRetestFreshnessHoldMetrics(const FalconFvgMicroRetestWatcherSnapshot &snapshot,
+                                                 CFalconMarketContext &market_context)
+{
+   if(!(snapshot.candidate_ready && snapshot.fvg_detected && snapshot.runtime_safety_ready))
+      return;
+
+   g_fvg_retest_watch_evaluated++;
+
+   const int age_bars = FalconCalculateRetestAgeBars(snapshot.setup_time, snapshot.watch_time, snapshot.analysis_timeframe);
+   g_fvg_retest_age_total_bars += age_bars;
+   if(g_fvg_retest_age_min_bars < 0 || age_bars < g_fvg_retest_age_min_bars)
+      g_fvg_retest_age_min_bars = age_bars;
+   if(age_bars > g_fvg_retest_age_max_bars)
+      g_fvg_retest_age_max_bars = age_bars;
+
+   if(snapshot.retest_touched)
+   {
+      g_fvg_retest_touched++;
+      if(FalconFvgRetestFreshState(true, age_bars, FALCON_FVG_MICRO_RETEST_FRESHNESS_BARS) == "FRESH")
+         g_fvg_retest_fresh++;
+      else
+         g_fvg_retest_stale++;
+
+      FalconCandleSnapshot closed_candle;
+      const int shift = FalconAnalysisCandleShift();
+      if(market_context.GetCandleSnapshot(PERIOD_M5, shift, closed_candle))
+      {
+         const int score = FalconCalculateFvgHoldQualityScore(snapshot, closed_candle);
+         g_fvg_hold_quality_evaluated++;
+         g_fvg_hold_quality_score_total += score;
+
+         if(g_fvg_hold_quality_score_min < 0 || score < g_fvg_hold_quality_score_min)
+            g_fvg_hold_quality_score_min = score;
+         if(score > g_fvg_hold_quality_score_max)
+            g_fvg_hold_quality_score_max = score;
+
+         if(score >= FALCON_FVG_HOLD_QUALITY_STRONG_SCORE)
+            g_fvg_hold_quality_strong++;
+         else if(score >= FALCON_FVG_HOLD_QUALITY_NEUTRAL_SCORE)
+            g_fvg_hold_quality_neutral++;
+         else
+            g_fvg_hold_quality_weak++;
+      }
+   }
+   else
+   {
+      g_fvg_retest_waiting++;
+   }
+}
 
 
 // ==================================================================
@@ -3788,6 +4163,21 @@ private:
       record.simulated_outcome    = FALCON_TRADE_OUTCOME_UNKNOWN;
       record.close_reason         = "";
       record.evidence_summary     = "";
+      record.fvg_size_points      = 0.0;
+      record.fvg_spread_points    = 0;
+      record.fvg_retest_age_bars  = 0;
+      record.fvg_setup_time = 0;
+      record.fvg_retest_watch_time = 0;
+      record.fvg_age_bars_at_watch = 0;
+      record.fvg_age_source = "";
+      record.fvg_retest_fresh_state = "";
+      record.fvg_hold_quality_score = 0;
+      record.fvg_hold_quality_bucket = "";
+      record.quality_filters_passed = false;
+      record.quality_profile_balanced_passed = false;
+      record.quality_profile_strict_size_passed = false;
+      record.quality_profile_tight_spread_passed = false;
+      record.quality_profile_strict_combo_passed = false;
       record.is_closed            = false;
    }
 
@@ -3807,6 +4197,21 @@ private:
       plan.runner_allowed = false;
       plan.risk_profile = "SHADOW_DIAGNOSTIC_FIXED_LOT_ONLY";
       plan.management_profile = "NO_MANAGEMENT_YET_STAGING_DRY_RUN";
+      plan.fvg_size_points = watcher_snapshot.fvg_size_points;
+      plan.fvg_spread_points = watcher_snapshot.quality_current_spread_points;
+      plan.fvg_retest_age_bars = watcher_snapshot.fvg_retest_age_bars;
+      plan.fvg_setup_time = watcher_snapshot.fvg_setup_time;
+      plan.fvg_retest_watch_time = watcher_snapshot.fvg_retest_watch_time;
+      plan.fvg_age_bars_at_watch = watcher_snapshot.fvg_age_bars_at_watch;
+      plan.fvg_age_source = watcher_snapshot.fvg_age_source;
+      plan.fvg_retest_fresh_state = watcher_snapshot.fvg_retest_fresh_state;
+      plan.fvg_hold_quality_score = watcher_snapshot.fvg_hold_quality_score;
+      plan.fvg_hold_quality_bucket = watcher_snapshot.fvg_hold_quality_bucket;
+      plan.quality_filters_passed = watcher_snapshot.quality_filters_passed;
+      plan.quality_profile_balanced_passed = watcher_snapshot.quality_profile_balanced_passed;
+      plan.quality_profile_strict_size_passed = watcher_snapshot.quality_profile_strict_size_passed;
+      plan.quality_profile_tight_spread_passed = watcher_snapshot.quality_profile_tight_spread_passed;
+      plan.quality_profile_strict_combo_passed = watcher_snapshot.quality_profile_strict_combo_passed;
 
       m_snapshot.plan_id = plan.plan_id;
       m_snapshot.lot_size = plan.lot_size;
@@ -4108,6 +4513,21 @@ private:
       record.simulated_outcome    = FALCON_TRADE_OUTCOME_UNKNOWN;
       record.close_reason         = "";
       record.evidence_summary     = "";
+      record.fvg_size_points      = 0.0;
+      record.fvg_spread_points    = 0;
+      record.fvg_retest_age_bars  = 0;
+      record.fvg_setup_time = 0;
+      record.fvg_retest_watch_time = 0;
+      record.fvg_age_bars_at_watch = 0;
+      record.fvg_age_source = "";
+      record.fvg_retest_fresh_state = "";
+      record.fvg_hold_quality_score = 0;
+      record.fvg_hold_quality_bucket = "";
+      record.quality_filters_passed = false;
+      record.quality_profile_balanced_passed = false;
+      record.quality_profile_strict_size_passed = false;
+      record.quality_profile_tight_spread_passed = false;
+      record.quality_profile_strict_combo_passed = false;
       record.is_closed            = false;
    }
 
@@ -4137,6 +4557,21 @@ private:
       record.net_usd             = 0.0;
       record.close_reason        = "";
       record.evidence_summary    = "";
+      record.fvg_size_points     = 0.0;
+      record.fvg_spread_points   = 0;
+      record.fvg_retest_age_bars = 0;
+      record.fvg_setup_time = 0;
+      record.fvg_retest_watch_time = 0;
+      record.fvg_age_bars_at_watch = 0;
+      record.fvg_age_source = "";
+      record.fvg_retest_fresh_state = "";
+      record.fvg_hold_quality_score = 0;
+      record.fvg_hold_quality_bucket = "";
+      record.quality_filters_passed = false;
+      record.quality_profile_balanced_passed = false;
+      record.quality_profile_strict_size_passed = false;
+      record.quality_profile_tight_spread_passed = false;
+      record.quality_profile_strict_combo_passed = false;
    }
 
    void ResetSnapshot()
@@ -5393,6 +5828,9 @@ public:
       if(m_totals.sell_trades > 0)
          sell_win_rate = (100.0 * (double)m_totals.sell_win_trades) / (double)m_totals.sell_trades;
 
+      int retest_age_min_bars = (g_fvg_retest_age_min_bars < 0 ? 0 : g_fvg_retest_age_min_bars);
+      int hold_quality_score_min = (g_fvg_hold_quality_score_min < 0 ? 0 : g_fvg_hold_quality_score_min);
+
       int handle = FileOpen(m_summary_report_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -5400,99 +5838,122 @@ public:
          return;
       }
 
-      FileWrite(handle,
-                "EAName", "Version", "Build", "Symbol", "GeneratedAt",
-                "TotalTrades", "WinTrades", "LoseTrades", "BreakevenTrades",
-                "WinRate", "LoseRate",
-                "TotalProfitIndexPoints", "TotalLossIndexPoints", "NetIndexPoints",
-                "TotalProfitUSD", "TotalLossUSD", "NetUSD",
-                "BuyTrades", "BuyWinRate", "BuyNetIndexPoints",
-                "SellTrades", "SellWinRate", "SellNetIndexPoints",
-                "FvgCandidateBuilderEvaluations",
-                "FvgDetectedCandidates",
-                "FvgQualityEvaluated",
-                "FvgQualityPassed",
-                "FvgQualityRejected",
-                "FvgRejectedSize",
-                "FvgRejectedSpread",
-                "FvgRejectedAge",
-                "FvgShadowReadyCandidates",
-                "FvgQualityCalibrationEvaluated",
-                "FvgQualityDistributionCount",
-                "FvgSizeMinPoints", "FvgSizeAvgPoints", "FvgSizeMaxPoints",
-                "SpreadMinPoints", "SpreadAvgPoints", "SpreadMaxPoints",
-                "SpreadLE50", "SpreadLE75", "SpreadLE100", "SpreadLE150", "SpreadLE200",
-                "QualityProfileBalancedMinSize", "QualityProfileBalancedMaxSpread",
-                "QualityProfileBalancedPassed", "QualityProfileBalancedRejected",
-                "QualityProfileStrictSizeMinSize", "QualityProfileStrictSizeMaxSpread",
-                "QualityProfileStrictSizePassed", "QualityProfileStrictSizeRejected",
-                "QualityProfileTightSpreadMinSize", "QualityProfileTightSpreadMaxSpread",
-                "QualityProfileTightSpreadPassed", "QualityProfileTightSpreadRejected",
-                "QualityProfileStrictComboMinSize", "QualityProfileStrictComboMaxSpread",
-                "QualityProfileStrictComboPassed", "QualityProfileStrictComboRejected");
+      // v0.20.1: Summary now contains many compact metrics. MQL5 FileWrite has a practical
+      // vararg limit, so write the summary header/row as explicit CSV strings to keep compile clean
+      // without splitting the report into extra files.
+      string summary_header =
+         "EAName,Version,Build,Symbol,GeneratedAt,"
+         "TotalTrades,WinTrades,LoseTrades,BreakevenTrades,"
+         "WinRate,LoseRate,"
+         "TotalProfitIndexPoints,TotalLossIndexPoints,NetIndexPoints,"
+         "TotalProfitUSD,TotalLossUSD,NetUSD,"
+         "BuyTrades,BuyWinRate,BuyNetIndexPoints,"
+         "SellTrades,SellWinRate,SellNetIndexPoints,"
+         "FvgRetestWatchEvaluated,FvgRetestTouched,FvgRetestWaiting,"
+         "FvgRetestFresh,FvgRetestStale,"
+         "FvgRetestAgeMinBars,FvgRetestAgeAvgBars,FvgRetestAgeMaxBars,"
+         "FvgHoldQualityEvaluated,FvgHoldQualityStrong,FvgHoldQualityNeutral,FvgHoldQualityWeak,"
+         "FvgHoldQualityScoreMin,FvgHoldQualityScoreAvg,FvgHoldQualityScoreMax,"
+         "FvgCandidateBuilderEvaluations,FvgDetectedCandidates,FvgQualityEvaluated,"
+         "FvgQualityPassed,FvgQualityRejected,FvgRejectedSize,FvgRejectedSpread,FvgRejectedAge,"
+         "FvgShadowReadyCandidates,FvgQualityCalibrationEvaluated,FvgQualityDistributionCount,"
+         "FvgSizeMinPoints,FvgSizeAvgPoints,FvgSizeMaxPoints,"
+         "SpreadMinPoints,SpreadAvgPoints,SpreadMaxPoints,"
+         "SpreadLE50,SpreadLE75,SpreadLE100,SpreadLE150,SpreadLE200,"
+         "QualityProfileBalancedMinSize,QualityProfileBalancedMaxSpread,"
+         "QualityProfileBalancedPassed,QualityProfileBalancedRejected,"
+         "QualityProfileStrictSizeMinSize,QualityProfileStrictSizeMaxSpread,"
+         "QualityProfileStrictSizePassed,QualityProfileStrictSizeRejected,"
+         "QualityProfileTightSpreadMinSize,QualityProfileTightSpreadMaxSpread,"
+         "QualityProfileTightSpreadPassed,QualityProfileTightSpreadRejected,"
+         "QualityProfileStrictComboMinSize,QualityProfileStrictComboMaxSpread,"
+         "QualityProfileStrictComboPassed,QualityProfileStrictComboRejected";
 
-      FileWrite(handle,
-                EA_NAME,
-                EA_VERSION_TAG,
-                EA_BUILD_TAG,
-                m_symbol_context.symbol,
-                FalconTimeToString(TimeCurrent()),
-                m_totals.total_trades,
-                m_totals.win_trades,
-                m_totals.loss_trades,
-                m_totals.breakeven_trades,
-                DoubleToString(m_totals.win_rate, 2),
-                DoubleToString(m_totals.loss_rate, 2),
-                DoubleToString(m_totals.total_profit_index_points, 2),
-                DoubleToString(m_totals.total_loss_index_points, 2),
-                DoubleToString(m_totals.net_index_points, 2),
-                DoubleToString(m_totals.total_profit_usd, 2),
-                DoubleToString(m_totals.total_loss_usd, 2),
-                DoubleToString(m_totals.net_usd, 2),
-                m_totals.buy_trades,
-                DoubleToString(buy_win_rate, 2),
-                DoubleToString(m_totals.buy_net_index_points, 2),
-                m_totals.sell_trades,
-                DoubleToString(sell_win_rate, 2),
-                DoubleToString(m_totals.sell_net_index_points, 2),
-                g_fvg_micro_candidate_builder_evaluations,
-                g_fvg_micro_detected_candidates,
-                g_fvg_micro_quality_evaluated,
-                g_fvg_micro_quality_passed,
-                g_fvg_micro_quality_rejected,
-                g_fvg_micro_rejected_size,
-                g_fvg_micro_rejected_spread,
-                g_fvg_micro_rejected_age,
-                g_fvg_micro_shadow_ready_candidates,
-                g_fvg_quality_calibration_evaluated,
-                g_fvg_quality_distribution_count,
-                DoubleToString(g_fvg_quality_size_min_points, 2),
-                DoubleToString(FalconSafeAverageDouble(g_fvg_quality_size_total_points, g_fvg_quality_distribution_count), 2),
-                DoubleToString(g_fvg_quality_size_max_points, 2),
-                (int)g_fvg_quality_spread_min_points,
-                DoubleToString(FalconSafeAverageLongAsDouble(g_fvg_quality_spread_total_points, g_fvg_quality_distribution_count), 2),
-                (int)g_fvg_quality_spread_max_points,
-                g_fvg_quality_spread_le_50_count,
-                g_fvg_quality_spread_le_75_count,
-                g_fvg_quality_spread_le_100_count,
-                g_fvg_quality_spread_le_150_count,
-                g_fvg_quality_spread_le_200_count,
-                DoubleToString(FALCON_FVG_CALIB_BALANCED_MIN_SIZE_POINTS, 2),
-                FALCON_FVG_CALIB_BALANCED_MAX_SPREAD_POINTS,
-                g_fvg_quality_profile_balanced_passed,
-                g_fvg_quality_profile_balanced_rejected,
-                DoubleToString(FALCON_FVG_CALIB_STRICT_SIZE_MIN_SIZE_POINTS, 2),
-                FALCON_FVG_CALIB_STRICT_SIZE_MAX_SPREAD_POINTS,
-                g_fvg_quality_profile_strict_size_passed,
-                g_fvg_quality_profile_strict_size_rejected,
-                DoubleToString(FALCON_FVG_CALIB_TIGHT_SPREAD_MIN_SIZE_POINTS, 2),
-                FALCON_FVG_CALIB_TIGHT_SPREAD_MAX_SPREAD_POINTS,
-                g_fvg_quality_profile_tight_spread_passed,
-                g_fvg_quality_profile_tight_spread_rejected,
-                DoubleToString(FALCON_FVG_CALIB_STRICT_COMBO_MIN_SIZE_POINTS, 2),
-                FALCON_FVG_CALIB_STRICT_COMBO_MAX_SPREAD_POINTS,
-                g_fvg_quality_profile_strict_combo_passed,
-                g_fvg_quality_profile_strict_combo_rejected);
+      string summary_row =
+         FalconCsvSafe(EA_NAME) + "," +
+         FalconCsvSafe(EA_VERSION_TAG) + "," +
+         FalconCsvSafe(EA_BUILD_TAG) + "," +
+         FalconCsvSafe(m_symbol_context.symbol) + "," +
+         FalconCsvSafe(FalconTimeToString(TimeCurrent())) + "," +
+         IntegerToString(m_totals.total_trades) + "," +
+         IntegerToString(m_totals.win_trades) + "," +
+         IntegerToString(m_totals.loss_trades) + "," +
+         IntegerToString(m_totals.breakeven_trades) + "," +
+         DoubleToString(m_totals.win_rate, 2) + "," +
+         DoubleToString(m_totals.loss_rate, 2) + "," +
+         DoubleToString(m_totals.total_profit_index_points, 2) + "," +
+         DoubleToString(m_totals.total_loss_index_points, 2) + "," +
+         DoubleToString(m_totals.net_index_points, 2) + "," +
+         DoubleToString(m_totals.total_profit_usd, 2) + "," +
+         DoubleToString(m_totals.total_loss_usd, 2) + "," +
+         DoubleToString(m_totals.net_usd, 2) + "," +
+         IntegerToString(m_totals.buy_trades) + "," +
+         DoubleToString(buy_win_rate, 2) + "," +
+         DoubleToString(m_totals.buy_net_index_points, 2) + "," +
+         IntegerToString(m_totals.sell_trades) + "," +
+         DoubleToString(sell_win_rate, 2) + "," +
+         DoubleToString(m_totals.sell_net_index_points, 2) + "," +
+         IntegerToString(g_fvg_retest_watch_evaluated) + "," +
+         IntegerToString(g_fvg_retest_touched) + "," +
+         IntegerToString(g_fvg_retest_waiting) + "," +
+         IntegerToString(g_fvg_retest_fresh) + "," +
+         IntegerToString(g_fvg_retest_stale) + "," +
+         IntegerToString(retest_age_min_bars) + "," +
+         DoubleToString(FalconSafeAverageLongAsDouble(g_fvg_retest_age_total_bars, g_fvg_retest_watch_evaluated), 2) + "," +
+         IntegerToString(g_fvg_retest_age_max_bars) + "," +
+         IntegerToString(g_fvg_hold_quality_evaluated) + "," +
+         IntegerToString(g_fvg_hold_quality_strong) + "," +
+         IntegerToString(g_fvg_hold_quality_neutral) + "," +
+         IntegerToString(g_fvg_hold_quality_weak) + "," +
+         IntegerToString(hold_quality_score_min) + "," +
+         DoubleToString(FalconSafeAverageLongAsDouble(g_fvg_hold_quality_score_total, g_fvg_hold_quality_evaluated), 2) + "," +
+         IntegerToString(g_fvg_hold_quality_score_max) + "," +
+         IntegerToString(g_fvg_micro_candidate_builder_evaluations) + "," +
+         IntegerToString(g_fvg_micro_detected_candidates) + "," +
+         IntegerToString(g_fvg_micro_quality_evaluated) + "," +
+         IntegerToString(g_fvg_micro_quality_passed) + "," +
+         IntegerToString(g_fvg_micro_quality_rejected) + "," +
+         IntegerToString(g_fvg_micro_rejected_size) + "," +
+         IntegerToString(g_fvg_micro_rejected_spread) + "," +
+         IntegerToString(g_fvg_micro_rejected_age) + "," +
+         IntegerToString(g_fvg_micro_shadow_ready_candidates) + "," +
+         IntegerToString(g_fvg_quality_calibration_evaluated) + "," +
+         IntegerToString(g_fvg_quality_distribution_count) + "," +
+         DoubleToString(g_fvg_quality_size_min_points, 2) + "," +
+         DoubleToString(FalconSafeAverageDouble(g_fvg_quality_size_total_points, g_fvg_quality_distribution_count), 2) + "," +
+         DoubleToString(g_fvg_quality_size_max_points, 2) + "," +
+         IntegerToString((int)g_fvg_quality_spread_min_points) + "," +
+         DoubleToString(FalconSafeAverageLongAsDouble(g_fvg_quality_spread_total_points, g_fvg_quality_distribution_count), 2) + "," +
+         IntegerToString((int)g_fvg_quality_spread_max_points) + "," +
+         IntegerToString(g_fvg_quality_spread_le_50_count) + "," +
+         IntegerToString(g_fvg_quality_spread_le_75_count) + "," +
+         IntegerToString(g_fvg_quality_spread_le_100_count) + "," +
+         IntegerToString(g_fvg_quality_spread_le_150_count) + "," +
+         IntegerToString(g_fvg_quality_spread_le_200_count) + "," +
+         DoubleToString(FALCON_FVG_CALIB_BALANCED_MIN_SIZE_POINTS, 2) + "," +
+         IntegerToString(FALCON_FVG_CALIB_BALANCED_MAX_SPREAD_POINTS) + "," +
+         IntegerToString(g_fvg_quality_profile_balanced_passed) + "," +
+         IntegerToString(g_fvg_quality_profile_balanced_rejected) + "," +
+         DoubleToString(FALCON_FVG_CALIB_STRICT_SIZE_MIN_SIZE_POINTS, 2) + "," +
+         IntegerToString(FALCON_FVG_CALIB_STRICT_SIZE_MAX_SPREAD_POINTS) + "," +
+         IntegerToString(g_fvg_quality_profile_strict_size_passed) + "," +
+         IntegerToString(g_fvg_quality_profile_strict_size_rejected) + "," +
+         DoubleToString(FALCON_FVG_CALIB_TIGHT_SPREAD_MIN_SIZE_POINTS, 2) + "," +
+         IntegerToString(FALCON_FVG_CALIB_TIGHT_SPREAD_MAX_SPREAD_POINTS) + "," +
+         IntegerToString(g_fvg_quality_profile_tight_spread_passed) + "," +
+         IntegerToString(g_fvg_quality_profile_tight_spread_rejected) + "," +
+         DoubleToString(FALCON_FVG_CALIB_STRICT_COMBO_MIN_SIZE_POINTS, 2) + "," +
+         IntegerToString(FALCON_FVG_CALIB_STRICT_COMBO_MAX_SPREAD_POINTS) + "," +
+         IntegerToString(g_fvg_quality_profile_strict_combo_passed) + "," +
+         IntegerToString(g_fvg_quality_profile_strict_combo_rejected);
+
+      // v0.20.2: Write CRLF explicitly as separate strings. This prevents MetaTrader/CSV
+      // readers from receiving the header and summary row concatenated on a single line.
+      string summary_line_break = CharToString(13) + CharToString(10);
+      FileWriteString(handle, summary_header);
+      FileWriteString(handle, summary_line_break);
+      FileWriteString(handle, summary_row);
+      FileWriteString(handle, summary_line_break);
 
       FileClose(handle);
       CFalconLogger::Info(StringFormat("Final summary written. Trades=%d | WinRate=%.2f | NetIndexPoints=%.2f | NetUSD=%.2f",
@@ -5665,6 +6126,11 @@ private:
                 "Outcome", "WinLose",
                 "ProfitIndexPoints", "LoseIndexPoints", "NetIndexPoints",
                 "ProfitUSD", "LoseUSD", "NetUSD",
+                "FvgSizePoints", "FvgSpreadPoints", "FvgRetestAgeBars",
+                "FvgSetupTime", "FvgRetestWatchTime", "FvgAgeBarsAtWatch", "FvgAgeSource",
+                "FvgRetestFreshState", "FvgHoldQualityScore", "FvgHoldQualityBucket",
+                "QualityFiltersPassed", "QualityBalancedPassed", "QualityStrictSizePassed",
+                "QualityTightSpreadPassed", "QualityStrictComboPassed",
                 "CloseReason", "EvidenceSummary");
       FileClose(handle);
    }
@@ -5725,6 +6191,21 @@ private:
                 DoubleToString(record.profit_usd, 2),
                 DoubleToString(record.loss_usd, 2),
                 DoubleToString(record.net_usd, 2),
+                DoubleToString(record.fvg_size_points, 2),
+                (int)record.fvg_spread_points,
+                record.fvg_retest_age_bars,
+                FalconTimeToString(record.fvg_setup_time),
+                FalconTimeToString(record.fvg_retest_watch_time),
+                record.fvg_age_bars_at_watch,
+                record.fvg_age_source,
+                record.fvg_retest_fresh_state,
+                record.fvg_hold_quality_score,
+                record.fvg_hold_quality_bucket,
+                FalconBoolToYesNo(record.quality_filters_passed),
+                FalconBoolToYesNo(record.quality_profile_balanced_passed),
+                FalconBoolToYesNo(record.quality_profile_strict_size_passed),
+                FalconBoolToYesNo(record.quality_profile_tight_spread_passed),
+                FalconBoolToYesNo(record.quality_profile_strict_combo_passed),
                 record.close_reason,
                 record.evidence_summary);
       FileClose(handle);
@@ -5739,13 +6220,13 @@ class CFalconExecutionGuard
 public:
    bool CanSendRealOrders()
    {
-      // v0.18.4 is a Shadow runtime pipeline refresh build. Real execution is not allowed even if the input is changed.
+      // v0.21.2 locks the FVG Micro quality attribution columns in Shadow mode. Real execution is not allowed even if the input is changed.
       return false;
    }
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.18.4.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.21.2.");
    }
 };
 
@@ -5874,6 +6355,7 @@ void FalconRunFvgMicroRuntimeShadowPipeline(const string trigger)
    {
       g_fvg_micro_retest_watcher.Initialize(g_fvg_micro_candidate_builder, g_market_context, g_runtime_safety_guard);
       FalconFvgMicroRetestWatcherSnapshot watcher_snapshot = g_fvg_micro_retest_watcher.GetSnapshot();
+      FalconRegisterFvgRetestFreshnessHoldMetrics(watcher_snapshot, g_market_context);
 
       if(watcher_snapshot.watcher_status == FALCON_RETEST_WATCHER_STATUS_SKELETON_READY)
       {
@@ -5920,7 +6402,7 @@ int OnInit()
    PrintFormat("============================================================");
    PrintFormat("%s", EA_NAME);
    PrintFormat("Version: %s | Build: %s", EA_VERSION_TAG, EA_BUILD_TAG);
-   PrintFormat("Stage: Report Profile Cleanup + FVG Shadow Pipeline / Standard Reports / Shadow-only / No real execution");
+   PrintFormat("Stage: FVG Micro Per-Trade Quality Attribution / Standard Reports / Shadow-only / No real execution");
    PrintFormat("ReportProfile: %s", FalconReportProfileToString());
    PrintFormat("============================================================");
    FalconPrintReportFolderHints();
