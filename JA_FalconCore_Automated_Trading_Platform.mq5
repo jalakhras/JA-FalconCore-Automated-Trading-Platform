@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.26.3 - FalconGuard Pre-Execution Gate Lock |
+//|                     Version: v0.27.1 - TradeManagement Foundation Validation Lock |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.263"
+#property version   "1.271"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.26.3"
-#define EA_BUILD_TAG   "FalconGuardPreExecutionGateLock_NoExecution"
+#define EA_VERSION_TAG "v0.27.1"
+#define EA_BUILD_TAG   "TradeManagementFoundationValidationLock_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -134,7 +134,7 @@ long   g_fvg_hold_quality_score_total                = 0;
 #define FALCON_FVG_QGUARD_ROLLBACK_BASELINE               "v0.25.2"
 #define FALCON_FVG_QGUARD_ROLLBACK_TRIGGER                "ROLLBACK_IF_COMPILE_FAILS_OR_SMOKE_TRADE_COUNT_NET_OR_ALIGNED_QGUARD_COUNTERS_DEVIATE_FROM_EXPECTED_SIZE250_RUNTIME_CANDIDATE"
 #define FALCON_FVG_QGUARD_RUNTIME_BLOCKING_RULE           "BLOCK_FVG_MICRO_SHADOW_STAGING_WHEN_FVG_SIZE_POINTS_LT_250_BEFORE_ENTRY"
-#define FALCON_FVG_QGUARD_NEXT_CANDIDATE_VERSION          "v0.27.0_TradeManagementFoundation"
+#define FALCON_FVG_QGUARD_NEXT_CANDIDATE_VERSION          "v0.27.1_TradeManagementFoundationValidationLock"
 
 // ==================================================================
 // FVG Micro Engine Completion Lock - v0.25.2
@@ -150,7 +150,7 @@ long   g_fvg_hold_quality_score_total                = 0;
 #define FALCON_FVG_ENGINE_ACTIVE_STRATEGY_ONLY           "FVG_MICRO_RETEST"
 #define FALCON_FVG_ENGINE_LIVE_PILOT_ELIGIBILITY         "NOT_ELIGIBLE_UNTIL_RISK_TRADE_MANAGEMENT_PAPER_DEMO_VALIDATION"
 #define FALCON_FVG_ENGINE_NEXT_REQUIRED_LAYER            "FALCON_GUARD_PRE_EXECUTION_GATE_THEN_TRADE_MANAGEMENT_FOUNDATION"
-#define FALCON_FVG_ENGINE_NEXT_ENGINEERING_PHASE         "v0.27.0_TradeManagementFoundation"
+#define FALCON_FVG_ENGINE_NEXT_ENGINEERING_PHASE         "v0.27.1_TradeManagementFoundationValidationLock"
 
 // ==================================================================
 // FalconGuard Pre-Execution Gate Lock - v0.26.3
@@ -170,7 +170,7 @@ long   g_fvg_hold_quality_score_total                = 0;
 #define FALCON_GUARD_MAX_CONSECUTIVE_LOSSES             3
 #define FALCON_GUARD_LIVE_ELIGIBILITY                   "NOT_ELIGIBLE_UNTIL_TRADE_MANAGEMENT_PAPER_DEMO_VALIDATION"
 #define FALCON_GUARD_NEXT_REQUIRED_LAYER                "TRADE_MANAGEMENT_FOUNDATION"
-#define FALCON_GUARD_NEXT_ENGINEERING_PHASE             "v0.27.0_TradeManagementFoundation"
+#define FALCON_GUARD_NEXT_ENGINEERING_PHASE             "v0.27.1_TradeManagementFoundationValidationLock"
 
 // ==================================================================
 // FalconGuard Pre-Execution Gate Lock - v0.26.3
@@ -186,7 +186,32 @@ long   g_fvg_hold_quality_score_total                = 0;
 #define FALCON_GUARD_PRE_EXECUTION_DAILY_TRADES_STATUS  "LIMIT_DEFINED_RUNTIME_COUNTING_LATER_IN_PAPER_DEMO"
 #define FALCON_GUARD_PRE_EXECUTION_OPEN_CAPACITY_STATUS "CAPACITY_DEFINED_RUNTIME_COUNTING_LATER_IN_PAPER_DEMO"
 #define FALCON_GUARD_PRE_EXECUTION_ENGINE_RISK_ALLOWED  "YES_FVG_MICRO_100_PERCENT_ONLY"
-#define FALCON_GUARD_PRE_EXECUTION_NEXT_PHASE           "v0.27.0_TradeManagementFoundation"
+#define FALCON_GUARD_PRE_EXECUTION_NEXT_PHASE           "v0.27.1_TradeManagementFoundationValidationLock"
+
+
+// ==================================================================
+// TradeManagement Foundation Validation Lock - v0.27.1
+// Summary-only lock layer after full validation passed. It records the official trade-management
+// contract required before Paper/Demo/Live. It does not modify SL, TP,
+// partials, runners, exits, shadow lifecycle, or broker execution.
+// ==================================================================
+#define FALCON_TM_FOUNDATION_STATUS                      "TRADE_MANAGEMENT_FOUNDATION_VALIDATION_LOCK"
+#define FALCON_TM_FOUNDATION_DECISION                    "TRADE_MANAGEMENT_FOUNDATION_FULL_VALIDATION_LOCKED_NO_RUNTIME_EXIT_CHANGES"
+#define FALCON_TM_SCOPE                                  "STRUCTURAL_STOP;TP_BUILDER;PARTIAL_MANAGER;PROOF_PROTECTION;RUNNER_MANAGER;ADAPTIVE_RATCHET;EARLY_FAILURE_EXIT"
+#define FALCON_TM_EXECUTION_PERMISSION                   "NO_ORDER_SEND_NO_PAPER_NO_DEMO_NO_LIVE;NO_EXIT_BEHAVIOR_CHANGE"
+#define FALCON_TM_STRUCTURAL_STOP_STATUS                 "DESIGN_READY_REQUIRED_FOR_PAPER_DEMO_LIVE"
+#define FALCON_TM_STRUCTURAL_STOP_REQUIREMENT            "EVERY_TRADE_MUST_HAVE_STRUCTURAL_SL_BEFORE_EXECUTION"
+#define FALCON_TM_TP_BUILDER_STATUS                      "DESIGN_READY_VALIDATE_TP1_TP2_TP3_BEFORE_EXECUTION"
+#define FALCON_TM_TP1_POLICY                             "TP1_PARTIAL_PAY_OURSELVES_PROOF_CHECKPOINT_NOT_MANDATORY_FINAL_EXIT"
+#define FALCON_TM_TP2_POLICY                             "TP2_STRONGER_PROOF_CHECKPOINT_NOT_MANDATORY_FINAL_EXIT"
+#define FALCON_TM_PARTIAL_MANAGER_STATUS                 "FOUNDATION_READY_RUNTIME_PARTIALS_NOT_ACTIVE"
+#define FALCON_TM_PROOF_PROTECTION_STATUS                "FOUNDATION_READY_NO_EARLY_BE_PROTECT_ONLY_WHEN_EARNED"
+#define FALCON_TM_RUNNER_MANAGER_STATUS                  "FOUNDATION_READY_RUNNER_ONLY_AFTER_PROOF_NOT_RUNTIME_ACTIVE"
+#define FALCON_TM_ADAPTIVE_RATCHET_STATUS                "FOUNDATION_READY_SHADOW_ONLY_NO_RUNTIME_TRAIL_CHANGE"
+#define FALCON_TM_EARLY_FAILURE_EXIT_STATUS              "FOUNDATION_READY_SHADOW_ONLY_NO_RUNTIME_EARLY_EXIT"
+#define FALCON_TM_LIVE_ELIGIBILITY                       "NOT_ELIGIBLE_UNTIL_PAPER_DEMO_VALIDATION_AND_RUNTIME_TRADE_MANAGEMENT_LOCK"
+#define FALCON_TM_NEXT_REQUIRED_LAYER                    "STRUCTURAL_STOP_AND_TP_BUILDER_VALIDATION_LAYER"
+#define FALCON_TM_NEXT_ENGINEERING_PHASE                 "v0.28.0_StructuralStopTPBuilderValidationLayer"
 
 // ==================================================================
 // FVG SIZE250 Runtime Candidate counter alignment lock - v0.25.1
@@ -6255,7 +6280,13 @@ public:
          "FalconGuardDailyLossRemainingStatus,FalconGuardDailyTradesLimit,FalconGuardDailyTradesRemainingStatus,"
          "FalconGuardOpenPositionCapacity,FalconGuardOpenPositionCapacityStatus,FalconGuardEngineRiskAllowed,"
          "FalconGuardSpreadAllowed,FalconGuardStopsLevelAllowed,FalconGuardKillSwitchAllowsTrading,"
-         "FalconGuardPreExecutionGateDecision,FalconGuardPreExecutionNextPhase";
+         "FalconGuardPreExecutionGateDecision,FalconGuardPreExecutionNextPhase,"
+         "FalconTradeManagementFoundationStatus,FalconTradeManagementFoundationDecision,FalconTradeManagementScope,"
+         "FalconTradeManagementExecutionPermission,FalconStructuralStopStatus,FalconStructuralStopRequirement,"
+         "FalconTPBuilderStatus,FalconTP1Policy,FalconTP2Policy,FalconPartialManagerStatus,"
+         "FalconProofProtectionStatus,FalconRunnerManagerStatus,FalconAdaptiveRatchetStatus,"
+         "FalconEarlyFailureExitStatus,FalconTradeManagementLiveEligibility,"
+         "FalconTradeManagementNextRequiredLayer,FalconTradeManagementNextEngineeringPhase";
 
       string summary_row =
          FalconCsvSafe(EA_NAME) + "," +
@@ -6394,7 +6425,24 @@ public:
          FalconCsvSafe(FalconGuardStopsLevelAllowedDesign(m_symbol_context)) + "," +
          FalconCsvSafe(FalconGuardKillSwitchAllowsTradingDesign()) + "," +
          FalconCsvSafe(FALCON_GUARD_PRE_EXECUTION_DECISION) + "," +
-         FalconCsvSafe(FALCON_GUARD_PRE_EXECUTION_NEXT_PHASE);
+         FalconCsvSafe(FALCON_GUARD_PRE_EXECUTION_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_TM_FOUNDATION_STATUS) + "," +
+         FalconCsvSafe(FALCON_TM_FOUNDATION_DECISION) + "," +
+         FalconCsvSafe(FALCON_TM_SCOPE) + "," +
+         FalconCsvSafe(FALCON_TM_EXECUTION_PERMISSION) + "," +
+         FalconCsvSafe(FALCON_TM_STRUCTURAL_STOP_STATUS) + "," +
+         FalconCsvSafe(FALCON_TM_STRUCTURAL_STOP_REQUIREMENT) + "," +
+         FalconCsvSafe(FALCON_TM_TP_BUILDER_STATUS) + "," +
+         FalconCsvSafe(FALCON_TM_TP1_POLICY) + "," +
+         FalconCsvSafe(FALCON_TM_TP2_POLICY) + "," +
+         FalconCsvSafe(FALCON_TM_PARTIAL_MANAGER_STATUS) + "," +
+         FalconCsvSafe(FALCON_TM_PROOF_PROTECTION_STATUS) + "," +
+         FalconCsvSafe(FALCON_TM_RUNNER_MANAGER_STATUS) + "," +
+         FalconCsvSafe(FALCON_TM_ADAPTIVE_RATCHET_STATUS) + "," +
+         FalconCsvSafe(FALCON_TM_EARLY_FAILURE_EXIT_STATUS) + "," +
+         FalconCsvSafe(FALCON_TM_LIVE_ELIGIBILITY) + "," +
+         FalconCsvSafe(FALCON_TM_NEXT_REQUIRED_LAYER) + "," +
+         FalconCsvSafe(FALCON_TM_NEXT_ENGINEERING_PHASE);
 
       // v0.20.2: Write CRLF explicitly as separate strings. This prevents MetaTrader/CSV
       // readers from receiving the header and summary row concatenated on a single line.
