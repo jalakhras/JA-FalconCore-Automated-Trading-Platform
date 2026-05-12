@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.23.1 - FVG SIZE250 Feasibility Review Lock |
+//|                     Version: v0.25.2 - FVG Micro Engine Completion Lock |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.230"
+#property version   "1.252"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.23.1"
-#define EA_BUILD_TAG   "FvgSize250FeasibilityReviewLock_NoExecution"
+#define EA_VERSION_TAG "v0.25.2"
+#define EA_BUILD_TAG   "FvgMicroEngineCompletionLock_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -112,19 +112,58 @@ long   g_fvg_hold_quality_score_total                = 0;
 #define FALCON_FVG_QGUARD_MIN_HOLD_SCORE              0
 
 // v0.22.2 Lock cleanup: multi-profile diagnostics were validated in v0.22.1.
-// v0.22.3 OOS validation lock: P03_SIZE250_ONLY passed primary validation and was near-flat/slightly positive on January/February OOS. No runtime guard activation.
-// Lock reports now keep only the stable P03_SIZE250_ONLY shadow simulation.
-// v0.23.1 Feasibility Review Lock: locks SIZE250 readiness metadata after April/March validation.
-// Runtime Guard remains OFF. No trade may be blocked by this profile in v0.23.1.
-#define FALCON_FVG_QGUARD_RUNTIME_ACTIVE             false
-#define FALCON_FVG_QGUARD_ACTUAL_BLOCKING_ENABLED    false
+// v0.22.3 OOS validation lock: P03_SIZE250_ONLY passed primary validation and was near-flat/slightly positive on January/February OOS.
+// v0.24.1 locked the candidate gate design with runtime blocking OFF.
+// v0.25.1 locks SIZE250 controlled Shadow runtime candidate activation and aligns counters.
+// It can block FVG Micro Shadow staging only. It still cannot send broker orders, Paper, Demo, or Live execution.
+#define FALCON_FVG_QGUARD_RUNTIME_ACTIVE             true
+#define FALCON_FVG_QGUARD_ACTUAL_BLOCKING_ENABLED    true
 #define FALCON_FVG_QGUARD_NO_LOOKAHEAD_FEASIBLE      true
 #define FALCON_FVG_QGUARD_KNOWN_BEFORE_ENTRY         true
-#define FALCON_FVG_QGUARD_MANUAL_PROMOTION_REQUIRED  true
-#define FALCON_FVG_QGUARD_CANDIDATE_STAGE            "SHADOW_ACCEPTED_FEASIBILITY_LOCK"
-#define FALCON_FVG_QGUARD_FEASIBILITY_DECISION       "LOCKED_RUNTIME_NOT_ACTIVE"
-#define FALCON_FVG_QGUARD_FEASIBILITY_REASON         "PRIMARY_POSITIVE_OOS_NEAR_FLAT_LOCKED_NO_RUNTIME_ACTIVATION"
-#define FALCON_FVG_QGUARD_NEXT_STEP                  "RUNTIME_CANDIDATE_ONLY_AFTER_MANUAL_APPROVAL_AND_ROLLBACK_DESIGN"
+#define FALCON_FVG_QGUARD_MANUAL_PROMOTION_REQUIRED  false
+#define FALCON_FVG_QGUARD_CANDIDATE_STAGE            "RUNTIME_CANDIDATE_COUNTER_ALIGNMENT_LOCK"
+#define FALCON_FVG_QGUARD_FEASIBILITY_DECISION       "CONTROLLED_SHADOW_BLOCKING_LOCKED_COUNTERS_ALIGNED"
+#define FALCON_FVG_QGUARD_FEASIBILITY_REASON         "SIZE250_RUNTIME_CANDIDATE_PERFORMANCE_PASSED;COUNTER_ALIGNMENT_LOCK_ADDS_STAGED_AND_POST_PASS_CLARITY"
+#define FALCON_FVG_QGUARD_NEXT_STEP                  "FVG_MICRO_ENGINE_COMPLETION_LOCK_THEN_FALCON_GUARD_RISK_FOUNDATION_BEFORE_PAPER_DEMO_LIVE"
+
+#define FALCON_FVG_QGUARD_RUNTIME_CANDIDATE_ALLOWED       true
+#define FALCON_FVG_QGUARD_RUNTIME_CANDIDATE_DESIGN_READY  true
+#define FALCON_FVG_QGUARD_ACTIVATION_POLICY               "CONTROLLED_SHADOW_ONLY_NO_PAPER_DEMO_LIVE"
+#define FALCON_FVG_QGUARD_PROMOTION_RULE                  "ACTUAL_BLOCKING_MUST_MATCH_SIZE250_EXPECTED_NET_AND_COUNTERS_MUST_EXPLAIN_CANDIDATE_TO_LIFECYCLE_DELTA"
+#define FALCON_FVG_QGUARD_ROLLBACK_REQUIRED               true
+#define FALCON_FVG_QGUARD_ROLLBACK_BASELINE               "v0.25.2"
+#define FALCON_FVG_QGUARD_ROLLBACK_TRIGGER                "ROLLBACK_IF_COMPILE_FAILS_OR_SMOKE_TRADE_COUNT_NET_OR_ALIGNED_QGUARD_COUNTERS_DEVIATE_FROM_EXPECTED_SIZE250_RUNTIME_CANDIDATE"
+#define FALCON_FVG_QGUARD_RUNTIME_BLOCKING_RULE           "BLOCK_FVG_MICRO_SHADOW_STAGING_WHEN_FVG_SIZE_POINTS_LT_250_BEFORE_ENTRY"
+#define FALCON_FVG_QGUARD_NEXT_CANDIDATE_VERSION          "v0.26.0_FalconGuardRiskFoundation"
+
+// ==================================================================
+// FVG Micro Engine Completion Lock - v0.25.2
+// This metadata closes the current engine phase. It does NOT enable
+// Paper, Demo, Live, or broker execution. It records that FVG Micro
+// + SIZE250 Shadow runtime candidate is complete enough to move next
+// to FalconGuard/Risk and TradeManagement foundations before any Live.
+// ==================================================================
+#define FALCON_FVG_ENGINE_COMPLETION_STATUS              "ENGINE_COMPLETION_LOCK"
+#define FALCON_FVG_ENGINE_COMPLETION_DECISION            "FVG_MICRO_SIZE250_SHADOW_RUNTIME_CANDIDATE_COMPLETE"
+#define FALCON_FVG_ENGINE_COMPLETION_SCOPE               "FVG_MICRO_RETEST_ONLY;SIZE250_ACTUAL_SHADOW_BLOCKING;NO_OTHER_ENGINE_ACTIVE"
+#define FALCON_FVG_ENGINE_COMPLETED_ENGINE_ID            "SCALP.FVG_MICRO"
+#define FALCON_FVG_ENGINE_ACTIVE_STRATEGY_ONLY           "FVG_MICRO_RETEST"
+#define FALCON_FVG_ENGINE_LIVE_PILOT_ELIGIBILITY         "NOT_ELIGIBLE_UNTIL_RISK_TRADE_MANAGEMENT_PAPER_DEMO_VALIDATION"
+#define FALCON_FVG_ENGINE_NEXT_REQUIRED_LAYER            "FALCON_GUARD_RISK_FOUNDATION_THEN_TRADE_MANAGEMENT_FOUNDATION"
+#define FALCON_FVG_ENGINE_NEXT_ENGINEERING_PHASE         "v0.26.0_FalconGuardRiskFoundation"
+
+// ==================================================================
+// FVG SIZE250 Runtime Candidate counter alignment lock - v0.25.1
+// Actual blocking is limited to Shadow lifecycle staging. No broker orders,
+// no Paper/Demo/Live execution, and no OrderSend are possible in this build.
+// ==================================================================
+int g_fvg_qguard_runtime_candidate_evaluated        = 0;
+int g_fvg_qguard_runtime_candidate_passed           = 0;
+int g_fvg_qguard_runtime_candidate_blocked          = 0;
+int g_fvg_qguard_runtime_staged_trades              = 0;
+int g_fvg_qguard_runtime_passed_but_not_staged      = 0;
+int g_fvg_qguard_runtime_rejected_after_pass        = 0;
+
 
 // ==================================================================
 // Runtime performance constants - v0.18.5
@@ -4198,6 +4237,31 @@ public:
       m_snapshot.validate_passed = true;
       m_snapshot.validation_reason = "VALIDATE_TRADEPLAN_FOR_STAGING_PASSED";
 
+      bool qguard_runtime_passed_for_stage = false;
+
+      if(FALCON_FVG_QGUARD_RUNTIME_ACTIVE && FALCON_FVG_QGUARD_ACTUAL_BLOCKING_ENABLED)
+      {
+         string qguard_reason = "";
+         bool qguard_passed = FalconEvaluateFvgQualityShadowGuard(watcher_snapshot.fvg_size_points,
+                                                                  watcher_snapshot.quality_current_spread_points,
+                                                                  watcher_snapshot.fvg_retest_age_bars,
+                                                                  watcher_snapshot.fvg_hold_quality_score,
+                                                                  qguard_reason);
+         g_fvg_qguard_runtime_candidate_evaluated++;
+         if(qguard_passed)
+         {
+            g_fvg_qguard_runtime_candidate_passed++;
+            qguard_runtime_passed_for_stage = true;
+         }
+         else
+         {
+            g_fvg_qguard_runtime_candidate_blocked++;
+            Block(StringFormat("FVG_QGUARD_RUNTIME_BLOCKED;%s", qguard_reason),
+                  "v0.25.1 controlled Shadow-only activation blocked FVG Micro staging before entry. No OrderSend, no Paper, no Demo, no Live execution.");
+            return true;
+         }
+      }
+
       FalconEvidencePack evidence_pack;
       evidence_pack.has_candle_evidence = false;
       evidence_pack.has_chart_pattern_evidence = false;
@@ -4208,10 +4272,18 @@ public:
 
       if(!shadow_executor.StageTradePlan(plan, evidence_pack, m_shadow_record))
       {
+         if(qguard_runtime_passed_for_stage)
+         {
+            g_fvg_qguard_runtime_passed_but_not_staged++;
+            g_fvg_qguard_runtime_rejected_after_pass++;
+         }
          m_snapshot.staged_to_shadow_executor = false;
          Block("SHADOW_EXECUTOR_STAGE_FAILED", "TradePlan passed validation but ShadowExecutor refused staging. No broker orders were sent.");
          return true;
       }
+
+      if(qguard_runtime_passed_for_stage)
+         g_fvg_qguard_runtime_staged_trades++;
 
       m_snapshot.shadow_id = m_shadow_record.shadow_id;
       m_snapshot.staged_to_shadow_executor = true;
@@ -5942,6 +6014,9 @@ public:
 
       int retest_age_min_bars = (g_fvg_retest_age_min_bars < 0 ? 0 : g_fvg_retest_age_min_bars);
       int hold_quality_score_min = (g_fvg_hold_quality_score_min < 0 ? 0 : g_fvg_hold_quality_score_min);
+      int runtime_staged_but_not_closed = g_fvg_qguard_runtime_staged_trades - m_totals.total_trades;
+      if(runtime_staged_but_not_closed < 0)
+         runtime_staged_but_not_closed = 0;
 
       int handle = FileOpen(m_summary_report_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
@@ -5975,7 +6050,17 @@ public:
          "FvgQGuardRuntimeActive,FvgQGuardActualBlockingEnabled,FvgQGuardCandidateStage,"
          "FvgQGuardFeasibilityDecision,FvgQGuardFeasibilityReason,"
          "FvgQGuardNoLookaheadFeasible,FvgQGuardKnownBeforeEntry,FvgQGuardManualPromotionRequired,"
-         "FvgQGuardMinSizePoints,FvgQGuardNextStep";
+         "FvgQGuardMinSizePoints,FvgQGuardNextStep,"
+         "FvgQGuardRuntimeCandidateAllowed,FvgQGuardRuntimeCandidateDesignReady,"
+         "FvgQGuardActivationPolicy,FvgQGuardPromotionRule,FvgQGuardRollbackRequired,"
+         "FvgQGuardRollbackBaseline,FvgQGuardRollbackTrigger,FvgQGuardRuntimeBlockingRule,"
+         "FvgQGuardNextCandidateVersion,"
+         "FvgQGuardRuntimeCandidateEvaluated,FvgQGuardRuntimeCandidatePassed,FvgQGuardRuntimeCandidateBlocked,"
+         "FvgQGuardRuntimeStagedTrades,FvgQGuardRuntimePassedButNotStaged,"
+         "FvgQGuardRuntimeRejectedAfterPass,FvgQGuardRuntimeStagedButNotClosed,"
+         "FvgMicroEngineCompletionStatus,FvgMicroEngineCompletionDecision,FvgMicroEngineCompletionScope,"
+         "FvgMicroEngineCompletedEngineId,FvgMicroEngineActiveStrategyOnly,"
+         "FvgMicroEngineLivePilotEligibility,FvgMicroEngineNextRequiredLayer,FvgMicroEngineNextEngineeringPhase";
 
       string summary_row =
          FalconCsvSafe(EA_NAME) + "," +
@@ -6048,7 +6133,31 @@ public:
          FalconBoolToYesNo(FALCON_FVG_QGUARD_KNOWN_BEFORE_ENTRY) + "," +
          FalconBoolToYesNo(FALCON_FVG_QGUARD_MANUAL_PROMOTION_REQUIRED) + "," +
          DoubleToString(FALCON_FVG_QGUARD_MIN_SIZE_POINTS, 2) + "," +
-         FalconCsvSafe(FALCON_FVG_QGUARD_NEXT_STEP);
+         FalconCsvSafe(FALCON_FVG_QGUARD_NEXT_STEP) + "," +
+         FalconBoolToYesNo(FALCON_FVG_QGUARD_RUNTIME_CANDIDATE_ALLOWED) + "," +
+         FalconBoolToYesNo(FALCON_FVG_QGUARD_RUNTIME_CANDIDATE_DESIGN_READY) + "," +
+         FalconCsvSafe(FALCON_FVG_QGUARD_ACTIVATION_POLICY) + "," +
+         FalconCsvSafe(FALCON_FVG_QGUARD_PROMOTION_RULE) + "," +
+         FalconBoolToYesNo(FALCON_FVG_QGUARD_ROLLBACK_REQUIRED) + "," +
+         FalconCsvSafe(FALCON_FVG_QGUARD_ROLLBACK_BASELINE) + "," +
+         FalconCsvSafe(FALCON_FVG_QGUARD_ROLLBACK_TRIGGER) + "," +
+         FalconCsvSafe(FALCON_FVG_QGUARD_RUNTIME_BLOCKING_RULE) + "," +
+         FalconCsvSafe(FALCON_FVG_QGUARD_NEXT_CANDIDATE_VERSION) + "," +
+         IntegerToString(g_fvg_qguard_runtime_candidate_evaluated) + "," +
+         IntegerToString(g_fvg_qguard_runtime_candidate_passed) + "," +
+         IntegerToString(g_fvg_qguard_runtime_candidate_blocked) + "," +
+         IntegerToString(g_fvg_qguard_runtime_staged_trades) + "," +
+         IntegerToString(g_fvg_qguard_runtime_passed_but_not_staged) + "," +
+         IntegerToString(g_fvg_qguard_runtime_rejected_after_pass) + "," +
+         IntegerToString(runtime_staged_but_not_closed) + "," +
+         FalconCsvSafe(FALCON_FVG_ENGINE_COMPLETION_STATUS) + "," +
+         FalconCsvSafe(FALCON_FVG_ENGINE_COMPLETION_DECISION) + "," +
+         FalconCsvSafe(FALCON_FVG_ENGINE_COMPLETION_SCOPE) + "," +
+         FalconCsvSafe(FALCON_FVG_ENGINE_COMPLETED_ENGINE_ID) + "," +
+         FalconCsvSafe(FALCON_FVG_ENGINE_ACTIVE_STRATEGY_ONLY) + "," +
+         FalconCsvSafe(FALCON_FVG_ENGINE_LIVE_PILOT_ELIGIBILITY) + "," +
+         FalconCsvSafe(FALCON_FVG_ENGINE_NEXT_REQUIRED_LAYER) + "," +
+         FalconCsvSafe(FALCON_FVG_ENGINE_NEXT_ENGINEERING_PHASE);
 
       // v0.20.2: Write CRLF explicitly as separate strings. This prevents MetaTrader/CSV
       // readers from receiving the header and summary row concatenated on a single line.
@@ -6387,13 +6496,13 @@ class CFalconExecutionGuard
 public:
    bool CanSendRealOrders()
    {
-      // v0.23.1 locks P03_SIZE250_ONLY as feasibility-review Shadow simulation only. Real execution and runtime blocking are not allowed even if inputs are changed.
+      // v0.25.1 can block FVG Micro Shadow staging by SIZE250, but real broker execution remains impossible.
       return false;
    }
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.23.1.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.25.1. SIZE250 can only block Shadow staging.");
    }
 };
 
@@ -6534,7 +6643,15 @@ void FalconRunFvgMicroRuntimeShadowPipeline(const string trigger)
             g_report_writer.WriteFvgMicroTradePlanStagingDiagnosticsSnapshot(g_fvg_micro_tradeplan_stager);
 
             FalconFvgMicroTradePlanStagingSnapshot staging_snapshot = g_fvg_micro_tradeplan_stager.GetSnapshot();
-            if(staging_snapshot.staged_to_shadow_executor)
+            if(staging_snapshot.staging_status == FALCON_TRADEPLAN_STAGING_STATUS_BLOCKED &&
+               StringFind(staging_snapshot.staging_reason, "FVG_QGUARD_RUNTIME_BLOCKED") >= 0)
+            {
+               g_last_staged_fvg_candidate_id = watcher_snapshot.candidate_id;
+               CFalconLogger::Info(StringFormat("FVG Micro candidate blocked once by controlled SIZE250 guard. CandidateId=%s | Reason=%s",
+                                                watcher_snapshot.candidate_id,
+                                                staging_snapshot.staging_reason));
+            }
+            else if(staging_snapshot.staged_to_shadow_executor)
             {
                g_last_staged_fvg_candidate_id = watcher_snapshot.candidate_id;
                g_fvg_micro_lifecycle_simulator.Initialize(g_fvg_micro_tradeplan_stager, g_market_context, g_shadow_executor);
@@ -6569,7 +6686,7 @@ int OnInit()
    PrintFormat("============================================================");
    PrintFormat("%s", EA_NAME);
    PrintFormat("Version: %s | Build: %s", EA_VERSION_TAG, EA_BUILD_TAG);
-   PrintFormat("Stage: FVG Micro Per-Trade Quality Attribution / Standard Reports / Shadow-only / No real execution");
+   PrintFormat("Stage: FVG SIZE250 Runtime Candidate Controlled Shadow Activation / No OrderSend / No real execution");
    PrintFormat("ReportProfile: %s", FalconReportProfileToString());
    PrintFormat("============================================================");
    FalconPrintReportFolderHints();
