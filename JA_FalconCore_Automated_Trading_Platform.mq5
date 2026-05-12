@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.22.3 - FVG SIZE250 OOS Validation Lock |
+//|                     Version: v0.23.1 - FVG SIZE250 Feasibility Review Lock |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.223"
+#property version   "1.230"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.22.3"
-#define EA_BUILD_TAG   "FvgSize250OosValidationLock_NoExecution"
+#define EA_VERSION_TAG "v0.23.1"
+#define EA_BUILD_TAG   "FvgSize250FeasibilityReviewLock_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -114,6 +114,17 @@ long   g_fvg_hold_quality_score_total                = 0;
 // v0.22.2 Lock cleanup: multi-profile diagnostics were validated in v0.22.1.
 // v0.22.3 OOS validation lock: P03_SIZE250_ONLY passed primary validation and was near-flat/slightly positive on January/February OOS. No runtime guard activation.
 // Lock reports now keep only the stable P03_SIZE250_ONLY shadow simulation.
+// v0.23.1 Feasibility Review Lock: locks SIZE250 readiness metadata after April/March validation.
+// Runtime Guard remains OFF. No trade may be blocked by this profile in v0.23.1.
+#define FALCON_FVG_QGUARD_RUNTIME_ACTIVE             false
+#define FALCON_FVG_QGUARD_ACTUAL_BLOCKING_ENABLED    false
+#define FALCON_FVG_QGUARD_NO_LOOKAHEAD_FEASIBLE      true
+#define FALCON_FVG_QGUARD_KNOWN_BEFORE_ENTRY         true
+#define FALCON_FVG_QGUARD_MANUAL_PROMOTION_REQUIRED  true
+#define FALCON_FVG_QGUARD_CANDIDATE_STAGE            "SHADOW_ACCEPTED_FEASIBILITY_LOCK"
+#define FALCON_FVG_QGUARD_FEASIBILITY_DECISION       "LOCKED_RUNTIME_NOT_ACTIVE"
+#define FALCON_FVG_QGUARD_FEASIBILITY_REASON         "PRIMARY_POSITIVE_OOS_NEAR_FLAT_LOCKED_NO_RUNTIME_ACTIVATION"
+#define FALCON_FVG_QGUARD_NEXT_STEP                  "RUNTIME_CANDIDATE_ONLY_AFTER_MANUAL_APPROVAL_AND_ROLLBACK_DESIGN"
 
 // ==================================================================
 // Runtime performance constants - v0.18.5
@@ -5960,7 +5971,11 @@ public:
          "FvgQGuardProfile,FvgQGuardEvaluated,FvgQGuardPassed,FvgQGuardBlocked,"
          "FvgQGuardBlockedWinners,FvgQGuardBlockedLosers,"
          "FvgQGuardActualNetPoints,FvgQGuardSimulatedNetPoints,FvgQGuardDeltaNetPoints,FvgQGuardBlockedNetPoints,"
-         "FvgQGuardActualNetUSD,FvgQGuardSimulatedNetUSD,FvgQGuardDeltaNetUSD,FvgQGuardBlockedNetUSD";
+         "FvgQGuardActualNetUSD,FvgQGuardSimulatedNetUSD,FvgQGuardDeltaNetUSD,FvgQGuardBlockedNetUSD,"
+         "FvgQGuardRuntimeActive,FvgQGuardActualBlockingEnabled,FvgQGuardCandidateStage,"
+         "FvgQGuardFeasibilityDecision,FvgQGuardFeasibilityReason,"
+         "FvgQGuardNoLookaheadFeasible,FvgQGuardKnownBeforeEntry,FvgQGuardManualPromotionRequired,"
+         "FvgQGuardMinSizePoints,FvgQGuardNextStep";
 
       string summary_row =
          FalconCsvSafe(EA_NAME) + "," +
@@ -6023,7 +6038,17 @@ public:
          DoubleToString(m_totals.fvg_qguard_actual_net_usd, 2) + "," +
          DoubleToString(m_totals.fvg_qguard_simulated_net_usd, 2) + "," +
          DoubleToString(m_totals.fvg_qguard_simulated_net_usd - m_totals.fvg_qguard_actual_net_usd, 2) + "," +
-         DoubleToString(m_totals.fvg_qguard_blocked_net_usd, 2);
+         DoubleToString(m_totals.fvg_qguard_blocked_net_usd, 2) + "," +
+         FalconBoolToYesNo(FALCON_FVG_QGUARD_RUNTIME_ACTIVE) + "," +
+         FalconBoolToYesNo(FALCON_FVG_QGUARD_ACTUAL_BLOCKING_ENABLED) + "," +
+         FalconCsvSafe(FALCON_FVG_QGUARD_CANDIDATE_STAGE) + "," +
+         FalconCsvSafe(FALCON_FVG_QGUARD_FEASIBILITY_DECISION) + "," +
+         FalconCsvSafe(FALCON_FVG_QGUARD_FEASIBILITY_REASON) + "," +
+         FalconBoolToYesNo(FALCON_FVG_QGUARD_NO_LOOKAHEAD_FEASIBLE) + "," +
+         FalconBoolToYesNo(FALCON_FVG_QGUARD_KNOWN_BEFORE_ENTRY) + "," +
+         FalconBoolToYesNo(FALCON_FVG_QGUARD_MANUAL_PROMOTION_REQUIRED) + "," +
+         DoubleToString(FALCON_FVG_QGUARD_MIN_SIZE_POINTS, 2) + "," +
+         FalconCsvSafe(FALCON_FVG_QGUARD_NEXT_STEP);
 
       // v0.20.2: Write CRLF explicitly as separate strings. This prevents MetaTrader/CSV
       // readers from receiving the header and summary row concatenated on a single line.
@@ -6362,13 +6387,13 @@ class CFalconExecutionGuard
 public:
    bool CanSendRealOrders()
    {
-      // v0.22.2 keeps P03_SIZE250_ONLY FVG quality shadow simulation in Shadow mode. Real execution is not allowed even if the input is changed.
+      // v0.23.1 locks P03_SIZE250_ONLY as feasibility-review Shadow simulation only. Real execution and runtime blocking are not allowed even if inputs are changed.
       return false;
    }
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.22.2.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.23.1.");
    }
 };
 
