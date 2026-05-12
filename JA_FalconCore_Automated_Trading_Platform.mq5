@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.26.1 - FalconGuard Risk Foundation Validation Lock |
+//|                     Version: v0.26.3 - FalconGuard Pre-Execution Gate Lock |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.261"
+#property version   "1.263"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.26.1"
-#define EA_BUILD_TAG   "FalconGuardRiskFoundationValidationLock_NoExecution"
+#define EA_VERSION_TAG "v0.26.3"
+#define EA_BUILD_TAG   "FalconGuardPreExecutionGateLock_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -124,7 +124,7 @@ long   g_fvg_hold_quality_score_total                = 0;
 #define FALCON_FVG_QGUARD_CANDIDATE_STAGE            "RUNTIME_CANDIDATE_COUNTER_ALIGNMENT_LOCK"
 #define FALCON_FVG_QGUARD_FEASIBILITY_DECISION       "CONTROLLED_SHADOW_BLOCKING_LOCKED_COUNTERS_ALIGNED"
 #define FALCON_FVG_QGUARD_FEASIBILITY_REASON         "SIZE250_RUNTIME_CANDIDATE_PERFORMANCE_PASSED;COUNTER_ALIGNMENT_LOCK_ADDS_STAGED_AND_POST_PASS_CLARITY"
-#define FALCON_FVG_QGUARD_NEXT_STEP                  "FVG_MICRO_ENGINE_COMPLETION_LOCK_THEN_FALCON_GUARD_RISK_FOUNDATION_BEFORE_PAPER_DEMO_LIVE"
+#define FALCON_FVG_QGUARD_NEXT_STEP                  "TRADE_MANAGEMENT_FOUNDATION"
 
 #define FALCON_FVG_QGUARD_RUNTIME_CANDIDATE_ALLOWED       true
 #define FALCON_FVG_QGUARD_RUNTIME_CANDIDATE_DESIGN_READY  true
@@ -149,28 +149,44 @@ long   g_fvg_hold_quality_score_total                = 0;
 #define FALCON_FVG_ENGINE_COMPLETED_ENGINE_ID            "SCALP.FVG_MICRO"
 #define FALCON_FVG_ENGINE_ACTIVE_STRATEGY_ONLY           "FVG_MICRO_RETEST"
 #define FALCON_FVG_ENGINE_LIVE_PILOT_ELIGIBILITY         "NOT_ELIGIBLE_UNTIL_RISK_TRADE_MANAGEMENT_PAPER_DEMO_VALIDATION"
-#define FALCON_FVG_ENGINE_NEXT_REQUIRED_LAYER            "FALCON_GUARD_RISK_FOUNDATION_ACTIVE_THEN_TRADE_MANAGEMENT_FOUNDATION"
+#define FALCON_FVG_ENGINE_NEXT_REQUIRED_LAYER            "FALCON_GUARD_PRE_EXECUTION_GATE_THEN_TRADE_MANAGEMENT_FOUNDATION"
 #define FALCON_FVG_ENGINE_NEXT_ENGINEERING_PHASE         "v0.27.0_TradeManagementFoundation"
 
 // ==================================================================
-// FalconGuard Risk Foundation Validation Lock - v0.26.1
-// Foundation/readiness lock only. This layer documents and validates risk
-// boundaries before Paper/Demo/Live. v0.26.1 locks FalconGuard after
-// Smoke + April + March + February OOS + January OOS validation.
-// It does not send orders and does not alter FVG Micro SIZE250 Shadow lifecycle behavior.
+// FalconGuard Pre-Execution Gate Lock - v0.26.3
+// Validation lock after v0.26.2 smoke passed. It freezes the unified risk
+// decision gate that later Paper/Demo/Live execution must call before any order
+// can be created. It does not block Shadow trades, send orders, or alter FVG
+// Micro SIZE250 behavior.
 // ==================================================================
-#define FALCON_GUARD_FOUNDATION_STATUS                  "FALCON_GUARD_RISK_FOUNDATION_VALIDATION_LOCK"
-#define FALCON_GUARD_FOUNDATION_DECISION                "RISK_FOUNDATION_FULL_VALIDATION_LOCKED_NO_EXECUTION"
+#define FALCON_GUARD_FOUNDATION_STATUS                  "FALCON_GUARD_PRE_EXECUTION_GATE_LOCK"
+#define FALCON_GUARD_FOUNDATION_DECISION                "PRE_EXECUTION_GATE_LOCKED_READY_FOR_TRADE_MANAGEMENT_NO_EXECUTION"
 #define FALCON_GUARD_SCOPE                              "FIXED_LOT;DAILY_LOSS_LIMIT;MAX_TRADES;MAX_OPEN_POSITIONS;SPREAD_GUARD_READINESS;STOPS_GUARD_READINESS;KILL_SWITCH_DESIGN"
 #define FALCON_GUARD_EXECUTION_PERMISSION               "NO_ORDER_SEND_NO_PAPER_NO_DEMO_NO_LIVE"
 #define FALCON_GUARD_RISK_MODE                          "FIXED_LOT_FIRST"
 #define FALCON_GUARD_ENGINE_ALLOCATION                  "FVG_MICRO_100_PERCENT_ONLY;ALL_OTHER_ENGINES_0_PERCENT"
-#define FALCON_GUARD_KILL_SWITCH_STATUS                 "ARMED_DESIGN_LOCK_NOT_RUNTIME_BLOCKING"
+#define FALCON_GUARD_KILL_SWITCH_STATUS                 "ARMED_PRE_EXECUTION_GATE_LOCK_NOT_RUNTIME_BLOCKING"
 #define FALCON_GUARD_MANUAL_KILL_SWITCH_STATUS          "FUTURE_READY_NO_USER_INPUT_IN_THIS_VERSION"
 #define FALCON_GUARD_MAX_CONSECUTIVE_LOSSES             3
-#define FALCON_GUARD_LIVE_ELIGIBILITY                   "NOT_ELIGIBLE_UNTIL_TRADE_MANAGEMENT_FOUNDATION_PAPER_DEMO_VALIDATION"
+#define FALCON_GUARD_LIVE_ELIGIBILITY                   "NOT_ELIGIBLE_UNTIL_TRADE_MANAGEMENT_PAPER_DEMO_VALIDATION"
 #define FALCON_GUARD_NEXT_REQUIRED_LAYER                "TRADE_MANAGEMENT_FOUNDATION"
 #define FALCON_GUARD_NEXT_ENGINEERING_PHASE             "v0.27.0_TradeManagementFoundation"
+
+// ==================================================================
+// FalconGuard Pre-Execution Gate Lock - v0.26.3
+// Summary-only locked decision contract. It does not enforce broker execution,
+// does not block Shadow lifecycle, and does not change FVG Micro results.
+// Future Paper/Demo/Live executors must call the equivalent gate before
+// creating any order request.
+// ==================================================================
+#define FALCON_GUARD_PRE_EXECUTION_GATE_STATUS          "PRE_EXECUTION_GATE_LOCKED_NOT_RUNTIME_BLOCKING"
+#define FALCON_GUARD_PRE_EXECUTION_DECISION             "RISK_DECISION_CONTRACT_LOCKED_FOR_TRADE_MANAGEMENT"
+#define FALCON_GUARD_PRE_EXECUTION_LOT_MODE             "FIXED_LOT_ONLY_FIRST_LIVE_PILOT_SAFE"
+#define FALCON_GUARD_PRE_EXECUTION_DAILY_LOSS_STATUS    "BUDGET_DEFINED_RUNTIME_TRACKING_LATER_IN_PAPER_DEMO"
+#define FALCON_GUARD_PRE_EXECUTION_DAILY_TRADES_STATUS  "LIMIT_DEFINED_RUNTIME_COUNTING_LATER_IN_PAPER_DEMO"
+#define FALCON_GUARD_PRE_EXECUTION_OPEN_CAPACITY_STATUS "CAPACITY_DEFINED_RUNTIME_COUNTING_LATER_IN_PAPER_DEMO"
+#define FALCON_GUARD_PRE_EXECUTION_ENGINE_RISK_ALLOWED  "YES_FVG_MICRO_100_PERCENT_ONLY"
+#define FALCON_GUARD_PRE_EXECUTION_NEXT_PHASE           "v0.27.0_TradeManagementFoundation"
 
 // ==================================================================
 // FVG SIZE250 Runtime Candidate counter alignment lock - v0.25.1
@@ -2379,7 +2395,7 @@ private:
 };
 
 // ==================================================================
-// FalconGuard Risk Foundation utilities - v0.26.1
+// FalconGuard Risk Foundation + Pre-Execution utilities - v0.26.2
 // Summary-only readiness helpers. They do not block Shadow staging and
 // do not modify trading lifecycle behavior.
 // ==================================================================
@@ -2466,6 +2482,60 @@ string FalconGuardOverallStatus(const FalconSymbolContext &symbol_context)
       return "CONFIG_REVIEW_REQUIRED_MAX_OPEN_POSITIONS";
 
    return "READY_FOR_TRADE_MANAGEMENT_FOUNDATION_NOT_LIVE";
+}
+
+// ==================================================================
+// FalconGuard Pre-Execution Gate helpers - v0.26.2
+// These functions produce Summary-only readiness decisions. They are not
+// connected to broker execution and do not alter Shadow staging behavior.
+// ==================================================================
+string FalconGuardPreExecutionBlockReason(const FalconSymbolContext &symbol_context)
+{
+   string overall_status = FalconGuardOverallStatus(symbol_context);
+   if(overall_status != "READY_FOR_TRADE_MANAGEMENT_FOUNDATION_NOT_LIVE")
+      return overall_status;
+
+   if(!EnableShadowMode && !EnablePaperMode)
+      return "NO_OBSERVATION_MODE_ENABLED";
+
+   return "NONE_DESIGN_ONLY";
+}
+
+string FalconGuardCanOpenTradeDesign(const FalconSymbolContext &symbol_context)
+{
+   if(FalconGuardPreExecutionBlockReason(symbol_context) == "NONE_DESIGN_ONLY")
+      return "YES_DESIGN_ONLY_NOT_ENFORCED";
+
+   return "NO_CONFIG_OR_MODE_REVIEW_REQUIRED";
+}
+
+double FalconGuardPlannedLotDesign(const FalconSymbolContext &symbol_context)
+{
+   if(FalconGuardFixedLotStatus(symbol_context) == "VALID_FIXED_LOT_WITHIN_BROKER_LIMITS")
+      return FixedLotSize;
+
+   return 0.0;
+}
+
+string FalconGuardSpreadAllowedDesign(const FalconSymbolContext &symbol_context)
+{
+   if(FalconGuardSpreadGuardStatus(symbol_context) == "SPREAD_NOT_AVAILABLE")
+      return "NO_SPREAD_NOT_AVAILABLE";
+
+   return "YES_READINESS_ONLY_NOT_RUNTIME_BLOCKING";
+}
+
+string FalconGuardStopsLevelAllowedDesign(const FalconSymbolContext &symbol_context)
+{
+   if(FalconGuardStopsLevelGuardStatus(symbol_context) == "STOPS_LEVEL_NOT_AVAILABLE")
+      return "NO_STOPS_LEVEL_NOT_AVAILABLE";
+
+   return "YES_READINESS_ONLY_NOT_RUNTIME_BLOCKING";
+}
+
+string FalconGuardKillSwitchAllowsTradingDesign()
+{
+   return "YES_DESIGN_ONLY_MANUAL_AND_AUTO_KILL_SWITCH_NOT_RUNTIME_ENFORCED";
 }
 
 // ==================================================================
@@ -6179,7 +6249,13 @@ public:
          "FalconGuardMaxOpenPositions,FalconGuardMaxOpenPositionsStatus,"
          "FalconGuardMaxConsecutiveLosses,FalconGuardSpreadGuardStatus,FalconGuardStopsLevelGuardStatus,"
          "FalconGuardEngineAllocation,FalconGuardKillSwitchStatus,FalconGuardManualKillSwitchStatus,"
-         "FalconGuardLiveEligibility,FalconGuardNextRequiredLayer,FalconGuardNextEngineeringPhase";
+         "FalconGuardLiveEligibility,FalconGuardNextRequiredLayer,FalconGuardNextEngineeringPhase,"
+         "FalconGuardPreExecutionGateStatus,FalconGuardCanOpenTrade,FalconGuardBlockReason,"
+         "FalconGuardLotSizingMode,FalconGuardPlannedLot,FalconGuardDailyLossBudgetUSD,"
+         "FalconGuardDailyLossRemainingStatus,FalconGuardDailyTradesLimit,FalconGuardDailyTradesRemainingStatus,"
+         "FalconGuardOpenPositionCapacity,FalconGuardOpenPositionCapacityStatus,FalconGuardEngineRiskAllowed,"
+         "FalconGuardSpreadAllowed,FalconGuardStopsLevelAllowed,FalconGuardKillSwitchAllowsTrading,"
+         "FalconGuardPreExecutionGateDecision,FalconGuardPreExecutionNextPhase";
 
       string summary_row =
          FalconCsvSafe(EA_NAME) + "," +
@@ -6301,7 +6377,24 @@ public:
          FalconCsvSafe(FALCON_GUARD_MANUAL_KILL_SWITCH_STATUS) + "," +
          FalconCsvSafe(FALCON_GUARD_LIVE_ELIGIBILITY) + "," +
          FalconCsvSafe(FALCON_GUARD_NEXT_REQUIRED_LAYER) + "," +
-         FalconCsvSafe(FALCON_GUARD_NEXT_ENGINEERING_PHASE);
+         FalconCsvSafe(FALCON_GUARD_NEXT_ENGINEERING_PHASE) + "," +
+         FalconCsvSafe(FALCON_GUARD_PRE_EXECUTION_GATE_STATUS) + "," +
+         FalconCsvSafe(FalconGuardCanOpenTradeDesign(m_symbol_context)) + "," +
+         FalconCsvSafe(FalconGuardPreExecutionBlockReason(m_symbol_context)) + "," +
+         FalconCsvSafe(FALCON_GUARD_PRE_EXECUTION_LOT_MODE) + "," +
+         DoubleToString(FalconGuardPlannedLotDesign(m_symbol_context), 2) + "," +
+         DoubleToString(FalconGuardDailyLossLimitUsd(), 2) + "," +
+         FalconCsvSafe(FALCON_GUARD_PRE_EXECUTION_DAILY_LOSS_STATUS) + "," +
+         IntegerToString(MaxTradesPerDay) + "," +
+         FalconCsvSafe(FALCON_GUARD_PRE_EXECUTION_DAILY_TRADES_STATUS) + "," +
+         IntegerToString(MaxOpenPositions) + "," +
+         FalconCsvSafe(FALCON_GUARD_PRE_EXECUTION_OPEN_CAPACITY_STATUS) + "," +
+         FalconCsvSafe(FALCON_GUARD_PRE_EXECUTION_ENGINE_RISK_ALLOWED) + "," +
+         FalconCsvSafe(FalconGuardSpreadAllowedDesign(m_symbol_context)) + "," +
+         FalconCsvSafe(FalconGuardStopsLevelAllowedDesign(m_symbol_context)) + "," +
+         FalconCsvSafe(FalconGuardKillSwitchAllowsTradingDesign()) + "," +
+         FalconCsvSafe(FALCON_GUARD_PRE_EXECUTION_DECISION) + "," +
+         FalconCsvSafe(FALCON_GUARD_PRE_EXECUTION_NEXT_PHASE);
 
       // v0.20.2: Write CRLF explicitly as separate strings. This prevents MetaTrader/CSV
       // readers from receiving the header and summary row concatenated on a single line.
@@ -6646,7 +6739,7 @@ public:
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.26.1. SIZE250 can only block Shadow staging; FalconGuard validation lock is readiness-only.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.26.3. SIZE250 can only block Shadow staging; FalconGuard pre-execution gate is locked but not runtime-enforced.");
    }
 };
 
@@ -6830,7 +6923,7 @@ int OnInit()
    PrintFormat("============================================================");
    PrintFormat("%s", EA_NAME);
    PrintFormat("Version: %s | Build: %s", EA_VERSION_TAG, EA_BUILD_TAG);
-   PrintFormat("Stage: FalconGuard Risk Foundation / FVG Micro SIZE250 Shadow Candidate / No OrderSend / No real execution");
+   PrintFormat("Stage: FalconGuard Pre-Execution Enforcement Design / FVG Micro SIZE250 Shadow Candidate / No OrderSend / No real execution");
    PrintFormat("ReportProfile: %s", FalconReportProfileToString());
    PrintFormat("============================================================");
    FalconPrintReportFolderHints();
@@ -6903,7 +6996,7 @@ int OnInit()
    g_execution_guard.AssertNoExecution();
 
    g_is_initialized = true;
-   CFalconLogger::Info("Initialization completed successfully. EA is Shadow-only, FalconGuard risk-ready, and report-ready.");
+   CFalconLogger::Info("Initialization completed successfully. EA is Shadow-only, FalconGuard pre-execution design-ready, and report-ready.");
    return INIT_SUCCEEDED;
 }
 
