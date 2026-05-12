@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.21.3 - FVG Quality Attribution Cleanup Lock |
+//|                     Version: v0.22.3 - FVG SIZE250 OOS Validation Lock |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.213"
+#property version   "1.223"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.21.3"
-#define EA_BUILD_TAG   "FvgQualityAttributionCleanupLock_NoExecution"
+#define EA_VERSION_TAG "v0.22.3"
+#define EA_BUILD_TAG   "FvgSize250OosValidationLock_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -98,6 +98,22 @@ long   g_fvg_hold_quality_score_total                = 0;
 
 #define FALCON_FVG_HOLD_QUALITY_STRONG_SCORE         70
 #define FALCON_FVG_HOLD_QUALITY_NEUTRAL_SCORE        40
+
+// ==================================================================
+// FVG Quality Shadow Guard Simulation - v0.22.0
+// Simulation only: it measures what would happen if a quality guard
+// skipped lower-quality FVG Micro shadow trades. It never blocks, stages,
+// closes, or modifies a trade. Runtime Guard = OFF.
+// ==================================================================
+#define FALCON_FVG_QGUARD_PROFILE_TAG                 "P03_SIZE250_ONLY"
+#define FALCON_FVG_QGUARD_MIN_SIZE_POINTS             250.00
+#define FALCON_FVG_QGUARD_MAX_SPREAD_POINTS           0
+#define FALCON_FVG_QGUARD_MAX_AGE_BARS                0
+#define FALCON_FVG_QGUARD_MIN_HOLD_SCORE              0
+
+// v0.22.2 Lock cleanup: multi-profile diagnostics were validated in v0.22.1.
+// v0.22.3 OOS validation lock: P03_SIZE250_ONLY passed primary validation and was near-flat/slightly positive on January/February OOS. No runtime guard activation.
+// Lock reports now keep only the stable P03_SIZE250_ONLY shadow simulation.
 
 // ==================================================================
 // Runtime performance constants - v0.18.5
@@ -638,6 +654,41 @@ double FalconSafeAverageLongAsDouble(const long total, const int count)
    return ((double)total / (double)count);
 }
 
+bool FalconEvaluateFvgQualityShadowGuard(const double fvg_size_points,
+                                         const long fvg_spread_points,
+                                         const int fvg_age_bars,
+                                         const int fvg_hold_quality_score,
+                                         string &reason)
+{
+   reason = "PASS";
+
+   if(fvg_size_points < FALCON_FVG_QGUARD_MIN_SIZE_POINTS)
+   {
+      reason = "FVG_SIZE_BELOW_SHADOW_GUARD_MIN";
+      return false;
+   }
+
+   if(FALCON_FVG_QGUARD_MAX_SPREAD_POINTS > 0 && fvg_spread_points > FALCON_FVG_QGUARD_MAX_SPREAD_POINTS)
+   {
+      reason = "SPREAD_ABOVE_SHADOW_GUARD_MAX";
+      return false;
+   }
+
+   if(FALCON_FVG_QGUARD_MAX_AGE_BARS > 0 && fvg_age_bars > FALCON_FVG_QGUARD_MAX_AGE_BARS)
+   {
+      reason = "FVG_AGE_ABOVE_SHADOW_GUARD_MAX";
+      return false;
+   }
+
+   if(fvg_hold_quality_score < FALCON_FVG_QGUARD_MIN_HOLD_SCORE)
+   {
+      reason = "HOLD_SCORE_BELOW_SHADOW_GUARD_MIN";
+      return false;
+   }
+
+   return true;
+}
+
 void FalconRegisterFvgQualityDistributionMetrics(const FalconFvgMicroShadowCandidateSnapshot &snapshot)
 {
    if(!(snapshot.fvg_detected && snapshot.registry_found && snapshot.input_enabled && snapshot.runtime_safety_ready))
@@ -1021,6 +1072,17 @@ struct FalconTradeLifecycleRecord
    int                       fvg_hold_quality_score;
    string                    fvg_hold_quality_bucket;
    bool                      quality_filters_passed;
+
+   // v0.22.2: locked P03_SIZE250_ONLY FVG quality shadow simulation carried into TradeLifecycle rows.
+   // v0.22.3: OOS validation lock only; behavior and report surface remain unchanged.
+   // Diagnostic only: does not affect entry, exit, SL, TP, risk, or runtime decisions.
+   string                    fvg_quality_shadow_guard_profile;
+   bool                      fvg_quality_shadow_guard_passed;
+   string                    fvg_quality_shadow_guard_decision;
+   string                    fvg_quality_shadow_guard_reason;
+   double                    fvg_quality_shadow_guard_sim_net_points;
+   double                    fvg_quality_shadow_guard_sim_net_usd;
+
    bool                      quality_profile_balanced_passed;
    bool                      quality_profile_strict_size_passed;
    bool                      quality_profile_tight_spread_passed;
@@ -1061,6 +1123,16 @@ struct FalconShadowTradeRecord
    int                              fvg_hold_quality_score;
    string                           fvg_hold_quality_bucket;
    bool                             quality_filters_passed;
+
+   // v0.22.0: FVG quality shadow guard simulation.
+   // These fields are diagnostic only and do not affect actual Shadow lifecycle rows.
+   string                           fvg_quality_shadow_guard_profile;
+   bool                             fvg_quality_shadow_guard_passed;
+   string                           fvg_quality_shadow_guard_decision;
+   string                           fvg_quality_shadow_guard_reason;
+   double                           fvg_quality_shadow_guard_sim_net_points;
+   double                           fvg_quality_shadow_guard_sim_net_usd;
+
    bool                             quality_profile_balanced_passed;
    bool                             quality_profile_strict_size_passed;
    bool                             quality_profile_tight_spread_passed;
@@ -1091,6 +1163,19 @@ struct FalconReportTotals
    int    sell_trades;
    int    sell_win_trades;
    double sell_net_index_points;
+
+   // v0.22.0: Shadow-only quality guard simulation totals.
+   int    fvg_qguard_evaluated;
+   int    fvg_qguard_passed;
+   int    fvg_qguard_blocked;
+   int    fvg_qguard_blocked_winners;
+   int    fvg_qguard_blocked_losers;
+   double fvg_qguard_actual_net_points;
+   double fvg_qguard_simulated_net_points;
+   double fvg_qguard_blocked_net_points;
+   double fvg_qguard_actual_net_usd;
+   double fvg_qguard_simulated_net_usd;
+   double fvg_qguard_blocked_net_usd;
 };
 
 // ==================================================================
@@ -2704,6 +2789,12 @@ private:
       record.fvg_hold_quality_score = 0;
       record.fvg_hold_quality_bucket = "";
       record.quality_filters_passed = false;
+      record.fvg_quality_shadow_guard_profile = "";
+      record.fvg_quality_shadow_guard_passed = false;
+      record.fvg_quality_shadow_guard_decision = "NOT_EVALUATED";
+      record.fvg_quality_shadow_guard_reason = "";
+      record.fvg_quality_shadow_guard_sim_net_points = 0.0;
+      record.fvg_quality_shadow_guard_sim_net_usd = 0.0;
       record.quality_profile_balanced_passed = false;
       record.quality_profile_strict_size_passed = false;
       record.quality_profile_tight_spread_passed = false;
@@ -4568,6 +4659,12 @@ private:
       record.fvg_hold_quality_score = 0;
       record.fvg_hold_quality_bucket = "";
       record.quality_filters_passed = false;
+      record.fvg_quality_shadow_guard_profile = "";
+      record.fvg_quality_shadow_guard_passed = false;
+      record.fvg_quality_shadow_guard_decision = "NOT_EVALUATED";
+      record.fvg_quality_shadow_guard_reason = "";
+      record.fvg_quality_shadow_guard_sim_net_points = 0.0;
+      record.fvg_quality_shadow_guard_sim_net_usd = 0.0;
       record.quality_profile_balanced_passed = false;
       record.quality_profile_strict_size_passed = false;
       record.quality_profile_tight_spread_passed = false;
@@ -4641,6 +4738,9 @@ private:
    string              m_report_creation_guarantee_file;
    FalconSymbolContext m_symbol_context;
    FalconReportTotals  m_totals;
+
+   // v0.22.2 Lock cleanup: multi-profile summary arrays removed from active report surface.
+
    bool                m_initialized;
 
 public:
@@ -5799,6 +5899,7 @@ public:
          return;
 
       FalconFinalizeTradeMetrics(record, m_symbol_context);
+      ApplyFvgQualityShadowGuardSimulation(record);
       UpdateTotals(record);
       AppendTradeRecord(record);
    }
@@ -5855,7 +5956,11 @@ public:
          "FvgHoldQualityScoreMin,FvgHoldQualityScoreAvg,FvgHoldQualityScoreMax,"
          "FvgCandidateBuilderEvaluations,FvgDetectedCandidates,FvgQualityEvaluated,"
          "FvgQualityPassed,FvgQualityRejected,FvgRejectedSize,FvgRejectedSpread,FvgRejectedAge,"
-         "FvgShadowReadyCandidates";
+         "FvgShadowReadyCandidates,"
+         "FvgQGuardProfile,FvgQGuardEvaluated,FvgQGuardPassed,FvgQGuardBlocked,"
+         "FvgQGuardBlockedWinners,FvgQGuardBlockedLosers,"
+         "FvgQGuardActualNetPoints,FvgQGuardSimulatedNetPoints,FvgQGuardDeltaNetPoints,FvgQGuardBlockedNetPoints,"
+         "FvgQGuardActualNetUSD,FvgQGuardSimulatedNetUSD,FvgQGuardDeltaNetUSD,FvgQGuardBlockedNetUSD";
 
       string summary_row =
          FalconCsvSafe(EA_NAME) + "," +
@@ -5904,7 +6009,21 @@ public:
          IntegerToString(g_fvg_micro_rejected_size) + "," +
          IntegerToString(g_fvg_micro_rejected_spread) + "," +
          IntegerToString(g_fvg_micro_rejected_age) + "," +
-         IntegerToString(g_fvg_micro_shadow_ready_candidates);
+         IntegerToString(g_fvg_micro_shadow_ready_candidates) + "," +
+         FalconCsvSafe(FALCON_FVG_QGUARD_PROFILE_TAG) + "," +
+         IntegerToString(m_totals.fvg_qguard_evaluated) + "," +
+         IntegerToString(m_totals.fvg_qguard_passed) + "," +
+         IntegerToString(m_totals.fvg_qguard_blocked) + "," +
+         IntegerToString(m_totals.fvg_qguard_blocked_winners) + "," +
+         IntegerToString(m_totals.fvg_qguard_blocked_losers) + "," +
+         DoubleToString(m_totals.fvg_qguard_actual_net_points, 2) + "," +
+         DoubleToString(m_totals.fvg_qguard_simulated_net_points, 2) + "," +
+         DoubleToString(m_totals.fvg_qguard_simulated_net_points - m_totals.fvg_qguard_actual_net_points, 2) + "," +
+         DoubleToString(m_totals.fvg_qguard_blocked_net_points, 2) + "," +
+         DoubleToString(m_totals.fvg_qguard_actual_net_usd, 2) + "," +
+         DoubleToString(m_totals.fvg_qguard_simulated_net_usd, 2) + "," +
+         DoubleToString(m_totals.fvg_qguard_simulated_net_usd - m_totals.fvg_qguard_actual_net_usd, 2) + "," +
+         DoubleToString(m_totals.fvg_qguard_blocked_net_usd, 2);
 
       // v0.20.2: Write CRLF explicitly as separate strings. This prevents MetaTrader/CSV
       // readers from receiving the header and summary row concatenated on a single line.
@@ -6011,6 +6130,33 @@ private:
                 notes);
    }
 
+   void ApplyFvgQualityShadowGuardSimulation(FalconTradeLifecycleRecord &record)
+   {
+      string guard_reason = "";
+      bool guard_passed = FalconEvaluateFvgQualityShadowGuard(record.fvg_size_points,
+                                                              record.fvg_spread_points,
+                                                              record.fvg_retest_age_bars,
+                                                              record.fvg_hold_quality_score,
+                                                              guard_reason);
+
+      record.fvg_quality_shadow_guard_profile = FALCON_FVG_QGUARD_PROFILE_TAG;
+      record.fvg_quality_shadow_guard_passed = guard_passed;
+      record.fvg_quality_shadow_guard_reason = guard_reason;
+
+      if(guard_passed)
+      {
+         record.fvg_quality_shadow_guard_decision = "WOULD_KEEP";
+         record.fvg_quality_shadow_guard_sim_net_points = record.net_index_points;
+         record.fvg_quality_shadow_guard_sim_net_usd = record.net_usd;
+      }
+      else
+      {
+         record.fvg_quality_shadow_guard_decision = "WOULD_SKIP";
+         record.fvg_quality_shadow_guard_sim_net_points = 0.0;
+         record.fvg_quality_shadow_guard_sim_net_usd = 0.0;
+      }
+   }
+
    void ResetTotals()
    {
       m_totals.total_trades                = 0;
@@ -6032,6 +6178,18 @@ private:
       m_totals.sell_trades                 = 0;
       m_totals.sell_win_trades             = 0;
       m_totals.sell_net_index_points       = 0.0;
+
+      m_totals.fvg_qguard_evaluated             = 0;
+      m_totals.fvg_qguard_passed                = 0;
+      m_totals.fvg_qguard_blocked               = 0;
+      m_totals.fvg_qguard_blocked_winners       = 0;
+      m_totals.fvg_qguard_blocked_losers        = 0;
+      m_totals.fvg_qguard_actual_net_points     = 0.0;
+      m_totals.fvg_qguard_simulated_net_points  = 0.0;
+      m_totals.fvg_qguard_blocked_net_points    = 0.0;
+      m_totals.fvg_qguard_actual_net_usd        = 0.0;
+      m_totals.fvg_qguard_simulated_net_usd     = 0.0;
+      m_totals.fvg_qguard_blocked_net_usd       = 0.0;
    }
 
    void UpdateTotals(const FalconTradeLifecycleRecord &record)
@@ -6066,6 +6224,28 @@ private:
             m_totals.sell_win_trades++;
          m_totals.sell_net_index_points += record.net_index_points;
       }
+
+      m_totals.fvg_qguard_evaluated++;
+      m_totals.fvg_qguard_actual_net_points += record.net_index_points;
+      m_totals.fvg_qguard_actual_net_usd    += record.net_usd;
+
+      if(record.fvg_quality_shadow_guard_passed)
+      {
+         m_totals.fvg_qguard_passed++;
+         m_totals.fvg_qguard_simulated_net_points += record.net_index_points;
+         m_totals.fvg_qguard_simulated_net_usd    += record.net_usd;
+      }
+      else
+      {
+         m_totals.fvg_qguard_blocked++;
+         m_totals.fvg_qguard_blocked_net_points += record.net_index_points;
+         m_totals.fvg_qguard_blocked_net_usd    += record.net_usd;
+
+         if(record.outcome == FALCON_TRADE_OUTCOME_WIN)
+            m_totals.fvg_qguard_blocked_winners++;
+         else if(record.outcome == FALCON_TRADE_OUTCOME_LOSS)
+            m_totals.fvg_qguard_blocked_losers++;
+      }
    }
 
    void WriteTradeHeader()
@@ -6089,6 +6269,8 @@ private:
                 "FvgSetupTime", "FvgRetestWatchTime", "FvgAgeBarsAtWatch", "FvgAgeSource",
                 "FvgRetestFreshState", "FvgHoldQualityScore", "FvgHoldQualityBucket",
                 "QualityFiltersPassed",
+                "FvgQGuardProfile", "FvgQGuardPassed", "FvgQGuardDecision", "FvgQGuardReason",
+                "FvgQGuardSimNetPoints", "FvgQGuardSimNetUSD",
                 "CloseReason", "EvidenceSummary");
       FileClose(handle);
    }
@@ -6160,6 +6342,12 @@ private:
                 record.fvg_hold_quality_score,
                 record.fvg_hold_quality_bucket,
                 FalconBoolToYesNo(record.quality_filters_passed),
+                record.fvg_quality_shadow_guard_profile,
+                FalconBoolToYesNo(record.fvg_quality_shadow_guard_passed),
+                record.fvg_quality_shadow_guard_decision,
+                record.fvg_quality_shadow_guard_reason,
+                DoubleToString(record.fvg_quality_shadow_guard_sim_net_points, 2),
+                DoubleToString(record.fvg_quality_shadow_guard_sim_net_usd, 2),
                 record.close_reason,
                 record.evidence_summary);
       FileClose(handle);
@@ -6174,13 +6362,13 @@ class CFalconExecutionGuard
 public:
    bool CanSendRealOrders()
    {
-      // v0.21.2 locks the FVG Micro quality attribution columns in Shadow mode. Real execution is not allowed even if the input is changed.
+      // v0.22.2 keeps P03_SIZE250_ONLY FVG quality shadow simulation in Shadow mode. Real execution is not allowed even if the input is changed.
       return false;
    }
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.21.2.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.22.2.");
    }
 };
 
