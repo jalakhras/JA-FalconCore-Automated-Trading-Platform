@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.25.2 - FVG Micro Engine Completion Lock |
+//|                     Version: v0.26.1 - FalconGuard Risk Foundation Validation Lock |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.252"
+#property version   "1.261"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.25.2"
-#define EA_BUILD_TAG   "FvgMicroEngineCompletionLock_NoExecution"
+#define EA_VERSION_TAG "v0.26.1"
+#define EA_BUILD_TAG   "FalconGuardRiskFoundationValidationLock_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -134,7 +134,7 @@ long   g_fvg_hold_quality_score_total                = 0;
 #define FALCON_FVG_QGUARD_ROLLBACK_BASELINE               "v0.25.2"
 #define FALCON_FVG_QGUARD_ROLLBACK_TRIGGER                "ROLLBACK_IF_COMPILE_FAILS_OR_SMOKE_TRADE_COUNT_NET_OR_ALIGNED_QGUARD_COUNTERS_DEVIATE_FROM_EXPECTED_SIZE250_RUNTIME_CANDIDATE"
 #define FALCON_FVG_QGUARD_RUNTIME_BLOCKING_RULE           "BLOCK_FVG_MICRO_SHADOW_STAGING_WHEN_FVG_SIZE_POINTS_LT_250_BEFORE_ENTRY"
-#define FALCON_FVG_QGUARD_NEXT_CANDIDATE_VERSION          "v0.26.0_FalconGuardRiskFoundation"
+#define FALCON_FVG_QGUARD_NEXT_CANDIDATE_VERSION          "v0.27.0_TradeManagementFoundation"
 
 // ==================================================================
 // FVG Micro Engine Completion Lock - v0.25.2
@@ -149,8 +149,28 @@ long   g_fvg_hold_quality_score_total                = 0;
 #define FALCON_FVG_ENGINE_COMPLETED_ENGINE_ID            "SCALP.FVG_MICRO"
 #define FALCON_FVG_ENGINE_ACTIVE_STRATEGY_ONLY           "FVG_MICRO_RETEST"
 #define FALCON_FVG_ENGINE_LIVE_PILOT_ELIGIBILITY         "NOT_ELIGIBLE_UNTIL_RISK_TRADE_MANAGEMENT_PAPER_DEMO_VALIDATION"
-#define FALCON_FVG_ENGINE_NEXT_REQUIRED_LAYER            "FALCON_GUARD_RISK_FOUNDATION_THEN_TRADE_MANAGEMENT_FOUNDATION"
-#define FALCON_FVG_ENGINE_NEXT_ENGINEERING_PHASE         "v0.26.0_FalconGuardRiskFoundation"
+#define FALCON_FVG_ENGINE_NEXT_REQUIRED_LAYER            "FALCON_GUARD_RISK_FOUNDATION_ACTIVE_THEN_TRADE_MANAGEMENT_FOUNDATION"
+#define FALCON_FVG_ENGINE_NEXT_ENGINEERING_PHASE         "v0.27.0_TradeManagementFoundation"
+
+// ==================================================================
+// FalconGuard Risk Foundation Validation Lock - v0.26.1
+// Foundation/readiness lock only. This layer documents and validates risk
+// boundaries before Paper/Demo/Live. v0.26.1 locks FalconGuard after
+// Smoke + April + March + February OOS + January OOS validation.
+// It does not send orders and does not alter FVG Micro SIZE250 Shadow lifecycle behavior.
+// ==================================================================
+#define FALCON_GUARD_FOUNDATION_STATUS                  "FALCON_GUARD_RISK_FOUNDATION_VALIDATION_LOCK"
+#define FALCON_GUARD_FOUNDATION_DECISION                "RISK_FOUNDATION_FULL_VALIDATION_LOCKED_NO_EXECUTION"
+#define FALCON_GUARD_SCOPE                              "FIXED_LOT;DAILY_LOSS_LIMIT;MAX_TRADES;MAX_OPEN_POSITIONS;SPREAD_GUARD_READINESS;STOPS_GUARD_READINESS;KILL_SWITCH_DESIGN"
+#define FALCON_GUARD_EXECUTION_PERMISSION               "NO_ORDER_SEND_NO_PAPER_NO_DEMO_NO_LIVE"
+#define FALCON_GUARD_RISK_MODE                          "FIXED_LOT_FIRST"
+#define FALCON_GUARD_ENGINE_ALLOCATION                  "FVG_MICRO_100_PERCENT_ONLY;ALL_OTHER_ENGINES_0_PERCENT"
+#define FALCON_GUARD_KILL_SWITCH_STATUS                 "ARMED_DESIGN_LOCK_NOT_RUNTIME_BLOCKING"
+#define FALCON_GUARD_MANUAL_KILL_SWITCH_STATUS          "FUTURE_READY_NO_USER_INPUT_IN_THIS_VERSION"
+#define FALCON_GUARD_MAX_CONSECUTIVE_LOSSES             3
+#define FALCON_GUARD_LIVE_ELIGIBILITY                   "NOT_ELIGIBLE_UNTIL_TRADE_MANAGEMENT_FOUNDATION_PAPER_DEMO_VALIDATION"
+#define FALCON_GUARD_NEXT_REQUIRED_LAYER                "TRADE_MANAGEMENT_FOUNDATION"
+#define FALCON_GUARD_NEXT_ENGINEERING_PHASE             "v0.27.0_TradeManagementFoundation"
 
 // ==================================================================
 // FVG SIZE250 Runtime Candidate counter alignment lock - v0.25.1
@@ -2357,6 +2377,96 @@ private:
       m_record_count++;
    }
 };
+
+// ==================================================================
+// FalconGuard Risk Foundation utilities - v0.26.1
+// Summary-only readiness helpers. They do not block Shadow staging and
+// do not modify trading lifecycle behavior.
+// ==================================================================
+double FalconGuardDailyLossLimitUsd()
+{
+   if(!UseDailyLossLimit)
+      return 0.0;
+
+   if(UseFixedDailyLossAmount)
+      return FixedDailyLossAmount;
+
+   return FalconConfiguredCapital() * (DailyLossPercentOfCapital / 100.0);
+}
+
+string FalconGuardFixedLotStatus(const FalconSymbolContext &symbol_context)
+{
+   if(!UseFixedLot)
+      return "FIXED_LOT_DISABLED_FUTURE_MODE";
+
+   if(FixedLotSize <= 0.0)
+      return "INVALID_FIXED_LOT_NON_POSITIVE";
+
+   if(FixedLotSize < symbol_context.min_lot || FixedLotSize > symbol_context.max_lot)
+      return "INVALID_FIXED_LOT_OUTSIDE_BROKER_LIMITS";
+
+   return "VALID_FIXED_LOT_WITHIN_BROKER_LIMITS";
+}
+
+string FalconGuardDailyLossStatus()
+{
+   if(!UseDailyLossLimit)
+      return "DAILY_LOSS_LIMIT_DISABLED";
+
+   if(FalconGuardDailyLossLimitUsd() <= 0.0)
+      return "INVALID_DAILY_LOSS_LIMIT";
+
+   return "VALID_DAILY_LOSS_LIMIT_CONFIGURED";
+}
+
+string FalconGuardMaxTradesStatus()
+{
+   if(MaxTradesPerDay < 0)
+      return "INVALID_MAX_TRADES_NEGATIVE";
+   if(MaxTradesPerDay == 0)
+      return "UNLIMITED_MAX_TRADES_BY_INPUT";
+   return "VALID_MAX_TRADES_LIMIT_CONFIGURED";
+}
+
+string FalconGuardMaxOpenPositionsStatus()
+{
+   if(MaxOpenPositions < 0)
+      return "INVALID_MAX_OPEN_POSITIONS_NEGATIVE";
+   if(MaxOpenPositions == 0)
+      return "UNLIMITED_MAX_OPEN_POSITIONS_BY_INPUT";
+   return "VALID_MAX_OPEN_POSITIONS_LIMIT_CONFIGURED";
+}
+
+string FalconGuardSpreadGuardStatus(const FalconSymbolContext &symbol_context)
+{
+   if(symbol_context.spread_points < 0)
+      return "SPREAD_NOT_AVAILABLE";
+   return "SPREAD_VALUE_AVAILABLE_READINESS_ONLY_NOT_BLOCKING";
+}
+
+string FalconGuardStopsLevelGuardStatus(const FalconSymbolContext &symbol_context)
+{
+   if(symbol_context.stops_level_points < 0)
+      return "STOPS_LEVEL_NOT_AVAILABLE";
+   return "STOPS_LEVEL_AVAILABLE_READINESS_ONLY_NOT_BLOCKING";
+}
+
+string FalconGuardOverallStatus(const FalconSymbolContext &symbol_context)
+{
+   if(FalconGuardFixedLotStatus(symbol_context) != "VALID_FIXED_LOT_WITHIN_BROKER_LIMITS")
+      return "CONFIG_REVIEW_REQUIRED_FIXED_LOT";
+
+   if(FalconGuardDailyLossStatus() == "INVALID_DAILY_LOSS_LIMIT")
+      return "CONFIG_REVIEW_REQUIRED_DAILY_LOSS";
+
+   if(FalconGuardMaxTradesStatus() == "INVALID_MAX_TRADES_NEGATIVE")
+      return "CONFIG_REVIEW_REQUIRED_MAX_TRADES";
+
+   if(FalconGuardMaxOpenPositionsStatus() == "INVALID_MAX_OPEN_POSITIONS_NEGATIVE")
+      return "CONFIG_REVIEW_REQUIRED_MAX_OPEN_POSITIONS";
+
+   return "READY_FOR_TRADE_MANAGEMENT_FOUNDATION_NOT_LIVE";
+}
 
 // ==================================================================
 // Risk Foundation - validates only. No lot calculations yet.
@@ -6060,7 +6170,16 @@ public:
          "FvgQGuardRuntimeRejectedAfterPass,FvgQGuardRuntimeStagedButNotClosed,"
          "FvgMicroEngineCompletionStatus,FvgMicroEngineCompletionDecision,FvgMicroEngineCompletionScope,"
          "FvgMicroEngineCompletedEngineId,FvgMicroEngineActiveStrategyOnly,"
-         "FvgMicroEngineLivePilotEligibility,FvgMicroEngineNextRequiredLayer,FvgMicroEngineNextEngineeringPhase";
+         "FvgMicroEngineLivePilotEligibility,FvgMicroEngineNextRequiredLayer,FvgMicroEngineNextEngineeringPhase,"
+         "FalconGuardFoundationStatus,FalconGuardFoundationDecision,FalconGuardOverallStatus,"
+         "FalconGuardScope,FalconGuardExecutionPermission,FalconGuardRiskMode,"
+         "FalconGuardConfiguredCapital,FalconGuardFixedLotSize,FalconGuardFixedLotStatus,"
+         "FalconGuardDailyLossLimitEnabled,FalconGuardDailyLossLimitUSD,FalconGuardDailyLossStatus,"
+         "FalconGuardMaxTradesPerDay,FalconGuardMaxTradesStatus,"
+         "FalconGuardMaxOpenPositions,FalconGuardMaxOpenPositionsStatus,"
+         "FalconGuardMaxConsecutiveLosses,FalconGuardSpreadGuardStatus,FalconGuardStopsLevelGuardStatus,"
+         "FalconGuardEngineAllocation,FalconGuardKillSwitchStatus,FalconGuardManualKillSwitchStatus,"
+         "FalconGuardLiveEligibility,FalconGuardNextRequiredLayer,FalconGuardNextEngineeringPhase";
 
       string summary_row =
          FalconCsvSafe(EA_NAME) + "," +
@@ -6157,7 +6276,32 @@ public:
          FalconCsvSafe(FALCON_FVG_ENGINE_ACTIVE_STRATEGY_ONLY) + "," +
          FalconCsvSafe(FALCON_FVG_ENGINE_LIVE_PILOT_ELIGIBILITY) + "," +
          FalconCsvSafe(FALCON_FVG_ENGINE_NEXT_REQUIRED_LAYER) + "," +
-         FalconCsvSafe(FALCON_FVG_ENGINE_NEXT_ENGINEERING_PHASE);
+         FalconCsvSafe(FALCON_FVG_ENGINE_NEXT_ENGINEERING_PHASE) + "," +
+         FalconCsvSafe(FALCON_GUARD_FOUNDATION_STATUS) + "," +
+         FalconCsvSafe(FALCON_GUARD_FOUNDATION_DECISION) + "," +
+         FalconCsvSafe(FalconGuardOverallStatus(m_symbol_context)) + "," +
+         FalconCsvSafe(FALCON_GUARD_SCOPE) + "," +
+         FalconCsvSafe(FALCON_GUARD_EXECUTION_PERMISSION) + "," +
+         FalconCsvSafe(FALCON_GUARD_RISK_MODE) + "," +
+         DoubleToString(FalconConfiguredCapital(), 2) + "," +
+         DoubleToString(FixedLotSize, 2) + "," +
+         FalconCsvSafe(FalconGuardFixedLotStatus(m_symbol_context)) + "," +
+         FalconBoolToYesNo(UseDailyLossLimit) + "," +
+         DoubleToString(FalconGuardDailyLossLimitUsd(), 2) + "," +
+         FalconCsvSafe(FalconGuardDailyLossStatus()) + "," +
+         IntegerToString(MaxTradesPerDay) + "," +
+         FalconCsvSafe(FalconGuardMaxTradesStatus()) + "," +
+         IntegerToString(MaxOpenPositions) + "," +
+         FalconCsvSafe(FalconGuardMaxOpenPositionsStatus()) + "," +
+         IntegerToString(FALCON_GUARD_MAX_CONSECUTIVE_LOSSES) + "," +
+         FalconCsvSafe(FalconGuardSpreadGuardStatus(m_symbol_context)) + "," +
+         FalconCsvSafe(FalconGuardStopsLevelGuardStatus(m_symbol_context)) + "," +
+         FalconCsvSafe(FALCON_GUARD_ENGINE_ALLOCATION) + "," +
+         FalconCsvSafe(FALCON_GUARD_KILL_SWITCH_STATUS) + "," +
+         FalconCsvSafe(FALCON_GUARD_MANUAL_KILL_SWITCH_STATUS) + "," +
+         FalconCsvSafe(FALCON_GUARD_LIVE_ELIGIBILITY) + "," +
+         FalconCsvSafe(FALCON_GUARD_NEXT_REQUIRED_LAYER) + "," +
+         FalconCsvSafe(FALCON_GUARD_NEXT_ENGINEERING_PHASE);
 
       // v0.20.2: Write CRLF explicitly as separate strings. This prevents MetaTrader/CSV
       // readers from receiving the header and summary row concatenated on a single line.
@@ -6502,7 +6646,7 @@ public:
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.25.1. SIZE250 can only block Shadow staging.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.26.1. SIZE250 can only block Shadow staging; FalconGuard validation lock is readiness-only.");
    }
 };
 
@@ -6686,7 +6830,7 @@ int OnInit()
    PrintFormat("============================================================");
    PrintFormat("%s", EA_NAME);
    PrintFormat("Version: %s | Build: %s", EA_VERSION_TAG, EA_BUILD_TAG);
-   PrintFormat("Stage: FVG SIZE250 Runtime Candidate Controlled Shadow Activation / No OrderSend / No real execution");
+   PrintFormat("Stage: FalconGuard Risk Foundation / FVG Micro SIZE250 Shadow Candidate / No OrderSend / No real execution");
    PrintFormat("ReportProfile: %s", FalconReportProfileToString());
    PrintFormat("============================================================");
    FalconPrintReportFolderHints();
@@ -6759,7 +6903,7 @@ int OnInit()
    g_execution_guard.AssertNoExecution();
 
    g_is_initialized = true;
-   CFalconLogger::Info("Initialization completed successfully. EA is idle, safe, and report-ready.");
+   CFalconLogger::Info("Initialization completed successfully. EA is Shadow-only, FalconGuard risk-ready, and report-ready.");
    return INIT_SUCCEEDED;
 }
 
