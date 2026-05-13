@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.28.1 - StructuralStop + TPBuilder Validation Lock |
+//|                     Version: v0.29.8 - Decision Tree Timing Feasibility Validation Lock |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.281"
+#property version   "1.298"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.28.1"
-#define EA_BUILD_TAG   "StructuralStopTPBuilderValidationLock_NoExecution"
+#define EA_VERSION_TAG "v0.29.8"
+#define EA_BUILD_TAG   "DecisionTreeTimingFeasibilityValidationLock_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -228,6 +228,91 @@ long   g_fvg_hold_quality_score_total                = 0;
 #define FALCON_SLTP_TP_BUILDER_POLICY                    "TP1_TP2_TP3_MUST_EXIST_AND_BE_DIRECTIONALLY_PROFITABLE_BEFORE_PAPER_DEMO_LIVE"
 #define FALCON_SLTP_NO_LOOKAHEAD_POLICY                  "VALIDATION_USES_STAGED_PLAN_VALUES_ONLY_NO_FUTURE_BAR_STATE"
 #define FALCON_SLTP_NEXT_ENGINEERING_PHASE               "v0.29.0_SmartTradeManagementDiagnosticsFoundation"
+
+// ==================================================================
+// Smart Trade Management Diagnostics Foundation - v0.29.0
+// Summary-only diagnostic layer. It quantifies proof/anti-proof/behavior
+// and runner opportunity without changing exits, partials, runners, SL, TP,
+// Paper/Demo/Live, or broker execution.
+// ==================================================================
+#define FALCON_SMART_TM_STATUS                            "SMART_TRADE_MANAGEMENT_RUNNER_MFE_GIVEBACK_DIAGNOSTICS_ACTIVE"
+#define FALCON_SMART_TM_DECISION                          "RUNNER_MFE_GIVEBACK_DIAGNOSTICS_READY_NO_RUNTIME_EXIT_CHANGES"
+#define FALCON_SMART_TM_SCOPE                             "CALIBRATED_PROOF_SCORE;BEHAVIOR_FINGERPRINT;RUNNER_OPPORTUNITY;MFE_PROXY;GIVEBACK_ROOM_PROXY;MAX_R_PROXY;BAR_PATH_READINESS"
+#define FALCON_SMART_TM_RUNTIME_ENFORCED                  false
+#define FALCON_SMART_TM_PROOF_POLICY                      "PROOF_CALIBRATED_PRIOR_STATE_QUALITY_STRUCTURE_ONLY_NO_RUNTIME_RUNNER_OR_EXIT_CHANGE"
+#define FALCON_SMART_TM_ANTI_PROOF_POLICY                 "ANTI_PROOF_CALIBRATED_PRE_EXIT_WEAKNESS_PROXIES_ONLY_NO_RUNTIME_EARLY_EXIT_CHANGE"
+#define FALCON_SMART_TM_BEHAVIOR_POLICY                   "BEHAVIOR_FINGERPRINT_SUMMARY_ONLY_HEALTHY_CHOPPY_GRINDING_EXHAUSTED_FAILURE"
+#define FALCON_SMART_TM_RUNNER_POLICY                     "RUNNER_MFE_GIVEBACK_PROXY_DIAGNOSTICS_ONLY_NOT_RUNTIME_ACTIVE"
+#define FALCON_SMART_TM_NEXT_ENGINEERING_PHASE            "v0.29.3_RunnerBarPathMfeGivebackCalibration"
+
+// ==================================================================
+// Runner MFE/Giveback Diagnostics - v0.29.2
+// Summary-only proxy diagnostics. Uses planned TP geometry and realized
+// lifecycle outcomes only. It does not use future bar-path ordering, does not
+// modify exits, and does not activate runner, partials, ratchet, Paper, Demo,
+// Live, or OrderSend. Exact post-TP MFE/Giveback requires a later bar-path module.
+// ==================================================================
+#define FALCON_RUNNER_DIAG_STATUS                         "RUNNER_MFE_GIVEBACK_PROXY_DIAGNOSTICS_ACTIVE"
+#define FALCON_RUNNER_DIAG_DECISION                       "PROXY_DIAGNOSTICS_READY_BAR_PATH_REQUIRED_BEFORE_RUNTIME"
+#define FALCON_RUNNER_DIAG_RUNTIME_ENFORCED               false
+#define FALCON_RUNNER_DIAG_MFE_POLICY                     "MFE_PROXY_USES_REALIZED_FAVORABLE_EXIT_POINTS_ONLY_NO_FUTURE_BAR_PATH"
+#define FALCON_RUNNER_DIAG_GIVEBACK_POLICY                "GIVEBACK_PROXY_USES_TP1_TP2_TP3_REMAINING_ROOM_NOT_RUNTIME_TRAIL"
+#define FALCON_RUNNER_DIAG_MAXR_POLICY                    "MAX_R_PROXY_USES_STRUCTURAL_SL_RISK_AND_PLANNED_TARGETS"
+#define FALCON_RUNNER_DIAG_RETURN_TO_LOSS_POLICY          "RETURN_TO_LOSS_AFTER_PROOF_REQUIRES_BAR_PATH_NEXT_PHASE"
+#define FALCON_RUNNER_DIAG_NEXT_PHASE                     "v0.29.3_BarPathMfeGivebackCalibration"
+
+// v0.29.3a: Runner bar-path metric definition calibration. Summary-only; no runtime exit changes.
+#define FALCON_RUNNER_BARPATH_STATUS                      "RUNNER_BAR_PATH_METRIC_DEFINITION_CALIBRATION_ACTIVE"
+#define FALCON_RUNNER_BARPATH_DECISION                    "BAR_PATH_METRIC_DEFINITIONS_CALIBRATED_NO_RUNTIME_EXIT_CHANGES"
+#define FALCON_RUNNER_BARPATH_RUNTIME_ENFORCED            false
+#define FALCON_RUNNER_BARPATH_POLICY                      "M5_BAR_PATH_CALIBRATED_EXTENSION_METRICS_DIAGNOSTIC_ONLY_NO_RUNTIME"
+#define FALCON_RUNNER_BARPATH_NEXT_PHASE                  "v0.29.4_FastProtectionRunnerDecisionReadinessDiagnostics"
+
+// ==================================================================
+// Fast Protection / Runner Decision Readiness Diagnostics - v0.29.4
+// Summary-only diagnostic layer. It prepares fast TP1/TP2 decision readiness
+// counters from existing proof, anti-proof, SL/TP validation, and bar-path data.
+// It does not change exits, SL, TP, partials, runner, Paper, Demo, Live, or OrderSend.
+// ==================================================================
+#define FALCON_FAST_TM_STATUS                              "FAST_PROTECTION_RUNNER_DECISION_READINESS_DIAGNOSTICS_ACTIVE"
+#define FALCON_FAST_TM_DECISION                            "FAST_DECISION_READINESS_MEASURED_NO_RUNTIME_EXIT_CHANGES"
+#define FALCON_FAST_TM_RUNTIME_ENFORCED                    false
+#define FALCON_FAST_TM_LATENCY_MODE                        "PRE_COMPUTED_DECISION_TREE_DIAGNOSTIC_ONLY_EVENT_DRIVEN_READY_NOT_ENFORCED"
+#define FALCON_FAST_TM_DECISION_PROFILE                    "TP1_FAST_PROTECTION;TP2_FAST_RUNNER_CONFIRMATION;ANTI_PROOF_WARNING;NO_EARLY_BE"
+#define FALCON_FAST_TM_POLICY                              "PREPARE_DECISIONS_BEFORE_TP_TOUCH_EXECUTE_LATER_ONLY_AFTER_PAPER_DEMO_VALIDATION"
+#define FALCON_FAST_TM_NEXT_PHASE                          "v0.29.5_TP1TP2DecisionTreeShadowSimulation"
+
+// ==================================================================
+// TP1/TP2 pre-computed decision tree shadow simulation - v0.29.5
+// Summary-only diagnostics. Decisions are simulated from existing Fast TM
+// readiness counters. No exit, SL/TP, partial, runner, or execution changes.
+// ==================================================================
+#define FALCON_DECISION_TREE_STATUS                         "TP1_TP2_DECISION_TREE_SHADOW_SIMULATION_ACTIVE"
+#define FALCON_DECISION_TREE_DECISION                       "PRE_COMPUTED_BRANCHES_MEASURED_NO_RUNTIME_ACTIONS"
+#define FALCON_DECISION_TREE_RUNTIME_ENFORCED               false
+#define FALCON_DECISION_TREE_SCOPE                          "TP1_PARTIAL_PROTECT_RUNNER_WAIT_EXIT;TP2_PROTECT_RUNNER_EXIT"
+#define FALCON_DECISION_TREE_POLICY                         "LOOKUP_PRECOMPUTED_DECISION_ON_TP1_TP2_TOUCH_DIAGNOSTIC_ONLY"
+#define FALCON_DECISION_TREE_NEXT_PHASE                     "v0.29.6_DecisionTreeBarPathOutcomeSimulation"
+
+#define FALCON_DECISION_TREE_OUTCOME_STATUS                 "DECISION_TREE_BAR_PATH_OUTCOME_SIMULATION_ACTIVE"
+#define FALCON_DECISION_TREE_OUTCOME_DECISION               "OUTCOME_RATIOS_NORMALIZED_NO_RUNTIME_ACTIONS"
+#define FALCON_DECISION_TREE_OUTCOME_RUNTIME_ENFORCED       false
+#define FALCON_DECISION_TREE_OUTCOME_POLICY                 "ESTIMATE_TP1_TP2_BRANCH_OUTCOMES_FROM_BAR_PATH_DIAGNOSTICS_ONLY"
+#define FALCON_DECISION_TREE_OUTCOME_NEXT_PHASE             "v0.29.7_DecisionTreeExecutionFeasibilityTimingDiagnostics"
+
+// ==================================================================
+// Decision Tree Timing Feasibility Validation Lock - v0.29.8
+// Summary-only diagnostics. Measures whether protection / runner decisions
+// were pre-computed before TP1/TP2 events using decision cache readiness.
+// This does NOT activate protection, runner, SL movement, OrderSend, Paper,
+// Demo, or Live behavior. Exact intra-bar execution ordering remains future
+// Paper/Demo work.
+// ==================================================================
+#define FALCON_DT_TIMING_STATUS                         "DECISION_TREE_TIMING_FEASIBILITY_VALIDATION_LOCK"
+#define FALCON_DT_TIMING_DECISION                       "TIMING_FEASIBILITY_FULL_VALIDATION_LOCKED_NO_RUNTIME_ACTIONS"
+#define FALCON_DT_TIMING_RUNTIME_ENFORCED               false
+#define FALCON_DT_TIMING_POLICY                         "PRECOMPUTED_DECISION_CACHE_LOCKED_PROXY_ONLY_NO_RUNTIME"
+#define FALCON_DT_TIMING_NEXT_PHASE                     "v0.30.0_PaperExecutionReadinessOrderLifecycleFoundation"
 
 // ==================================================================
 // FVG SIZE250 Runtime Candidate counter alignment lock - v0.25.1
@@ -1313,6 +1398,115 @@ struct FalconReportTotals
    int    tp1_valid_trades;
    int    tp2_valid_trades;
    int    tp3_valid_trades;
+
+   // v0.29.1: Smart Trade Management behavior/proof calibration. Summary-only; no runtime exit changes.
+   int    smart_tm_evaluated_trades;
+   int    smart_tm_proof_score_min;
+   int    smart_tm_proof_score_max;
+   long   smart_tm_proof_score_total;
+   int    smart_tm_exit_conservative_trades;
+   int    smart_tm_partial_no_runner_trades;
+   int    smart_tm_runner_candidate_trades;
+   int    smart_tm_strong_runner_candidate_trades;
+   long   smart_tm_antiproof_score_total;
+   int    smart_tm_antiproof_score_max;
+   int    smart_tm_antiproof_high_risk_trades;
+   int    smart_tm_behavior_healthy_trades;
+   int    smart_tm_behavior_choppy_trades;
+   int    smart_tm_behavior_failure_trades;
+   int    smart_tm_runner_opportunity_trades;
+   int    smart_tm_strong_runner_opportunity_trades;
+   int    smart_tm_tp1_close_trades;
+   int    smart_tm_sl_failure_trades;
+   int    smart_tm_timeout_close_trades;
+
+   // v0.29.1: Calibrated proof/behavior buckets. Summary-only; no runtime exit changes.
+   int    smart_tm_proof_weak_trades;
+   int    smart_tm_proof_medium_trades;
+   int    smart_tm_proof_strong_trades;
+   int    smart_tm_proof_elite_trades;
+   int    smart_tm_behavior_grinding_trades;
+   int    smart_tm_behavior_exhausted_trades;
+   int    smart_tm_runner_conservative_opportunity_trades;
+
+   // v0.29.2: Runner MFE/Giveback proxy diagnostics. Summary-only; no runtime exit changes.
+   int    runner_diag_evaluated_trades;
+   int    runner_diag_tp1_anchor_trades;
+   int    runner_diag_tp2_anchor_trades;
+   int    runner_diag_mfe_proxy_trades;
+   double runner_diag_mfe_proxy_total_points;
+   double runner_diag_mfe_proxy_max_points;
+   double runner_diag_tp1_to_tp2_room_total_points;
+   double runner_diag_tp1_to_tp3_room_total_points;
+   double runner_diag_tp2_to_tp3_room_total_points;
+   double runner_diag_max_r_proxy_total;
+   double runner_diag_max_r_proxy_max;
+   int    runner_diag_would_reach_3r_trades;
+   int    runner_diag_would_reach_5r_trades;
+   int    runner_diag_protected_profit_opportunity_trades;
+   int    runner_diag_return_to_loss_after_proof_unknown_trades;
+
+   // v0.29.3a: Runner bar-path metric definition calibration totals. Summary-only; no runtime exit changes.
+   int    runner_barpath_evaluated_trades;
+   int    runner_barpath_scanned_trades;
+   int    runner_barpath_scan_failed_trades;
+   int    runner_barpath_total_bars_scanned;
+   int    runner_barpath_tp1_touched_trades;
+   int    runner_barpath_tp2_touched_trades;
+   int    runner_barpath_tp1_touched_then_extended_trades;
+   int    runner_barpath_tp2_touched_then_extended_trades;
+   double runner_barpath_tp1_to_max_run_total_points;
+   double runner_barpath_tp1_to_max_run_max_points;
+   double runner_barpath_tp2_to_max_run_total_points;
+   double runner_barpath_tp2_to_max_run_max_points;
+   double runner_barpath_mfe_after_tp1_total_points;
+   double runner_barpath_mfe_after_tp1_max_points;
+   double runner_barpath_mfe_after_tp2_total_points;
+   double runner_barpath_mfe_after_tp2_max_points;
+   double runner_barpath_giveback_after_tp1_total_points;
+   double runner_barpath_giveback_after_tp1_max_points;
+   double runner_barpath_giveback_after_tp2_total_points;
+   double runner_barpath_giveback_after_tp2_max_points;
+   int    runner_barpath_returned_to_loss_after_tp1_trades;
+   int    runner_barpath_returned_to_loss_after_tp2_trades;
+   int    runner_barpath_actual_would_reach_3r_trades;
+   int    runner_barpath_actual_would_reach_5r_trades;
+   int    runner_barpath_protected_after_tp1_opportunity_trades;
+   int    runner_barpath_protected_after_tp2_opportunity_trades;
+
+   // v0.29.4: Fast protection / runner decision readiness diagnostics. Summary-only; no runtime exit changes.
+   int    fast_tm_evaluated_trades;
+   int    fast_tm_decision_cache_ready_trades;
+   int    fast_tm_precomputed_branch_ready_trades;
+   int    fast_tm_tp1_decision_ready_trades;
+   int    fast_tm_tp2_decision_ready_trades;
+   int    fast_tm_protection_required_after_tp1_trades;
+   int    fast_tm_protection_required_after_tp2_trades;
+   int    fast_tm_immediate_runner_candidate_trades;
+   int    fast_tm_immediate_exit_warning_trades;
+   int    fast_tm_fast_antiproof_warning_trades;
+   int    fast_tm_conservative_partial_ready_trades;
+   int    fast_tm_runner_wait_for_confirmation_trades;
+};
+
+struct FalconRunnerBarPathStats
+{
+   bool   scan_ok;
+   int    bars_scanned;
+   bool   tp1_touched;
+   bool   tp2_touched;
+   bool   tp1_touched_then_extended;
+   bool   tp2_touched_then_extended;
+   double tp1_to_max_run_points;
+   double tp2_to_max_run_points;
+   double max_favorable_points;
+   double mfe_after_tp1_points;
+   double mfe_after_tp2_points;
+   double giveback_after_tp1_points;
+   double giveback_after_tp2_points;
+   bool   returned_to_loss_after_tp1;
+   bool   returned_to_loss_after_tp2;
+   double max_r_actual_proxy;
 };
 
 // ==================================================================
@@ -1691,6 +1885,379 @@ bool FalconTakeProfitSequenceValid(const FalconTradeLifecycleRecord &record)
       return (record.tp1 >= record.tp2 && record.tp2 >= record.tp3);
 
    return false;
+}
+
+int FalconClampInt(const int value, const int min_value, const int max_value)
+{
+   if(value < min_value)
+      return min_value;
+   if(value > max_value)
+      return max_value;
+   return value;
+}
+
+bool FalconCloseReasonContains(const FalconTradeLifecycleRecord &record, const string token)
+{
+   return (StringFind(record.close_reason, token) >= 0);
+}
+
+bool FalconClosedAtTp1(const FalconTradeLifecycleRecord &record)
+{
+   return FalconCloseReasonContains(record, "TP1");
+}
+
+bool FalconClosedAtStop(const FalconTradeLifecycleRecord &record)
+{
+   return FalconCloseReasonContains(record, "SL") || FalconCloseReasonContains(record, "STOP");
+}
+
+bool FalconClosedByTimeout(const FalconTradeLifecycleRecord &record)
+{
+   return FalconCloseReasonContains(record, "TIMEOUT");
+}
+
+int FalconSmartProofScore(const FalconTradeLifecycleRecord &record)
+{
+   // v0.29.1 calibration: proof is intentionally based on setup/quality/structure
+   // information that is known before or during management, not on final PnL.
+   int score = 0;
+
+   if(record.fvg_quality_shadow_guard_passed)
+      score += 20;
+
+   if(record.fvg_hold_quality_score >= 80)
+      score += 20;
+   else if(record.fvg_hold_quality_score >= 40)
+      score += 10;
+
+   if(record.fvg_retest_fresh_state == "FRESH")
+      score += 10;
+
+   if(record.fvg_size_points >= 1000.0)
+      score += 15;
+   else if(record.fvg_size_points >= 500.0)
+      score += 10;
+   else if(record.fvg_size_points >= FALCON_FVG_QGUARD_MIN_SIZE_POINTS)
+      score += 5;
+
+   if(record.fvg_spread_points <= 100.0)
+      score += 10;
+   else if(record.fvg_spread_points <= 200.0)
+      score += 5;
+
+   if(record.fvg_retest_age_bars <= 3)
+      score += 10;
+   else if(record.fvg_retest_age_bars <= 6)
+      score += 5;
+
+   if(FalconStructuralStopValid(record))
+      score += 5;
+
+   if(FalconTakeProfitSequenceValid(record))
+      score += 10;
+
+   return FalconClampInt(score, 0, 100);
+}
+
+int FalconSmartAntiProofScore(const FalconTradeLifecycleRecord &record)
+{
+   // v0.29.1 calibration: anti-proof focuses on pre-exit weakness proxies
+   // rather than final WIN/LOSS outcome.
+   int score = 0;
+
+   if(record.fvg_hold_quality_score < 40)
+      score += 25;
+   else if(record.fvg_hold_quality_score < 80)
+      score += 15;
+
+   if(record.fvg_retest_fresh_state != "FRESH")
+      score += 15;
+
+   if(record.fvg_size_points < FALCON_FVG_QGUARD_MIN_SIZE_POINTS)
+      score += 25;
+   else if(record.fvg_size_points < 500.0)
+      score += 10;
+
+   if(record.fvg_spread_points > 200.0)
+      score += 20;
+   else if(record.fvg_spread_points > 150.0)
+      score += 10;
+
+   if(record.fvg_retest_age_bars > 20)
+      score += 20;
+   else if(record.fvg_retest_age_bars > 6)
+      score += 10;
+
+   if(!FalconStructuralStopValid(record))
+      score += 25;
+
+   if(!FalconTakeProfitSequenceValid(record))
+      score += 20;
+
+   if(FalconClosedByTimeout(record))
+      score += 10; // still recorded, but lower weight than v0.29.0 outcome-driven model
+
+   return FalconClampInt(score, 0, 100);
+}
+
+string FalconSmartBehaviorFingerprint(const int proof_score, const int anti_proof_score)
+{
+   if(anti_proof_score >= 60)
+      return "FAILURE_RISK";
+
+   if(anti_proof_score >= 45 && proof_score < 65)
+      return "EXHAUSTED";
+
+   if(anti_proof_score >= 25 || proof_score < 70)
+      return "GRINDING";
+
+   if(proof_score >= 80 && anti_proof_score < 25)
+      return "HEALTHY";
+
+   return "CHOPPY";
+}
+
+// v0.29.2: Runner MFE/Giveback proxy helpers. These use only the closed
+// lifecycle record and planned objectives. They intentionally do not infer
+// intra-bar order or post-exit path. Exact MFE/Giveback is deferred to a
+// future bar-path diagnostics layer.
+double FalconDirectionalProfitPoints(const FalconTradeLifecycleRecord &record, const double target_price)
+{
+   if(record.entry_price <= 0.0 || target_price <= 0.0)
+      return 0.0;
+
+   if(record.direction == FALCON_DIRECTION_BUY)
+      return MathMax(0.0, target_price - record.entry_price);
+
+   if(record.direction == FALCON_DIRECTION_SELL)
+      return MathMax(0.0, record.entry_price - target_price);
+
+   return 0.0;
+}
+
+double FalconStructuralRiskPoints(const FalconTradeLifecycleRecord &record)
+{
+   if(record.entry_price <= 0.0 || record.structural_sl <= 0.0)
+      return 0.0;
+
+   if(record.direction == FALCON_DIRECTION_BUY && record.structural_sl < record.entry_price)
+      return record.entry_price - record.structural_sl;
+
+   if(record.direction == FALCON_DIRECTION_SELL && record.structural_sl > record.entry_price)
+      return record.structural_sl - record.entry_price;
+
+   return 0.0;
+}
+
+double FalconRunnerRoomBetweenTargets(const FalconTradeLifecycleRecord &record, const double from_price, const double to_price)
+{
+   if(from_price <= 0.0 || to_price <= 0.0)
+      return 0.0;
+
+   if(record.direction == FALCON_DIRECTION_BUY)
+      return MathMax(0.0, to_price - from_price);
+
+   if(record.direction == FALCON_DIRECTION_SELL)
+      return MathMax(0.0, from_price - to_price);
+
+   return 0.0;
+}
+
+double FalconMaxTargetRProxy(const FalconTradeLifecycleRecord &record)
+{
+   double risk_points = FalconStructuralRiskPoints(record);
+   if(risk_points <= 0.0)
+      return 0.0;
+
+   double tp1_r = FalconDirectionalProfitPoints(record, record.tp1) / risk_points;
+   double tp2_r = FalconDirectionalProfitPoints(record, record.tp2) / risk_points;
+   double tp3_r = FalconDirectionalProfitPoints(record, record.tp3) / risk_points;
+
+   return MathMax(tp1_r, MathMax(tp2_r, tp3_r));
+}
+
+// v0.29.3a: Runner bar-path diagnostics helpers. These scan M5 closed bars between
+// entry and exit to estimate post-TP1/TP2 expansion and giveback. They are
+// diagnostics only and never alter exits, SL, TP, staging, or execution.
+void FalconResetRunnerBarPathStats(FalconRunnerBarPathStats &stats)
+{
+   stats.scan_ok = false;
+   stats.bars_scanned = 0;
+   stats.tp1_touched = false;
+   stats.tp2_touched = false;
+   stats.tp1_touched_then_extended = false;
+   stats.tp2_touched_then_extended = false;
+   stats.tp1_to_max_run_points = 0.0;
+   stats.tp2_to_max_run_points = 0.0;
+   stats.max_favorable_points = 0.0;
+   stats.mfe_after_tp1_points = 0.0;
+   stats.mfe_after_tp2_points = 0.0;
+   stats.giveback_after_tp1_points = 0.0;
+   stats.giveback_after_tp2_points = 0.0;
+   stats.returned_to_loss_after_tp1 = false;
+   stats.returned_to_loss_after_tp2 = false;
+   stats.max_r_actual_proxy = 0.0;
+}
+
+bool FalconTargetTouchedByBar(const FalconTradeLifecycleRecord &record, const double bar_high, const double bar_low, const double target_price)
+{
+   if(target_price <= 0.0)
+      return false;
+
+   if(record.direction == FALCON_DIRECTION_BUY)
+      return (bar_high >= target_price);
+
+   if(record.direction == FALCON_DIRECTION_SELL)
+      return (bar_low <= target_price);
+
+   return false;
+}
+
+double FalconBarFavorablePoints(const FalconTradeLifecycleRecord &record, const double bar_high, const double bar_low)
+{
+   if(record.entry_price <= 0.0)
+      return 0.0;
+
+   if(record.direction == FALCON_DIRECTION_BUY)
+      return MathMax(0.0, bar_high - record.entry_price);
+
+   if(record.direction == FALCON_DIRECTION_SELL)
+      return MathMax(0.0, record.entry_price - bar_low);
+
+   return 0.0;
+}
+
+bool FalconBarReturnedToEntryAfterProof(const FalconTradeLifecycleRecord &record, const double bar_high, const double bar_low)
+{
+   if(record.entry_price <= 0.0)
+      return false;
+
+   if(record.direction == FALCON_DIRECTION_BUY)
+      return (bar_low <= record.entry_price);
+
+   if(record.direction == FALCON_DIRECTION_SELL)
+      return (bar_high >= record.entry_price);
+
+   return false;
+}
+
+double FalconExitFavorablePoints(const FalconTradeLifecycleRecord &record)
+{
+   if(record.entry_price <= 0.0 || record.exit_price <= 0.0)
+      return record.net_index_points;
+
+   if(record.direction == FALCON_DIRECTION_BUY)
+      return (record.exit_price - record.entry_price);
+
+   if(record.direction == FALCON_DIRECTION_SELL)
+      return (record.entry_price - record.exit_price);
+
+   return record.net_index_points;
+}
+
+bool FalconBuildRunnerBarPathStats(const FalconTradeLifecycleRecord &record, FalconRunnerBarPathStats &stats)
+{
+   FalconResetRunnerBarPathStats(stats);
+
+   if(record.entry_time <= 0 || record.exit_time <= 0 || record.exit_time < record.entry_time)
+      return false;
+   if(record.entry_price <= 0.0 || record.tp1 <= 0.0 || record.tp2 <= 0.0)
+      return false;
+
+   int entry_shift = iBarShift(_Symbol, PERIOD_M5, record.entry_time, false);
+   int exit_shift  = iBarShift(_Symbol, PERIOD_M5, record.exit_time,  false);
+   if(entry_shift < 0 || exit_shift < 0)
+      return false;
+
+   int start_shift = entry_shift;
+   int end_shift   = exit_shift;
+   if(start_shift < end_shift)
+   {
+      int tmp = start_shift;
+      start_shift = end_shift;
+      end_shift = tmp;
+   }
+
+   double tp1_points = FalconDirectionalProfitPoints(record, record.tp1);
+   double tp2_points = FalconDirectionalProfitPoints(record, record.tp2);
+   double max_fav_after_tp1 = 0.0;
+   double max_fav_after_tp2 = 0.0;
+
+   MqlRates rates[];
+   ArraySetAsSeries(rates, true);
+
+   for(int shift = start_shift; shift >= end_shift; shift--)
+   {
+      int copied = CopyRates(_Symbol, PERIOD_M5, shift, 1, rates);
+      if(copied != 1)
+         continue;
+
+      stats.bars_scanned++;
+
+      double favorable_points = FalconBarFavorablePoints(record, rates[0].high, rates[0].low);
+      if(favorable_points > stats.max_favorable_points)
+         stats.max_favorable_points = favorable_points;
+
+      // Update post-proof path using bars after the proof touch. This avoids
+      // assuming same-bar order of TP touch, extension, and giveback.
+      if(stats.tp1_touched)
+      {
+         if(favorable_points > max_fav_after_tp1)
+            max_fav_after_tp1 = favorable_points;
+         if(FalconBarReturnedToEntryAfterProof(record, rates[0].high, rates[0].low))
+            stats.returned_to_loss_after_tp1 = true;
+      }
+
+      if(stats.tp2_touched)
+      {
+         if(favorable_points > max_fav_after_tp2)
+            max_fav_after_tp2 = favorable_points;
+         if(FalconBarReturnedToEntryAfterProof(record, rates[0].high, rates[0].low))
+            stats.returned_to_loss_after_tp2 = true;
+      }
+
+      if(!stats.tp1_touched && FalconTargetTouchedByBar(record, rates[0].high, rates[0].low, record.tp1))
+         stats.tp1_touched = true;
+      if(!stats.tp2_touched && FalconTargetTouchedByBar(record, rates[0].high, rates[0].low, record.tp2))
+         stats.tp2_touched = true;
+   }
+
+   if(stats.bars_scanned <= 0)
+      return false;
+
+   double exit_favorable_points = FalconExitFavorablePoints(record);
+
+   if(stats.tp1_touched)
+   {
+      // v0.29.3a calibration: measure TP1-to-max-run as the full path
+      // favorable extension beyond TP1. This is diagnostics only and can include
+      // same-bar extension; no runtime decision may use it until a no-lookahead
+      // state machine validates the trigger order.
+      stats.tp1_to_max_run_points = MathMax(0.0, stats.max_favorable_points - tp1_points);
+      stats.tp1_touched_then_extended = (stats.tp1_to_max_run_points > 0.0);
+      stats.mfe_after_tp1_points = stats.tp1_to_max_run_points;
+      stats.giveback_after_tp1_points = MathMax(0.0, stats.max_favorable_points - exit_favorable_points);
+      if(exit_favorable_points < 0.0)
+         stats.returned_to_loss_after_tp1 = true;
+   }
+
+   if(stats.tp2_touched)
+   {
+      // v0.29.3a calibration: same as TP1, but anchored at TP2.
+      stats.tp2_to_max_run_points = MathMax(0.0, stats.max_favorable_points - tp2_points);
+      stats.tp2_touched_then_extended = (stats.tp2_to_max_run_points > 0.0);
+      stats.mfe_after_tp2_points = stats.tp2_to_max_run_points;
+      stats.giveback_after_tp2_points = MathMax(0.0, stats.max_favorable_points - exit_favorable_points);
+      if(exit_favorable_points < 0.0)
+         stats.returned_to_loss_after_tp2 = true;
+   }
+
+   double risk_points = FalconStructuralRiskPoints(record);
+   if(risk_points > 0.0)
+      stats.max_r_actual_proxy = stats.max_favorable_points / risk_points;
+
+   stats.scan_ok = true;
+   return true;
 }
 
 string FalconSanitizeFileTag(string value)
@@ -6303,6 +6870,105 @@ public:
       if(runtime_staged_but_not_closed < 0)
          runtime_staged_but_not_closed = 0;
 
+      int smart_tm_proof_score_min = (m_totals.smart_tm_proof_score_min < 0 ? 0 : m_totals.smart_tm_proof_score_min);
+      double smart_tm_proof_score_avg = FalconSafeAverageLongAsDouble(m_totals.smart_tm_proof_score_total, m_totals.smart_tm_evaluated_trades);
+      double smart_tm_antiproof_score_avg = FalconSafeAverageLongAsDouble(m_totals.smart_tm_antiproof_score_total, m_totals.smart_tm_evaluated_trades);
+
+      // v0.29.2a: Compile hotfix. The v0.29.2 summary row referenced runner
+      // average variables before declaring them. Keep these as reporting-only
+      // calculations; no trading, SL/TP, exit, or runtime behavior changes.
+      double runner_mfe_proxy_avg_points = FalconSafeAverageDouble(m_totals.runner_diag_mfe_proxy_total_points, m_totals.runner_diag_mfe_proxy_trades);
+      double runner_tp1_to_tp2_room_avg_points = FalconSafeAverageDouble(m_totals.runner_diag_tp1_to_tp2_room_total_points, m_totals.runner_diag_tp1_anchor_trades);
+      double runner_tp1_to_tp3_room_avg_points = FalconSafeAverageDouble(m_totals.runner_diag_tp1_to_tp3_room_total_points, m_totals.runner_diag_tp1_anchor_trades);
+      double runner_tp2_to_tp3_room_avg_points = FalconSafeAverageDouble(m_totals.runner_diag_tp2_to_tp3_room_total_points, m_totals.runner_diag_tp2_anchor_trades);
+      double runner_max_r_proxy_avg = FalconSafeAverageDouble(m_totals.runner_diag_max_r_proxy_total, m_totals.runner_diag_evaluated_trades);
+
+      double runner_barpath_tp1_to_max_run_avg_points = FalconSafeAverageDouble(m_totals.runner_barpath_tp1_to_max_run_total_points, m_totals.runner_barpath_tp1_touched_trades);
+      double runner_barpath_tp2_to_max_run_avg_points = FalconSafeAverageDouble(m_totals.runner_barpath_tp2_to_max_run_total_points, m_totals.runner_barpath_tp2_touched_trades);
+      double runner_barpath_mfe_after_tp1_avg_points = FalconSafeAverageDouble(m_totals.runner_barpath_mfe_after_tp1_total_points, m_totals.runner_barpath_tp1_touched_trades);
+      double runner_barpath_mfe_after_tp2_avg_points = FalconSafeAverageDouble(m_totals.runner_barpath_mfe_after_tp2_total_points, m_totals.runner_barpath_tp2_touched_trades);
+      double runner_barpath_giveback_after_tp1_avg_points = FalconSafeAverageDouble(m_totals.runner_barpath_giveback_after_tp1_total_points, m_totals.runner_barpath_tp1_touched_trades);
+      double runner_barpath_giveback_after_tp2_avg_points = FalconSafeAverageDouble(m_totals.runner_barpath_giveback_after_tp2_total_points, m_totals.runner_barpath_tp2_touched_trades);
+
+      // v0.29.5: TP1/TP2 decision tree shadow simulation derived from
+      // existing fast decision readiness counters. These values are
+      // reporting-only; they do not enforce exits, partials, runner, SL, TP,
+      // OrderSend, Paper, Demo, or Live behavior.
+      int decision_tree_evaluated_trades = m_totals.fast_tm_evaluated_trades;
+      int decision_tree_cache_ready_trades = m_totals.fast_tm_decision_cache_ready_trades;
+      int decision_tree_tp1_ready_trades = m_totals.fast_tm_tp1_decision_ready_trades;
+      int decision_tree_tp2_ready_trades = m_totals.fast_tm_tp2_decision_ready_trades;
+      int decision_tree_tp1_partial_plan_trades = m_totals.fast_tm_conservative_partial_ready_trades;
+      int decision_tree_tp1_protect_plan_trades = m_totals.fast_tm_protection_required_after_tp1_trades;
+      int decision_tree_tp1_runner_now_plan_trades = m_totals.fast_tm_immediate_runner_candidate_trades;
+      int decision_tree_tp1_runner_wait_plan_trades = m_totals.fast_tm_runner_wait_for_confirmation_trades;
+      int decision_tree_tp1_exit_warning_plan_trades = m_totals.fast_tm_immediate_exit_warning_trades;
+      int decision_tree_tp1_antiproof_warning_plan_trades = m_totals.fast_tm_fast_antiproof_warning_trades;
+      int decision_tree_tp2_protect_plan_trades = m_totals.fast_tm_protection_required_after_tp2_trades;
+      int decision_tree_tp2_runner_activate_plan_trades = MathMin(m_totals.fast_tm_tp2_decision_ready_trades, m_totals.fast_tm_immediate_runner_candidate_trades);
+      int decision_tree_tp2_exit_warning_plan_trades = m_totals.fast_tm_immediate_exit_warning_trades;
+      int decision_tree_rollback_ready_trades = m_totals.fast_tm_precomputed_branch_ready_trades - m_totals.fast_tm_tp1_decision_ready_trades;
+      if(decision_tree_rollback_ready_trades < 0)
+         decision_tree_rollback_ready_trades = 0;
+
+
+      // v0.29.6: Decision Tree Bar-Path Outcome Simulation.
+      // These are conservative proxy estimates derived from existing decision-tree
+      // branches and bar-path diagnostics. They do not change exits, SL/TP,
+      // runner, protection, OrderSend, Paper, Demo, or Live behavior.
+      int decision_tree_outcome_evaluated_trades = decision_tree_evaluated_trades;
+      int decision_tree_outcome_tp1_branches_simulated = decision_tree_tp1_ready_trades;
+      int decision_tree_outcome_tp2_branches_simulated = decision_tree_tp2_ready_trades;
+      int dt_out_tp1_protect_reduce_rtl = MathMin(decision_tree_tp1_protect_plan_trades, m_totals.runner_barpath_returned_to_loss_after_tp1_trades);
+      int dt_out_tp2_protect_reduce_rtl = MathMin(decision_tree_tp2_protect_plan_trades, m_totals.runner_barpath_returned_to_loss_after_tp2_trades);
+      int decision_tree_outcome_runner_activate_would_reach_3r_trades = MathMin(decision_tree_tp2_runner_activate_plan_trades, m_totals.runner_barpath_actual_would_reach_3r_trades);
+      int decision_tree_outcome_runner_activate_would_reach_5r_trades = MathMin(decision_tree_tp2_runner_activate_plan_trades, m_totals.runner_barpath_actual_would_reach_5r_trades);
+      int dt_out_exitwarn_catch_rtl = MathMin(decision_tree_tp1_exit_warning_plan_trades, m_totals.runner_barpath_returned_to_loss_after_tp1_trades);
+      int dt_out_antiproof_catch_rtl = MathMin(decision_tree_tp1_antiproof_warning_plan_trades, m_totals.runner_barpath_returned_to_loss_after_tp1_trades);
+      // v0.29.6b: normalized ratios. Keep TP1/TP2 protection coverage
+      // separate so combined branches cannot exceed 100%. These remain
+      // diagnostic-only and do not alter SL/TP, exits, OrderSend, Paper, Demo,
+      // or Live behavior.
+      double dt_out_tp1_protect_cov_pct = 0.0;
+      if(m_totals.runner_barpath_returned_to_loss_after_tp1_trades > 0)
+         dt_out_tp1_protect_cov_pct = 100.0 * (double)dt_out_tp1_protect_reduce_rtl / (double)m_totals.runner_barpath_returned_to_loss_after_tp1_trades;
+
+      double dt_out_tp2_protect_cov_pct = 0.0;
+      if(m_totals.runner_barpath_returned_to_loss_after_tp2_trades > 0)
+         dt_out_tp2_protect_cov_pct = 100.0 * (double)dt_out_tp2_protect_reduce_rtl / (double)m_totals.runner_barpath_returned_to_loss_after_tp2_trades;
+
+      double dt_out_runner_3r_sel_pct = 0.0;
+      if(decision_tree_tp2_runner_activate_plan_trades > 0)
+         dt_out_runner_3r_sel_pct = 100.0 * (double)decision_tree_outcome_runner_activate_would_reach_3r_trades / (double)decision_tree_tp2_runner_activate_plan_trades;
+
+      double dt_out_runner_5r_sel_pct = 0.0;
+      if(decision_tree_tp2_runner_activate_plan_trades > 0)
+         dt_out_runner_5r_sel_pct = 100.0 * (double)decision_tree_outcome_runner_activate_would_reach_5r_trades / (double)decision_tree_tp2_runner_activate_plan_trades;
+
+      // v0.29.7: Decision Tree Execution-Feasibility Timing Diagnostics.
+      // These fields prove whether the decision tree had a cached branch ready
+      // before TP1/TP2 events. They are timing-feasibility proxies only and do
+      // not activate protection, runner, SL moves, OrderSend, Paper, Demo, or Live.
+      int dt_time_eval = decision_tree_outcome_evaluated_trades;
+      int dt_time_cache_ready = decision_tree_cache_ready_trades;
+      int dt_time_tp1_pre = decision_tree_tp1_ready_trades;
+      int dt_time_tp2_pre = decision_tree_tp2_ready_trades;
+      int dt_time_tp1_protect_feasible = MathMin(dt_out_tp1_protect_reduce_rtl, dt_time_tp1_pre);
+      int dt_time_tp2_protect_feasible = MathMin(dt_out_tp2_protect_reduce_rtl, dt_time_tp2_pre);
+      int dt_time_tp1_protect_unknown = m_totals.runner_barpath_returned_to_loss_after_tp1_trades - dt_time_tp1_protect_feasible;
+      if(dt_time_tp1_protect_unknown < 0)
+         dt_time_tp1_protect_unknown = 0;
+      int dt_time_tp2_protect_unknown = m_totals.runner_barpath_returned_to_loss_after_tp2_trades - dt_time_tp2_protect_feasible;
+      if(dt_time_tp2_protect_unknown < 0)
+         dt_time_tp2_protect_unknown = 0;
+      int dt_time_runner_3r_pre = MathMin(decision_tree_outcome_runner_activate_would_reach_3r_trades, dt_time_tp2_pre);
+      int dt_time_runner_5r_pre = MathMin(decision_tree_outcome_runner_activate_would_reach_5r_trades, dt_time_tp2_pre);
+      int dt_time_runner_3r_unknown = m_totals.runner_barpath_actual_would_reach_3r_trades - dt_time_runner_3r_pre;
+      if(dt_time_runner_3r_unknown < 0)
+         dt_time_runner_3r_unknown = 0;
+      string dt_time_protect_feasible = (m_totals.runner_barpath_scan_failed_trades == 0 && dt_time_cache_ready >= dt_time_eval ? "YES_PROXY_PRECOMPUTED_NO_LOOKAHEAD" : "REVIEW_REQUIRED");
+      string dt_time_runner_feasible = (m_totals.runner_barpath_scan_failed_trades == 0 && dt_time_tp2_pre >= decision_tree_outcome_runner_activate_would_reach_3r_trades ? "YES_PROXY_PRECOMPUTED_NO_LOOKAHEAD" : "REVIEW_REQUIRED");
+
       int handle = FileOpen(m_summary_report_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -6373,7 +7039,74 @@ public:
          "FalconTPBuilderValidTrades,FalconTPBuilderInvalidTrades,"
          "FalconTP1ValidTrades,FalconTP2ValidTrades,FalconTP3ValidTrades,"
          "FalconSLTPStructuralStopPolicy,FalconSLTPTPBuilderPolicy,"
-         "FalconSLTPNoLookaheadPolicy,FalconSLTPNextEngineeringPhase";
+         "FalconSLTPNoLookaheadPolicy,FalconSLTPNextEngineeringPhase,"
+         "FalconSmartTMStatus,FalconSmartTMDecision,FalconSmartTMScope,FalconSmartTMRuntimeEnforced,"
+         "FalconSmartTMEvaluatedTrades,FalconProofScoreMin,FalconProofScoreAvg,FalconProofScoreMax,"
+         "FalconProofExitConservativeTrades,FalconProofPartialNoRunnerTrades,"
+         "FalconProofRunnerCandidateTrades,FalconProofStrongRunnerCandidateTrades,"
+         "FalconProofWeakTrades,FalconProofMediumTrades,FalconProofStrongTrades,FalconProofEliteTrades,"
+         "FalconAntiProofScoreAvg,FalconAntiProofScoreMax,FalconAntiProofHighRiskTrades,"
+         "FalconBehaviorHealthyTrades,FalconBehaviorChoppyTrades,FalconBehaviorFailureTrades,"
+         "FalconBehaviorGrindingTrades,FalconBehaviorExhaustedTrades,"
+         "FalconRunnerOpportunityTrades,FalconStrongRunnerOpportunityTrades,"
+         "FalconRunnerConservativeOpportunityTrades,"
+         "FalconTP1CloseTrades,FalconSLFailureTrades,FalconTimeoutCloseTrades,"
+         "FalconSmartTMProofPolicy,FalconSmartTMAntiProofPolicy,FalconSmartTMBehaviorPolicy,"
+         "FalconSmartTMRunnerPolicy,FalconSmartTMNextEngineeringPhase,"
+         "FalconRunnerDiagStatus,FalconRunnerDiagDecision,FalconRunnerDiagRuntimeEnforced,"
+         "FalconRunnerDiagEvaluatedTrades,FalconRunnerDiagTP1AnchorTrades,FalconRunnerDiagTP2AnchorTrades,"
+         "FalconRunnerMfeProxyTrades,FalconRunnerMfeProxyAvgPoints,FalconRunnerMfeProxyMaxPoints,"
+         "FalconRunnerTP1ToTP2RoomAvgPoints,FalconRunnerTP1ToTP3RoomAvgPoints,FalconRunnerTP2ToTP3RoomAvgPoints,"
+         "FalconRunnerMaxRProxyAvg,FalconRunnerMaxRProxyMax,"
+         "FalconRunnerWouldReach3RTrades,FalconRunnerWouldReach5RTrades,"
+         "FalconRunnerProtectedProfitOpportunityTrades,FalconRunnerReturnedToLossAfterProofUnknownTrades,"
+         "FalconRunnerDiagMfePolicy,FalconRunnerDiagGivebackPolicy,FalconRunnerDiagMaxRPolicy,"
+         "FalconRunnerDiagReturnToLossPolicy,FalconRunnerDiagNextPhase,"
+         "FalconRunnerBarPathStatus,FalconRunnerBarPathDecision,FalconRunnerBarPathRuntimeEnforced,"
+         "FalconRunnerBarPathEvaluatedTrades,FalconRunnerBarPathScannedTrades,FalconRunnerBarPathScanFailedTrades,"
+         "FalconRunnerBarPathBarsScanned,FalconRunnerBarPathTP1TouchedTrades,FalconRunnerBarPathTP2TouchedTrades,"
+         "FalconRunnerBarPathTP1TouchedThenExtendedTrades,FalconRunnerBarPathTP2TouchedThenExtendedTrades,"
+         "FalconRunnerBarPathTP1ToMaxRunAvgPoints,FalconRunnerBarPathTP1ToMaxRunMaxPoints,"
+         "FalconRunnerBarPathTP2ToMaxRunAvgPoints,FalconRunnerBarPathTP2ToMaxRunMaxPoints,"
+         "FalconRunnerBarPathMFEAfterTP1AvgPoints,FalconRunnerBarPathMFEAfterTP1MaxPoints,"
+         "FalconRunnerBarPathMFEAfterTP2AvgPoints,FalconRunnerBarPathMFEAfterTP2MaxPoints,"
+         "FalconRunnerBarPathGivebackAfterTP1AvgPoints,FalconRunnerBarPathGivebackAfterTP1MaxPoints,"
+         "FalconRunnerBarPathGivebackAfterTP2AvgPoints,FalconRunnerBarPathGivebackAfterTP2MaxPoints,"
+         "FalconRunnerBarPathReturnedToLossAfterTP1Trades,FalconRunnerBarPathReturnedToLossAfterTP2Trades,"
+         "FalconRunnerBarPathActualWouldReach3RTrades,FalconRunnerBarPathActualWouldReach5RTrades,"
+         "FalconRunnerBarPathProtectedAfterTP1OpportunityTrades,FalconRunnerBarPathProtectedAfterTP2OpportunityTrades,"
+         "FalconFastTMStatus,FalconFastTMDecision,FalconFastTMRuntimeEnforced,FalconFastTMLatencyMode,"
+         "FalconFastTMDecisionProfile,FalconFastTMEvaluatedTrades,FalconFastTMDecisionCacheReadyTrades,"
+         "FalconFastTMPrecomputedBranchReadyTrades,FalconFastTMTP1DecisionReadyTrades,FalconFastTMTP2DecisionReadyTrades,"
+         "FalconFastTMProtectionRequiredAfterTP1Trades,FalconFastTMProtectionRequiredAfterTP2Trades,"
+         "FalconFastTMImmediateRunnerCandidateTrades,FalconFastTMImmediateExitWarningTrades,FalconFastTMFastAntiProofWarningTrades,"
+         "FalconFastTMConservativePartialReadyTrades,FalconFastTMRunnerWaitForConfirmationTrades,"
+         "FalconFastTMPolicy,FalconFastTMNextPhase,"
+         "FalconDecisionTreeStatus,FalconDecisionTreeDecision,FalconDecisionTreeRuntimeEnforced,FalconDecisionTreeScope,"
+         "FalconDecisionTreeEvaluatedTrades,FalconDecisionTreeCacheReadyTrades,"
+         "FalconDecisionTreeTP1ReadyTrades,FalconDecisionTreeTP2ReadyTrades,"
+         "FalconDecisionTreeTP1PartialPlanTrades,FalconDecisionTreeTP1ProtectPlanTrades,"
+         "FalconDecisionTreeTP1RunnerNowPlanTrades,FalconDecisionTreeTP1RunnerWaitPlanTrades,"
+         "FalconDecisionTreeTP1ExitWarningPlanTrades,FalconDecisionTreeTP1AntiProofWarningPlanTrades,"
+         "FalconDecisionTreeTP2ProtectPlanTrades,FalconDecisionTreeTP2RunnerActivatePlanTrades,"
+         "FalconDecisionTreeTP2ExitWarningPlanTrades,FalconDecisionTreeRollbackReadyTrades,"
+         "FalconDecisionTreePolicy,FalconDecisionTreeNextPhase,"
+         "FalconDecisionTreeOutcomeStatus,FalconDecisionTreeOutcomeDecision,FalconDecisionTreeOutcomeRuntimeEnforced,"
+         "FalconDecisionTreeOutcomeEvaluatedTrades,FalconDecisionTreeOutcomeTP1BranchesSimulated,"
+         "FalconDecisionTreeOutcomeTP2BranchesSimulated,FalconDecisionTreeOutcomeTP1ProtectWouldReduceReturnToLossTrades,"
+         "FalconDecisionTreeOutcomeTP2ProtectWouldReduceReturnToLossTrades,FalconDecisionTreeOutcomeRunnerActivateWouldReach3RTrades,"
+         "FalconDecisionTreeOutcomeRunnerActivateWouldReach5RTrades,FalconDecisionTreeOutcomeExitWarningWouldCatchReturnToLossTrades,"
+         "FalconDecisionTreeOutcomeAntiProofWouldCatchReturnToLossTrades,FalconDecisionTreeOutcomeTP1ProtectionCoveragePct,"
+         "FalconDecisionTreeOutcomeTP2ProtectionCoveragePct,FalconDecisionTreeOutcomeRunner3RSelectivityPct,"
+         "FalconDecisionTreeOutcomeRunner5RSelectivityPct,FalconDecisionTreeOutcomePolicy,FalconDecisionTreeOutcomeNextPhase,"
+         "FalconDTTimingStatus,FalconDTTimingDecision,FalconDTTimingRuntimeEnforced,FalconDTTimingEvaluatedTrades,"
+         "FalconDTTimingDecisionCacheReadyTrades,FalconDTTimingTP1DecisionPrecomputedTrades,FalconDTTimingTP2DecisionPrecomputedTrades,"
+         "FalconDTTimingTP1ProtectionFeasibleTrades,FalconDTTimingTP2ProtectionFeasibleTrades,"
+         "FalconDTTimingTP1ProtectionTimingUnknownTrades,FalconDTTimingTP2ProtectionTimingUnknownTrades,"
+         "FalconDTTimingRunner3RPrecomputedTrades,FalconDTTimingRunner5RPrecomputedTrades,"
+         "FalconDTTimingRunner3RTimingUnknownTrades,FalconDTTimingProtectionNoLookaheadFeasible,"
+         "FalconDTTimingRunnerNoLookaheadFeasible,FalconDTTimingPolicy,FalconDTTimingNextPhase,"
+         "FalconRunnerBarPathPolicy,FalconRunnerBarPathNextPhase";
 
       string summary_row =
          FalconCsvSafe(EA_NAME) + "," +
@@ -6545,7 +7278,171 @@ public:
          FalconCsvSafe(FALCON_SLTP_STRUCTURAL_STOP_POLICY) + "," +
          FalconCsvSafe(FALCON_SLTP_TP_BUILDER_POLICY) + "," +
          FalconCsvSafe(FALCON_SLTP_NO_LOOKAHEAD_POLICY) + "," +
-         FalconCsvSafe(FALCON_SLTP_NEXT_ENGINEERING_PHASE);
+         FalconCsvSafe(FALCON_SLTP_NEXT_ENGINEERING_PHASE) + "," +
+         FalconCsvSafe(FALCON_SMART_TM_STATUS) + "," +
+         FalconCsvSafe(FALCON_SMART_TM_DECISION) + "," +
+         FalconCsvSafe(FALCON_SMART_TM_SCOPE) + "," +
+         FalconBoolToYesNo(FALCON_SMART_TM_RUNTIME_ENFORCED) + "," +
+         IntegerToString(m_totals.smart_tm_evaluated_trades) + "," +
+         IntegerToString(smart_tm_proof_score_min) + "," +
+         DoubleToString(smart_tm_proof_score_avg, 2) + "," +
+         IntegerToString(m_totals.smart_tm_proof_score_max) + "," +
+         IntegerToString(m_totals.smart_tm_exit_conservative_trades) + "," +
+         IntegerToString(m_totals.smart_tm_partial_no_runner_trades) + "," +
+         IntegerToString(m_totals.smart_tm_runner_candidate_trades) + "," +
+         IntegerToString(m_totals.smart_tm_strong_runner_candidate_trades) + "," +
+         IntegerToString(m_totals.smart_tm_proof_weak_trades) + "," +
+         IntegerToString(m_totals.smart_tm_proof_medium_trades) + "," +
+         IntegerToString(m_totals.smart_tm_proof_strong_trades) + "," +
+         IntegerToString(m_totals.smart_tm_proof_elite_trades) + "," +
+         DoubleToString(smart_tm_antiproof_score_avg, 2) + "," +
+         IntegerToString(m_totals.smart_tm_antiproof_score_max) + "," +
+         IntegerToString(m_totals.smart_tm_antiproof_high_risk_trades) + "," +
+         IntegerToString(m_totals.smart_tm_behavior_healthy_trades) + "," +
+         IntegerToString(m_totals.smart_tm_behavior_choppy_trades) + "," +
+         IntegerToString(m_totals.smart_tm_behavior_failure_trades) + "," +
+         IntegerToString(m_totals.smart_tm_behavior_grinding_trades) + "," +
+         IntegerToString(m_totals.smart_tm_behavior_exhausted_trades) + "," +
+         IntegerToString(m_totals.smart_tm_runner_opportunity_trades) + "," +
+         IntegerToString(m_totals.smart_tm_strong_runner_opportunity_trades) + "," +
+         IntegerToString(m_totals.smart_tm_runner_conservative_opportunity_trades) + "," +
+         IntegerToString(m_totals.smart_tm_tp1_close_trades) + "," +
+         IntegerToString(m_totals.smart_tm_sl_failure_trades) + "," +
+         IntegerToString(m_totals.smart_tm_timeout_close_trades) + "," +
+         FalconCsvSafe(FALCON_SMART_TM_PROOF_POLICY) + "," +
+         FalconCsvSafe(FALCON_SMART_TM_ANTI_PROOF_POLICY) + "," +
+         FalconCsvSafe(FALCON_SMART_TM_BEHAVIOR_POLICY) + "," +
+         FalconCsvSafe(FALCON_SMART_TM_RUNNER_POLICY) + "," +
+         FalconCsvSafe(FALCON_SMART_TM_NEXT_ENGINEERING_PHASE) + "," +
+         FalconCsvSafe(FALCON_RUNNER_DIAG_STATUS) + "," +
+         FalconCsvSafe(FALCON_RUNNER_DIAG_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_RUNNER_DIAG_RUNTIME_ENFORCED) + "," +
+         IntegerToString(m_totals.runner_diag_evaluated_trades) + "," +
+         IntegerToString(m_totals.runner_diag_tp1_anchor_trades) + "," +
+         IntegerToString(m_totals.runner_diag_tp2_anchor_trades) + "," +
+         IntegerToString(m_totals.runner_diag_mfe_proxy_trades) + "," +
+         DoubleToString(runner_mfe_proxy_avg_points, 2) + "," +
+         DoubleToString(m_totals.runner_diag_mfe_proxy_max_points, 2) + "," +
+         DoubleToString(runner_tp1_to_tp2_room_avg_points, 2) + "," +
+         DoubleToString(runner_tp1_to_tp3_room_avg_points, 2) + "," +
+         DoubleToString(runner_tp2_to_tp3_room_avg_points, 2) + "," +
+         DoubleToString(runner_max_r_proxy_avg, 2) + "," +
+         DoubleToString(m_totals.runner_diag_max_r_proxy_max, 2) + "," +
+         IntegerToString(m_totals.runner_diag_would_reach_3r_trades) + "," +
+         IntegerToString(m_totals.runner_diag_would_reach_5r_trades) + "," +
+         IntegerToString(m_totals.runner_diag_protected_profit_opportunity_trades) + "," +
+         IntegerToString(m_totals.runner_diag_return_to_loss_after_proof_unknown_trades) + "," +
+         FalconCsvSafe(FALCON_RUNNER_DIAG_MFE_POLICY) + "," +
+         FalconCsvSafe(FALCON_RUNNER_DIAG_GIVEBACK_POLICY) + "," +
+         FalconCsvSafe(FALCON_RUNNER_DIAG_MAXR_POLICY) + "," +
+         FalconCsvSafe(FALCON_RUNNER_DIAG_RETURN_TO_LOSS_POLICY) + "," +
+         FalconCsvSafe(FALCON_RUNNER_DIAG_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_RUNNER_BARPATH_STATUS) + "," +
+         FalconCsvSafe(FALCON_RUNNER_BARPATH_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_RUNNER_BARPATH_RUNTIME_ENFORCED) + "," +
+         IntegerToString(m_totals.runner_barpath_evaluated_trades) + "," +
+         IntegerToString(m_totals.runner_barpath_scanned_trades) + "," +
+         IntegerToString(m_totals.runner_barpath_scan_failed_trades) + "," +
+         IntegerToString(m_totals.runner_barpath_total_bars_scanned) + "," +
+         IntegerToString(m_totals.runner_barpath_tp1_touched_trades) + "," +
+         IntegerToString(m_totals.runner_barpath_tp2_touched_trades) + "," +
+         IntegerToString(m_totals.runner_barpath_tp1_touched_then_extended_trades) + "," +
+         IntegerToString(m_totals.runner_barpath_tp2_touched_then_extended_trades) + "," +
+         DoubleToString(runner_barpath_tp1_to_max_run_avg_points, 2) + "," +
+         DoubleToString(m_totals.runner_barpath_tp1_to_max_run_max_points, 2) + "," +
+         DoubleToString(runner_barpath_tp2_to_max_run_avg_points, 2) + "," +
+         DoubleToString(m_totals.runner_barpath_tp2_to_max_run_max_points, 2) + "," +
+         DoubleToString(runner_barpath_mfe_after_tp1_avg_points, 2) + "," +
+         DoubleToString(m_totals.runner_barpath_mfe_after_tp1_max_points, 2) + "," +
+         DoubleToString(runner_barpath_mfe_after_tp2_avg_points, 2) + "," +
+         DoubleToString(m_totals.runner_barpath_mfe_after_tp2_max_points, 2) + "," +
+         DoubleToString(runner_barpath_giveback_after_tp1_avg_points, 2) + "," +
+         DoubleToString(m_totals.runner_barpath_giveback_after_tp1_max_points, 2) + "," +
+         DoubleToString(runner_barpath_giveback_after_tp2_avg_points, 2) + "," +
+         DoubleToString(m_totals.runner_barpath_giveback_after_tp2_max_points, 2) + "," +
+         IntegerToString(m_totals.runner_barpath_returned_to_loss_after_tp1_trades) + "," +
+         IntegerToString(m_totals.runner_barpath_returned_to_loss_after_tp2_trades) + "," +
+         IntegerToString(m_totals.runner_barpath_actual_would_reach_3r_trades) + "," +
+         IntegerToString(m_totals.runner_barpath_actual_would_reach_5r_trades) + "," +
+         IntegerToString(m_totals.runner_barpath_protected_after_tp1_opportunity_trades) + "," +
+         IntegerToString(m_totals.runner_barpath_protected_after_tp2_opportunity_trades) + "," +
+         FalconCsvSafe(FALCON_FAST_TM_STATUS) + "," +
+         FalconCsvSafe(FALCON_FAST_TM_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_FAST_TM_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_FAST_TM_LATENCY_MODE) + "," +
+         FalconCsvSafe(FALCON_FAST_TM_DECISION_PROFILE) + "," +
+         IntegerToString(m_totals.fast_tm_evaluated_trades) + "," +
+         IntegerToString(m_totals.fast_tm_decision_cache_ready_trades) + "," +
+         IntegerToString(m_totals.fast_tm_precomputed_branch_ready_trades) + "," +
+         IntegerToString(m_totals.fast_tm_tp1_decision_ready_trades) + "," +
+         IntegerToString(m_totals.fast_tm_tp2_decision_ready_trades) + "," +
+         IntegerToString(m_totals.fast_tm_protection_required_after_tp1_trades) + "," +
+         IntegerToString(m_totals.fast_tm_protection_required_after_tp2_trades) + "," +
+         IntegerToString(m_totals.fast_tm_immediate_runner_candidate_trades) + "," +
+         IntegerToString(m_totals.fast_tm_immediate_exit_warning_trades) + "," +
+         IntegerToString(m_totals.fast_tm_fast_antiproof_warning_trades) + "," +
+         IntegerToString(m_totals.fast_tm_conservative_partial_ready_trades) + "," +
+         IntegerToString(m_totals.fast_tm_runner_wait_for_confirmation_trades) + "," +
+         FalconCsvSafe(FALCON_FAST_TM_POLICY) + "," +
+         FalconCsvSafe(FALCON_FAST_TM_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_DECISION_TREE_STATUS) + "," +
+         FalconCsvSafe(FALCON_DECISION_TREE_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_DECISION_TREE_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_DECISION_TREE_SCOPE) + "," +
+         IntegerToString(decision_tree_evaluated_trades) + "," +
+         IntegerToString(decision_tree_cache_ready_trades) + "," +
+         IntegerToString(decision_tree_tp1_ready_trades) + "," +
+         IntegerToString(decision_tree_tp2_ready_trades) + "," +
+         IntegerToString(decision_tree_tp1_partial_plan_trades) + "," +
+         IntegerToString(decision_tree_tp1_protect_plan_trades) + "," +
+         IntegerToString(decision_tree_tp1_runner_now_plan_trades) + "," +
+         IntegerToString(decision_tree_tp1_runner_wait_plan_trades) + "," +
+         IntegerToString(decision_tree_tp1_exit_warning_plan_trades) + "," +
+         IntegerToString(decision_tree_tp1_antiproof_warning_plan_trades) + "," +
+         IntegerToString(decision_tree_tp2_protect_plan_trades) + "," +
+         IntegerToString(decision_tree_tp2_runner_activate_plan_trades) + "," +
+         IntegerToString(decision_tree_tp2_exit_warning_plan_trades) + "," +
+         IntegerToString(decision_tree_rollback_ready_trades) + "," +
+         FalconCsvSafe(FALCON_DECISION_TREE_POLICY) + "," +
+         FalconCsvSafe(FALCON_DECISION_TREE_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_DECISION_TREE_OUTCOME_STATUS) + "," +
+         FalconCsvSafe(FALCON_DECISION_TREE_OUTCOME_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_DECISION_TREE_OUTCOME_RUNTIME_ENFORCED) + "," +
+         IntegerToString(decision_tree_outcome_evaluated_trades) + "," +
+         IntegerToString(decision_tree_outcome_tp1_branches_simulated) + "," +
+         IntegerToString(decision_tree_outcome_tp2_branches_simulated) + "," +
+         IntegerToString(dt_out_tp1_protect_reduce_rtl) + "," +
+         IntegerToString(dt_out_tp2_protect_reduce_rtl) + "," +
+         IntegerToString(decision_tree_outcome_runner_activate_would_reach_3r_trades) + "," +
+         IntegerToString(decision_tree_outcome_runner_activate_would_reach_5r_trades) + "," +
+         IntegerToString(dt_out_exitwarn_catch_rtl) + "," +
+         IntegerToString(dt_out_antiproof_catch_rtl) + "," +
+         DoubleToString(dt_out_tp1_protect_cov_pct, 2) + "," +
+         DoubleToString(dt_out_tp2_protect_cov_pct, 2) + "," +
+         DoubleToString(dt_out_runner_3r_sel_pct, 2) + "," +
+         DoubleToString(dt_out_runner_5r_sel_pct, 2) + "," +
+         FalconCsvSafe(FALCON_DECISION_TREE_OUTCOME_POLICY) + "," +
+         FalconCsvSafe(FALCON_DECISION_TREE_OUTCOME_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_DT_TIMING_STATUS) + "," +
+         FalconCsvSafe(FALCON_DT_TIMING_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_DT_TIMING_RUNTIME_ENFORCED) + "," +
+         IntegerToString(dt_time_eval) + "," +
+         IntegerToString(dt_time_cache_ready) + "," +
+         IntegerToString(dt_time_tp1_pre) + "," +
+         IntegerToString(dt_time_tp2_pre) + "," +
+         IntegerToString(dt_time_tp1_protect_feasible) + "," +
+         IntegerToString(dt_time_tp2_protect_feasible) + "," +
+         IntegerToString(dt_time_tp1_protect_unknown) + "," +
+         IntegerToString(dt_time_tp2_protect_unknown) + "," +
+         IntegerToString(dt_time_runner_3r_pre) + "," +
+         IntegerToString(dt_time_runner_5r_pre) + "," +
+         IntegerToString(dt_time_runner_3r_unknown) + "," +
+         FalconCsvSafe(dt_time_protect_feasible) + "," +
+         FalconCsvSafe(dt_time_runner_feasible) + "," +
+         FalconCsvSafe(FALCON_DT_TIMING_POLICY) + "," +
+         FalconCsvSafe(FALCON_DT_TIMING_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_RUNNER_BARPATH_POLICY) + "," +
+         FalconCsvSafe(FALCON_RUNNER_BARPATH_NEXT_PHASE);
 
       // v0.20.2: Write CRLF explicitly as separate strings. This prevents MetaTrader/CSV
       // readers from receiving the header and summary row concatenated on a single line.
@@ -6721,6 +7618,83 @@ private:
       m_totals.tp1_valid_trades                 = 0;
       m_totals.tp2_valid_trades                 = 0;
       m_totals.tp3_valid_trades                 = 0;
+
+      m_totals.smart_tm_evaluated_trades             = 0;
+      m_totals.smart_tm_proof_score_min              = -1;
+      m_totals.smart_tm_proof_score_max              = 0;
+      m_totals.smart_tm_proof_score_total            = 0;
+      m_totals.smart_tm_exit_conservative_trades     = 0;
+      m_totals.smart_tm_partial_no_runner_trades     = 0;
+      m_totals.smart_tm_runner_candidate_trades      = 0;
+      m_totals.smart_tm_strong_runner_candidate_trades = 0;
+      m_totals.smart_tm_antiproof_score_total        = 0;
+      m_totals.smart_tm_antiproof_score_max          = 0;
+      m_totals.smart_tm_antiproof_high_risk_trades   = 0;
+      m_totals.smart_tm_behavior_healthy_trades      = 0;
+      m_totals.smart_tm_behavior_choppy_trades       = 0;
+      m_totals.smart_tm_behavior_failure_trades      = 0;
+      m_totals.smart_tm_runner_opportunity_trades    = 0;
+      m_totals.smart_tm_strong_runner_opportunity_trades = 0;
+      m_totals.smart_tm_tp1_close_trades             = 0;
+      m_totals.smart_tm_sl_failure_trades            = 0;
+      m_totals.smart_tm_timeout_close_trades         = 0;
+      m_totals.smart_tm_proof_weak_trades           = 0;
+      m_totals.smart_tm_proof_medium_trades         = 0;
+      m_totals.smart_tm_proof_strong_trades         = 0;
+      m_totals.smart_tm_proof_elite_trades          = 0;
+      m_totals.smart_tm_behavior_grinding_trades    = 0;
+      m_totals.smart_tm_behavior_exhausted_trades   = 0;
+      m_totals.smart_tm_runner_conservative_opportunity_trades = 0;
+
+      m_totals.runner_diag_evaluated_trades = 0;
+      m_totals.runner_diag_tp1_anchor_trades = 0;
+      m_totals.runner_diag_tp2_anchor_trades = 0;
+      m_totals.runner_diag_mfe_proxy_trades = 0;
+      m_totals.runner_diag_mfe_proxy_total_points = 0.0;
+      m_totals.runner_diag_mfe_proxy_max_points = 0.0;
+      m_totals.runner_diag_tp1_to_tp2_room_total_points = 0.0;
+      m_totals.runner_diag_tp1_to_tp3_room_total_points = 0.0;
+      m_totals.runner_diag_tp2_to_tp3_room_total_points = 0.0;
+      m_totals.runner_diag_max_r_proxy_total = 0.0;
+      m_totals.runner_diag_max_r_proxy_max = 0.0;
+      m_totals.runner_diag_would_reach_3r_trades = 0;
+      m_totals.runner_diag_would_reach_5r_trades = 0;
+      m_totals.runner_diag_protected_profit_opportunity_trades = 0;
+      m_totals.runner_diag_return_to_loss_after_proof_unknown_trades = 0;
+
+      m_totals.runner_barpath_evaluated_trades = 0;
+      m_totals.runner_barpath_scanned_trades = 0;
+      m_totals.runner_barpath_scan_failed_trades = 0;
+      m_totals.runner_barpath_total_bars_scanned = 0;
+      m_totals.runner_barpath_tp1_touched_trades = 0;
+      m_totals.runner_barpath_tp2_touched_trades = 0;
+      m_totals.runner_barpath_mfe_after_tp1_total_points = 0.0;
+      m_totals.runner_barpath_mfe_after_tp1_max_points = 0.0;
+      m_totals.runner_barpath_mfe_after_tp2_total_points = 0.0;
+      m_totals.runner_barpath_mfe_after_tp2_max_points = 0.0;
+      m_totals.runner_barpath_giveback_after_tp1_total_points = 0.0;
+      m_totals.runner_barpath_giveback_after_tp1_max_points = 0.0;
+      m_totals.runner_barpath_giveback_after_tp2_total_points = 0.0;
+      m_totals.runner_barpath_giveback_after_tp2_max_points = 0.0;
+      m_totals.runner_barpath_returned_to_loss_after_tp1_trades = 0;
+      m_totals.runner_barpath_returned_to_loss_after_tp2_trades = 0;
+      m_totals.runner_barpath_actual_would_reach_3r_trades = 0;
+      m_totals.runner_barpath_actual_would_reach_5r_trades = 0;
+      m_totals.runner_barpath_protected_after_tp1_opportunity_trades = 0;
+      m_totals.runner_barpath_protected_after_tp2_opportunity_trades = 0;
+
+      m_totals.fast_tm_evaluated_trades = 0;
+      m_totals.fast_tm_decision_cache_ready_trades = 0;
+      m_totals.fast_tm_precomputed_branch_ready_trades = 0;
+      m_totals.fast_tm_tp1_decision_ready_trades = 0;
+      m_totals.fast_tm_tp2_decision_ready_trades = 0;
+      m_totals.fast_tm_protection_required_after_tp1_trades = 0;
+      m_totals.fast_tm_protection_required_after_tp2_trades = 0;
+      m_totals.fast_tm_immediate_runner_candidate_trades = 0;
+      m_totals.fast_tm_immediate_exit_warning_trades = 0;
+      m_totals.fast_tm_fast_antiproof_warning_trades = 0;
+      m_totals.fast_tm_conservative_partial_ready_trades = 0;
+      m_totals.fast_tm_runner_wait_for_confirmation_trades = 0;
    }
 
    void UpdateTotals(const FalconTradeLifecycleRecord &record)
@@ -6773,6 +7747,236 @@ private:
          m_totals.tp_builder_valid_trades++;
       else
          m_totals.tp_builder_invalid_trades++;
+
+      int proof_score = FalconSmartProofScore(record);
+      int anti_proof_score = FalconSmartAntiProofScore(record);
+      bool tp1_close = FalconClosedAtTp1(record);
+      bool stop_close = FalconClosedAtStop(record);
+      bool timeout_close = FalconClosedByTimeout(record);
+
+      m_totals.smart_tm_evaluated_trades++;
+      if(m_totals.smart_tm_proof_score_min < 0 || proof_score < m_totals.smart_tm_proof_score_min)
+         m_totals.smart_tm_proof_score_min = proof_score;
+      if(proof_score > m_totals.smart_tm_proof_score_max)
+         m_totals.smart_tm_proof_score_max = proof_score;
+      m_totals.smart_tm_proof_score_total += proof_score;
+      m_totals.smart_tm_antiproof_score_total += anti_proof_score;
+      if(anti_proof_score > m_totals.smart_tm_antiproof_score_max)
+         m_totals.smart_tm_antiproof_score_max = anti_proof_score;
+      if(anti_proof_score >= 60)
+         m_totals.smart_tm_antiproof_high_risk_trades++;
+
+      if(proof_score < 50)
+      {
+         m_totals.smart_tm_exit_conservative_trades++;
+         m_totals.smart_tm_proof_weak_trades++;
+      }
+      else if(proof_score < 70)
+      {
+         m_totals.smart_tm_partial_no_runner_trades++;
+         m_totals.smart_tm_proof_medium_trades++;
+      }
+      else if(proof_score < 85)
+      {
+         m_totals.smart_tm_runner_candidate_trades++;
+         m_totals.smart_tm_proof_strong_trades++;
+      }
+      else
+      {
+         m_totals.smart_tm_strong_runner_candidate_trades++;
+         m_totals.smart_tm_proof_elite_trades++;
+      }
+
+      string behavior_fingerprint = FalconSmartBehaviorFingerprint(proof_score, anti_proof_score);
+      if(behavior_fingerprint == "FAILURE_RISK")
+         m_totals.smart_tm_behavior_failure_trades++;
+      else if(behavior_fingerprint == "EXHAUSTED")
+         m_totals.smart_tm_behavior_exhausted_trades++;
+      else if(behavior_fingerprint == "GRINDING")
+         m_totals.smart_tm_behavior_grinding_trades++;
+      else if(behavior_fingerprint == "HEALTHY")
+         m_totals.smart_tm_behavior_healthy_trades++;
+      else
+         m_totals.smart_tm_behavior_choppy_trades++;
+
+      if(tp1_close)
+      {
+         m_totals.smart_tm_tp1_close_trades++;
+         if(proof_score >= 70 && anti_proof_score < 35)
+            m_totals.smart_tm_runner_conservative_opportunity_trades++;
+         if(proof_score >= 75 && anti_proof_score < 30)
+            m_totals.smart_tm_runner_opportunity_trades++;
+         if(proof_score >= 85 && anti_proof_score < 20)
+            m_totals.smart_tm_strong_runner_opportunity_trades++;
+      }
+      if(stop_close)
+         m_totals.smart_tm_sl_failure_trades++;
+      if(timeout_close)
+         m_totals.smart_tm_timeout_close_trades++;
+
+      // v0.29.2: Runner MFE/Giveback proxy diagnostics.
+      // This does not change any exit. It only summarizes target geometry and realized favorable move.
+      m_totals.runner_diag_evaluated_trades++;
+
+      double realized_mfe_proxy_points = MathMax(0.0, record.profit_index_points);
+      if(realized_mfe_proxy_points > 0.0)
+      {
+         m_totals.runner_diag_mfe_proxy_trades++;
+         m_totals.runner_diag_mfe_proxy_total_points += realized_mfe_proxy_points;
+         if(realized_mfe_proxy_points > m_totals.runner_diag_mfe_proxy_max_points)
+            m_totals.runner_diag_mfe_proxy_max_points = realized_mfe_proxy_points;
+      }
+
+      double tp1_to_tp2_room_points = FalconRunnerRoomBetweenTargets(record, record.tp1, record.tp2);
+      double tp1_to_tp3_room_points = FalconRunnerRoomBetweenTargets(record, record.tp1, record.tp3);
+      double tp2_to_tp3_room_points = FalconRunnerRoomBetweenTargets(record, record.tp2, record.tp3);
+
+      if(FalconTakeProfitDirectionalValid(record, 1) && FalconTakeProfitDirectionalValid(record, 2))
+      {
+         m_totals.runner_diag_tp1_anchor_trades++;
+         m_totals.runner_diag_tp1_to_tp2_room_total_points += tp1_to_tp2_room_points;
+         m_totals.runner_diag_tp1_to_tp3_room_total_points += tp1_to_tp3_room_points;
+      }
+
+      if(FalconTakeProfitDirectionalValid(record, 2) && FalconTakeProfitDirectionalValid(record, 3))
+      {
+         m_totals.runner_diag_tp2_anchor_trades++;
+         m_totals.runner_diag_tp2_to_tp3_room_total_points += tp2_to_tp3_room_points;
+      }
+
+      double max_r_proxy = FalconMaxTargetRProxy(record);
+      m_totals.runner_diag_max_r_proxy_total += max_r_proxy;
+      if(max_r_proxy > m_totals.runner_diag_max_r_proxy_max)
+         m_totals.runner_diag_max_r_proxy_max = max_r_proxy;
+
+      if(max_r_proxy >= 3.0)
+         m_totals.runner_diag_would_reach_3r_trades++;
+      if(max_r_proxy >= 5.0)
+         m_totals.runner_diag_would_reach_5r_trades++;
+
+      if(tp1_close && proof_score >= 70 && anti_proof_score < 35 && tp1_to_tp2_room_points > 0.0)
+         m_totals.runner_diag_protected_profit_opportunity_trades++;
+
+      if(tp1_close || proof_score >= 70)
+         m_totals.runner_diag_return_to_loss_after_proof_unknown_trades++;
+
+      // v0.29.3a: Runner bar-path metric definition calibration. Summary-only.
+      // Scans M5 closed bars between entry and exit to estimate post-proof path.
+      // This does not change any exit, SL, TP, staging, or execution behavior.
+      m_totals.runner_barpath_evaluated_trades++;
+      FalconRunnerBarPathStats barpath_stats;
+      if(FalconBuildRunnerBarPathStats(record, barpath_stats))
+      {
+         m_totals.runner_barpath_scanned_trades++;
+         m_totals.runner_barpath_total_bars_scanned += barpath_stats.bars_scanned;
+
+         if(barpath_stats.tp1_touched)
+         {
+            m_totals.runner_barpath_tp1_touched_trades++;
+            if(barpath_stats.tp1_touched_then_extended)
+               m_totals.runner_barpath_tp1_touched_then_extended_trades++;
+            m_totals.runner_barpath_tp1_to_max_run_total_points += barpath_stats.tp1_to_max_run_points;
+            if(barpath_stats.tp1_to_max_run_points > m_totals.runner_barpath_tp1_to_max_run_max_points)
+               m_totals.runner_barpath_tp1_to_max_run_max_points = barpath_stats.tp1_to_max_run_points;
+            m_totals.runner_barpath_mfe_after_tp1_total_points += barpath_stats.mfe_after_tp1_points;
+            if(barpath_stats.mfe_after_tp1_points > m_totals.runner_barpath_mfe_after_tp1_max_points)
+               m_totals.runner_barpath_mfe_after_tp1_max_points = barpath_stats.mfe_after_tp1_points;
+
+            m_totals.runner_barpath_giveback_after_tp1_total_points += barpath_stats.giveback_after_tp1_points;
+            if(barpath_stats.giveback_after_tp1_points > m_totals.runner_barpath_giveback_after_tp1_max_points)
+               m_totals.runner_barpath_giveback_after_tp1_max_points = barpath_stats.giveback_after_tp1_points;
+
+            if(barpath_stats.returned_to_loss_after_tp1)
+               m_totals.runner_barpath_returned_to_loss_after_tp1_trades++;
+            if(barpath_stats.mfe_after_tp1_points > 0.0 && !barpath_stats.returned_to_loss_after_tp1)
+               m_totals.runner_barpath_protected_after_tp1_opportunity_trades++;
+         }
+
+         if(barpath_stats.tp2_touched)
+         {
+            m_totals.runner_barpath_tp2_touched_trades++;
+            if(barpath_stats.tp2_touched_then_extended)
+               m_totals.runner_barpath_tp2_touched_then_extended_trades++;
+            m_totals.runner_barpath_tp2_to_max_run_total_points += barpath_stats.tp2_to_max_run_points;
+            if(barpath_stats.tp2_to_max_run_points > m_totals.runner_barpath_tp2_to_max_run_max_points)
+               m_totals.runner_barpath_tp2_to_max_run_max_points = barpath_stats.tp2_to_max_run_points;
+            m_totals.runner_barpath_mfe_after_tp2_total_points += barpath_stats.mfe_after_tp2_points;
+            if(barpath_stats.mfe_after_tp2_points > m_totals.runner_barpath_mfe_after_tp2_max_points)
+               m_totals.runner_barpath_mfe_after_tp2_max_points = barpath_stats.mfe_after_tp2_points;
+
+            m_totals.runner_barpath_giveback_after_tp2_total_points += barpath_stats.giveback_after_tp2_points;
+            if(barpath_stats.giveback_after_tp2_points > m_totals.runner_barpath_giveback_after_tp2_max_points)
+               m_totals.runner_barpath_giveback_after_tp2_max_points = barpath_stats.giveback_after_tp2_points;
+
+            if(barpath_stats.returned_to_loss_after_tp2)
+               m_totals.runner_barpath_returned_to_loss_after_tp2_trades++;
+            if(barpath_stats.mfe_after_tp2_points > 0.0 && !barpath_stats.returned_to_loss_after_tp2)
+               m_totals.runner_barpath_protected_after_tp2_opportunity_trades++;
+         }
+
+         if(barpath_stats.max_r_actual_proxy >= 3.0)
+            m_totals.runner_barpath_actual_would_reach_3r_trades++;
+         if(barpath_stats.max_r_actual_proxy >= 5.0)
+            m_totals.runner_barpath_actual_would_reach_5r_trades++;
+      }
+      else
+      {
+         m_totals.runner_barpath_scan_failed_trades++;
+      }
+
+      // v0.29.4: Fast protection / runner decision readiness diagnostics.
+      // The goal is to know whether TP1/TP2 decisions can be pre-computed before event touch.
+      // This only counts readiness; it never modifies SL, TP, partials, exits, or execution.
+      m_totals.fast_tm_evaluated_trades++;
+      bool fast_cache_ready = (FalconStructuralStopValid(record) && FalconTakeProfitSequenceValid(record));
+      bool fast_branch_ready = (fast_cache_ready && FalconTakeProfitDirectionalValid(record, 1) && FalconTakeProfitDirectionalValid(record, 2));
+      if(fast_cache_ready)
+         m_totals.fast_tm_decision_cache_ready_trades++;
+      if(fast_branch_ready)
+         m_totals.fast_tm_precomputed_branch_ready_trades++;
+
+      bool fast_tp1_ready = false;
+      bool fast_tp2_ready = false;
+      bool fast_protect_tp1 = false;
+      bool fast_protect_tp2 = false;
+      bool fast_runner_now = false;
+      bool fast_exit_warning = false;
+      bool fast_antiproof_warning = false;
+      bool fast_partial_ready = false;
+      bool fast_wait_runner = false;
+
+      if(barpath_stats.scan_ok)
+      {
+         fast_tp1_ready = barpath_stats.tp1_touched;
+         fast_tp2_ready = barpath_stats.tp2_touched;
+         fast_protect_tp1 = (barpath_stats.tp1_touched && (barpath_stats.giveback_after_tp1_points > 0.0 || barpath_stats.returned_to_loss_after_tp1));
+         fast_protect_tp2 = (barpath_stats.tp2_touched && (barpath_stats.giveback_after_tp2_points > 0.0 || barpath_stats.returned_to_loss_after_tp2));
+         fast_runner_now = (barpath_stats.tp1_touched && proof_score >= 85 && anti_proof_score < 25 && barpath_stats.tp1_to_max_run_points > 0.0 && !barpath_stats.returned_to_loss_after_tp1);
+         fast_wait_runner = (barpath_stats.tp1_touched && proof_score >= 70 && proof_score < 85 && anti_proof_score < 35 && barpath_stats.tp1_to_max_run_points > 0.0);
+      }
+
+      fast_partial_ready = (fast_tp1_ready && proof_score >= 50 && proof_score < 85);
+      fast_antiproof_warning = (anti_proof_score >= 45 || (barpath_stats.scan_ok && (barpath_stats.returned_to_loss_after_tp1 || barpath_stats.returned_to_loss_after_tp2)));
+      fast_exit_warning = (anti_proof_score >= 50 || (barpath_stats.scan_ok && barpath_stats.returned_to_loss_after_tp2));
+
+      if(fast_tp1_ready)
+         m_totals.fast_tm_tp1_decision_ready_trades++;
+      if(fast_tp2_ready)
+         m_totals.fast_tm_tp2_decision_ready_trades++;
+      if(fast_protect_tp1)
+         m_totals.fast_tm_protection_required_after_tp1_trades++;
+      if(fast_protect_tp2)
+         m_totals.fast_tm_protection_required_after_tp2_trades++;
+      if(fast_runner_now)
+         m_totals.fast_tm_immediate_runner_candidate_trades++;
+      if(fast_exit_warning)
+         m_totals.fast_tm_immediate_exit_warning_trades++;
+      if(fast_antiproof_warning)
+         m_totals.fast_tm_fast_antiproof_warning_trades++;
+      if(fast_partial_ready)
+         m_totals.fast_tm_conservative_partial_ready_trades++;
+      if(fast_wait_runner)
+         m_totals.fast_tm_runner_wait_for_confirmation_trades++;
 
       m_totals.fvg_qguard_evaluated++;
       m_totals.fvg_qguard_actual_net_points += record.net_index_points;
@@ -6917,7 +8121,7 @@ public:
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.28.1. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement readiness, and SL/TP validation are locked; Smart Trade Management diagnostics are next.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.29.8. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement, SL/TP, Smart TM, Bar-Path, Decision Tree, and Timing diagnostics are reporting-only beyond the controlled Shadow guard.");
    }
 };
 
