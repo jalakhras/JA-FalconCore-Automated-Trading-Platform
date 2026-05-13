@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.27.1 - TradeManagement Foundation Validation Lock |
+//|                     Version: v0.28.1 - StructuralStop + TPBuilder Validation Lock |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.271"
+#property version   "1.281"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.27.1"
-#define EA_BUILD_TAG   "TradeManagementFoundationValidationLock_NoExecution"
+#define EA_VERSION_TAG "v0.28.1"
+#define EA_BUILD_TAG   "StructuralStopTPBuilderValidationLock_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -210,8 +210,24 @@ long   g_fvg_hold_quality_score_total                = 0;
 #define FALCON_TM_ADAPTIVE_RATCHET_STATUS                "FOUNDATION_READY_SHADOW_ONLY_NO_RUNTIME_TRAIL_CHANGE"
 #define FALCON_TM_EARLY_FAILURE_EXIT_STATUS              "FOUNDATION_READY_SHADOW_ONLY_NO_RUNTIME_EARLY_EXIT"
 #define FALCON_TM_LIVE_ELIGIBILITY                       "NOT_ELIGIBLE_UNTIL_PAPER_DEMO_VALIDATION_AND_RUNTIME_TRADE_MANAGEMENT_LOCK"
-#define FALCON_TM_NEXT_REQUIRED_LAYER                    "STRUCTURAL_STOP_AND_TP_BUILDER_VALIDATION_LAYER"
-#define FALCON_TM_NEXT_ENGINEERING_PHASE                 "v0.28.0_StructuralStopTPBuilderValidationLayer"
+#define FALCON_TM_NEXT_REQUIRED_LAYER                    "STRUCTURAL_STOP_TP_BUILDER_VALIDATION_LOCK_DONE_NEXT_SMART_TRADE_MANAGEMENT_DIAGNOSTICS"
+#define FALCON_TM_NEXT_ENGINEERING_PHASE                 "v0.29.0_SmartTradeManagementDiagnosticsFoundation"
+
+// ==================================================================
+// StructuralStop + TPBuilder Validation Lock - v0.28.1
+// Summary-only validation layer. It audits whether closed Shadow trades
+// carry structurally valid SL and directional TP1/TP2/TP3 values. It does
+// not change exits, entries, TP, SL, partials, runner, Paper/Demo/Live,
+// or broker execution.
+// ==================================================================
+#define FALCON_SLTP_VALIDATION_STATUS                    "STRUCTURAL_STOP_TP_BUILDER_VALIDATION_LOCK"
+#define FALCON_SLTP_VALIDATION_DECISION                  "SL_TP_CONTRACT_FULL_VALIDATION_LOCKED_NO_RUNTIME_BLOCKING"
+#define FALCON_SLTP_VALIDATION_SCOPE                     "STRUCTURAL_SL_DIRECTIONAL_VALIDITY;TP1_TP2_TP3_DIRECTIONAL_VALIDITY;TP_SEQUENCE_READINESS"
+#define FALCON_SLTP_VALIDATION_RUNTIME_ENFORCED          false
+#define FALCON_SLTP_STRUCTURAL_STOP_POLICY               "SL_MUST_EXIST_AND_BE_BEHIND_ENTRY_BY_DIRECTION_BEFORE_PAPER_DEMO_LIVE"
+#define FALCON_SLTP_TP_BUILDER_POLICY                    "TP1_TP2_TP3_MUST_EXIST_AND_BE_DIRECTIONALLY_PROFITABLE_BEFORE_PAPER_DEMO_LIVE"
+#define FALCON_SLTP_NO_LOOKAHEAD_POLICY                  "VALIDATION_USES_STAGED_PLAN_VALUES_ONLY_NO_FUTURE_BAR_STATE"
+#define FALCON_SLTP_NEXT_ENGINEERING_PHASE               "v0.29.0_SmartTradeManagementDiagnosticsFoundation"
 
 // ==================================================================
 // FVG SIZE250 Runtime Candidate counter alignment lock - v0.25.1
@@ -1287,6 +1303,16 @@ struct FalconReportTotals
    double fvg_qguard_actual_net_usd;
    double fvg_qguard_simulated_net_usd;
    double fvg_qguard_blocked_net_usd;
+
+   // v0.28.1: StructuralStop + TPBuilder validation lock counters. Summary-only audit remains locked.
+   int    sltp_validation_evaluated_trades;
+   int    structural_stop_valid_trades;
+   int    structural_stop_invalid_trades;
+   int    tp_builder_valid_trades;
+   int    tp_builder_invalid_trades;
+   int    tp1_valid_trades;
+   int    tp2_valid_trades;
+   int    tp3_valid_trades;
 };
 
 // ==================================================================
@@ -1611,6 +1637,60 @@ string FalconCsvSafe(string value)
    StringTrimLeft(value);
    StringTrimRight(value);
    return value;
+}
+
+bool FalconStructuralStopValid(const FalconTradeLifecycleRecord &record)
+{
+   if(record.entry_price <= 0.0 || record.structural_sl <= 0.0)
+      return false;
+
+   if(record.direction == FALCON_DIRECTION_BUY)
+      return (record.structural_sl < record.entry_price);
+
+   if(record.direction == FALCON_DIRECTION_SELL)
+      return (record.structural_sl > record.entry_price);
+
+   return false;
+}
+
+bool FalconTakeProfitDirectionalValid(const FalconTradeLifecycleRecord &record, const int tp_index)
+{
+   double tp = 0.0;
+   if(tp_index == 1)
+      tp = record.tp1;
+   else if(tp_index == 2)
+      tp = record.tp2;
+   else if(tp_index == 3)
+      tp = record.tp3;
+   else
+      return false;
+
+   if(record.entry_price <= 0.0 || tp <= 0.0)
+      return false;
+
+   if(record.direction == FALCON_DIRECTION_BUY)
+      return (tp > record.entry_price);
+
+   if(record.direction == FALCON_DIRECTION_SELL)
+      return (tp < record.entry_price);
+
+   return false;
+}
+
+bool FalconTakeProfitSequenceValid(const FalconTradeLifecycleRecord &record)
+{
+   if(!FalconTakeProfitDirectionalValid(record, 1) ||
+      !FalconTakeProfitDirectionalValid(record, 2) ||
+      !FalconTakeProfitDirectionalValid(record, 3))
+      return false;
+
+   if(record.direction == FALCON_DIRECTION_BUY)
+      return (record.tp1 <= record.tp2 && record.tp2 <= record.tp3);
+
+   if(record.direction == FALCON_DIRECTION_SELL)
+      return (record.tp1 >= record.tp2 && record.tp2 >= record.tp3);
+
+   return false;
 }
 
 string FalconSanitizeFileTag(string value)
@@ -6286,7 +6366,14 @@ public:
          "FalconTPBuilderStatus,FalconTP1Policy,FalconTP2Policy,FalconPartialManagerStatus,"
          "FalconProofProtectionStatus,FalconRunnerManagerStatus,FalconAdaptiveRatchetStatus,"
          "FalconEarlyFailureExitStatus,FalconTradeManagementLiveEligibility,"
-         "FalconTradeManagementNextRequiredLayer,FalconTradeManagementNextEngineeringPhase";
+         "FalconTradeManagementNextRequiredLayer,FalconTradeManagementNextEngineeringPhase,"
+         "FalconSLTPValidationStatus,FalconSLTPValidationDecision,FalconSLTPValidationScope,"
+         "FalconSLTPValidationRuntimeEnforced,FalconSLTPValidationEvaluatedTrades,"
+         "FalconStructuralStopValidTrades,FalconStructuralStopInvalidTrades,"
+         "FalconTPBuilderValidTrades,FalconTPBuilderInvalidTrades,"
+         "FalconTP1ValidTrades,FalconTP2ValidTrades,FalconTP3ValidTrades,"
+         "FalconSLTPStructuralStopPolicy,FalconSLTPTPBuilderPolicy,"
+         "FalconSLTPNoLookaheadPolicy,FalconSLTPNextEngineeringPhase";
 
       string summary_row =
          FalconCsvSafe(EA_NAME) + "," +
@@ -6442,7 +6529,23 @@ public:
          FalconCsvSafe(FALCON_TM_EARLY_FAILURE_EXIT_STATUS) + "," +
          FalconCsvSafe(FALCON_TM_LIVE_ELIGIBILITY) + "," +
          FalconCsvSafe(FALCON_TM_NEXT_REQUIRED_LAYER) + "," +
-         FalconCsvSafe(FALCON_TM_NEXT_ENGINEERING_PHASE);
+         FalconCsvSafe(FALCON_TM_NEXT_ENGINEERING_PHASE) + "," +
+         FalconCsvSafe(FALCON_SLTP_VALIDATION_STATUS) + "," +
+         FalconCsvSafe(FALCON_SLTP_VALIDATION_DECISION) + "," +
+         FalconCsvSafe(FALCON_SLTP_VALIDATION_SCOPE) + "," +
+         FalconBoolToYesNo(FALCON_SLTP_VALIDATION_RUNTIME_ENFORCED) + "," +
+         IntegerToString(m_totals.sltp_validation_evaluated_trades) + "," +
+         IntegerToString(m_totals.structural_stop_valid_trades) + "," +
+         IntegerToString(m_totals.structural_stop_invalid_trades) + "," +
+         IntegerToString(m_totals.tp_builder_valid_trades) + "," +
+         IntegerToString(m_totals.tp_builder_invalid_trades) + "," +
+         IntegerToString(m_totals.tp1_valid_trades) + "," +
+         IntegerToString(m_totals.tp2_valid_trades) + "," +
+         IntegerToString(m_totals.tp3_valid_trades) + "," +
+         FalconCsvSafe(FALCON_SLTP_STRUCTURAL_STOP_POLICY) + "," +
+         FalconCsvSafe(FALCON_SLTP_TP_BUILDER_POLICY) + "," +
+         FalconCsvSafe(FALCON_SLTP_NO_LOOKAHEAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_SLTP_NEXT_ENGINEERING_PHASE);
 
       // v0.20.2: Write CRLF explicitly as separate strings. This prevents MetaTrader/CSV
       // readers from receiving the header and summary row concatenated on a single line.
@@ -6609,6 +6712,15 @@ private:
       m_totals.fvg_qguard_actual_net_usd        = 0.0;
       m_totals.fvg_qguard_simulated_net_usd     = 0.0;
       m_totals.fvg_qguard_blocked_net_usd       = 0.0;
+
+      m_totals.sltp_validation_evaluated_trades = 0;
+      m_totals.structural_stop_valid_trades     = 0;
+      m_totals.structural_stop_invalid_trades   = 0;
+      m_totals.tp_builder_valid_trades          = 0;
+      m_totals.tp_builder_invalid_trades        = 0;
+      m_totals.tp1_valid_trades                 = 0;
+      m_totals.tp2_valid_trades                 = 0;
+      m_totals.tp3_valid_trades                 = 0;
    }
 
    void UpdateTotals(const FalconTradeLifecycleRecord &record)
@@ -6643,6 +6755,24 @@ private:
             m_totals.sell_win_trades++;
          m_totals.sell_net_index_points += record.net_index_points;
       }
+
+      m_totals.sltp_validation_evaluated_trades++;
+      if(FalconStructuralStopValid(record))
+         m_totals.structural_stop_valid_trades++;
+      else
+         m_totals.structural_stop_invalid_trades++;
+
+      if(FalconTakeProfitDirectionalValid(record, 1))
+         m_totals.tp1_valid_trades++;
+      if(FalconTakeProfitDirectionalValid(record, 2))
+         m_totals.tp2_valid_trades++;
+      if(FalconTakeProfitDirectionalValid(record, 3))
+         m_totals.tp3_valid_trades++;
+
+      if(FalconTakeProfitSequenceValid(record))
+         m_totals.tp_builder_valid_trades++;
+      else
+         m_totals.tp_builder_invalid_trades++;
 
       m_totals.fvg_qguard_evaluated++;
       m_totals.fvg_qguard_actual_net_points += record.net_index_points;
@@ -6787,7 +6917,7 @@ public:
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.26.3. SIZE250 can only block Shadow staging; FalconGuard pre-execution gate is locked but not runtime-enforced.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.28.1. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement readiness, and SL/TP validation are locked; Smart Trade Management diagnostics are next.");
    }
 };
 
