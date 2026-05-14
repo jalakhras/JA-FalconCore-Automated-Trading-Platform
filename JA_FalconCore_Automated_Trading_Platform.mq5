@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.34.2 - Paper Protection Runner State Machine Validation Lock |
+//|                     Version: v0.36.3 - Paper Protection Virtual SL Transition Validation Lock |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.342"
+#property version   "1.363"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.34.2"
-#define EA_BUILD_TAG   "PaperProtectionRunnerStateMachineValidationLock_NoExecution"
+#define EA_VERSION_TAG "v0.36.3"
+#define EA_BUILD_TAG   "PaperProtectionVirtualSLTransitionValidationLock_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -387,6 +387,164 @@ long   g_fvg_hold_quality_score_total                = 0;
 #define FALCON_PAPER_SM_EXPANSION_AFTER_PROOF            true
 #define FALCON_PAPER_SM_PROTECT_BEFORE_EXPAND_POLICY     "PROTECT_FIRST_THEN_EXPAND;NO_EARLY_BE;NO_UNPROTECTED_RUNNER"
 #define FALCON_PAPER_SM_NEXT_PHASE                       "v0.35.0_PaperProtectionStateMachineExecutionFeasibility"
+
+// ==================================================================
+// Paper Protection State Machine Execution Feasibility - v0.35.0
+// Summary-only feasibility layer. It checks whether validated protection
+// states can later become Paper modify-plan requests. It does not modify
+// SL, does not activate runtime protection, does not send orders, and does
+// not change entry, SL/TP, exit, Paper fill, Demo, or Live behavior.
+// ==================================================================
+#define FALCON_PPF_STATUS                                "PAPER_PROTECTION_STATE_MACHINE_EXECUTION_FEASIBILITY"
+#define FALCON_PPF_DECISION                              "PROTECTION_MODIFY_PLAN_FEASIBLE_PROXY_ONLY_NO_RUNTIME_SL_CHANGE"
+#define FALCON_PPF_RUNTIME_ENFORCED                      false
+#define FALCON_PPF_SCOPE                                 "TP1_PROTECTION_STATE;TP2_PROTECTION_STATE;MODIFY_PLAN_READINESS;SUMMARY_ONLY;NO_RUNTIME_SL_CHANGE"
+#define FALCON_PPF_NO_LOOKAHEAD_POLICY                   "YES_PROXY_FROM_VALIDATED_STATE_MACHINE_AND_CLOSED_RECORDS_ONLY"
+#define FALCON_PPF_MODIFY_POLICY                         "PLAN_ONLY;NO_SL_MODIFY;NO_POSITION_MODIFY;NO_RUNTIME_PROTECTION"
+#define FALCON_PPF_ORDER_SEND_POLICY                     "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_PPF_NEXT_PHASE                            "v0.35.1_PaperProtectionModifyPlanValidationLock"
+
+// ==================================================================
+// Paper Protection Modify Plan Validation Lock - v0.35.1
+// Validation lock for the paper protection modify-plan shape. It proves
+// that each validated protection state has a plan, trigger, target level,
+// and reason before any later Paper SL-modify simulation. It is Summary-only;
+// it does not modify SL, does not send broker requests, and does not change
+// entries, SL/TP, exits, Paper fills, Demo, or Live behavior.
+// ==================================================================
+#define FALCON_PPM_STATUS                                "PAPER_PROTECTION_MODIFY_PLAN_VALIDATION_LOCK"
+#define FALCON_PPM_DECISION                              "MODIFY_PLAN_SHAPE_LOCKED_PROXY_ONLY_NO_RUNTIME_SL_CHANGE"
+#define FALCON_PPM_RUNTIME_ENFORCED                      false
+#define FALCON_PPM_SCOPE                                 "MODIFY_PLAN;TRIGGER;PROTECT_LEVEL;REASON;VALIDATION_LOCK;SUMMARY_ONLY"
+#define FALCON_PPM_NO_LOOKAHEAD_POLICY                   "YES_PROXY_FROM_LOCKED_STATE_MACHINE_AND_CLOSED_RECORDS_ONLY"
+#define FALCON_PPM_MODIFY_POLICY                         "PLAN_LOCK_ONLY;NO_SL_MODIFY;NO_POSITION_MODIFY;NO_RUNTIME_PROTECTION"
+#define FALCON_PPM_ORDER_SEND_POLICY                     "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_PPM_NEXT_PHASE                            "v0.35.2_PaperProtectionModifyRequestTimingValidation"
+
+// ==================================================================
+// Paper Protection Modify Request Timing Validation - v0.35.2
+// Summary-only timing layer. It validates that paper protection modify
+// requests are logically timed after proof and before giveback, using
+// locked closed-record/proxy state only. It does not modify SL, does not
+// simulate broker modification, does not send orders, and does not change
+// entries, SL/TP, exits, Paper fills, Demo, or Live behavior.
+// ==================================================================
+#define FALCON_PPT_STATUS                                "PAPER_PROTECTION_MODIFY_REQUEST_TIMING_VALIDATION"
+#define FALCON_PPT_DECISION                              "MODIFY_REQUEST_TIMING_VALIDATED_PROXY_ONLY_NO_RUNTIME_SL_CHANGE"
+#define FALCON_PPT_RUNTIME_ENFORCED                      false
+#define FALCON_PPT_SCOPE                                 "MODIFY_REQUEST_TIMING;AFTER_PROOF;BEFORE_GIVEBACK;NO_LOOKAHEAD;SUMMARY_ONLY"
+#define FALCON_PPT_NO_LOOKAHEAD_POLICY                   "YES_PROXY_FROM_LOCKED_MODIFY_PLAN_AND_CLOSED_RECORDS_ONLY"
+#define FALCON_PPT_MODIFY_POLICY                         "TIMING_VALIDATION_ONLY;NO_SL_MODIFY;NO_POSITION_MODIFY;NO_RUNTIME_PROTECTION"
+#define FALCON_PPT_ORDER_SEND_POLICY                     "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_PPT_NEXT_PHASE                            "v0.35.3_PaperProtectionModifyDryRunSimulation"
+
+// ==================================================================
+// Paper Protection Modify Dry Run Simulation - v0.35.3
+// Summary-only dry run layer. It simulates the internal accept/reject
+// shape of paper protection modify requests after timing validation.
+// It does not call OrderSend, does not modify broker SL, does not change
+// runtime protection, and does not alter entries, SL/TP, exits, Paper fills,
+// Demo, or Live behavior.
+// ==================================================================
+#define FALCON_PPD_STATUS                                "PAPER_PROTECTION_MODIFY_DRY_RUN_SIMULATION"
+#define FALCON_PPD_DECISION                              "MODIFY_DRY_RUN_ACCEPTANCE_SIMULATED_PROXY_ONLY_NO_RUNTIME_SL_CHANGE"
+#define FALCON_PPD_RUNTIME_ENFORCED                      false
+#define FALCON_PPD_SCOPE                                 "DRY_RUN_MODIFY_REQUEST;INTERNAL_ACCEPT_REJECT_SHAPE;SUMMARY_ONLY;NO_BROKER_MODIFY"
+#define FALCON_PPD_NO_LOOKAHEAD_POLICY                   "YES_PROXY_FROM_LOCKED_TIMING_AND_CLOSED_RECORDS_ONLY"
+#define FALCON_PPD_MODIFY_POLICY                         "DRY_RUN_ONLY;NO_SL_MODIFY;NO_POSITION_MODIFY;NO_RUNTIME_PROTECTION"
+#define FALCON_PPD_ORDER_SEND_POLICY                     "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_PPD_NEXT_PHASE                            "v0.35.4_PaperProtectionDryRunValidationLock"
+
+
+// ==================================================================
+// Paper Protection Dry Run Validation Lock - v0.35.4
+// Summary-only lock layer. It freezes the dry-run acceptance invariant:
+// every validated paper protection modify request must be eligible and
+// accepted, with zero rejects, zero skips, zero broker modify calls, and
+// zero runtime SL changes. This is a lock only; it does not change entries,
+// SL/TP, exits, Paper fills, Demo, Live, runtime protection, or runner logic.
+// ==================================================================
+#define FALCON_PDL_STATUS                                "PAPER_PROTECTION_DRY_RUN_VALIDATION_LOCK"
+#define FALCON_PDL_DECISION                              "DRY_RUN_ACCEPTANCE_LOCKED_PROXY_ONLY_NO_RUNTIME_SL_CHANGE"
+#define FALCON_PDL_RUNTIME_ENFORCED                      false
+#define FALCON_PDL_SCOPE                                 "DRY_RUN_ACCEPTANCE_LOCK;ZERO_REJECTS;ZERO_SKIPS;ZERO_BROKER_MODIFY;SUMMARY_ONLY"
+#define FALCON_PDL_NO_LOOKAHEAD_POLICY                   "YES_PROXY_FROM_LOCKED_DRY_RUN_AND_CLOSED_RECORDS_ONLY"
+#define FALCON_PDL_MODIFY_POLICY                         "DRY_RUN_LOCK_ONLY;NO_SL_MODIFY;NO_POSITION_MODIFY;NO_RUNTIME_PROTECTION"
+#define FALCON_PDL_ORDER_SEND_POLICY                     "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_PDL_NEXT_PHASE                            "v0.36.0_PaperProtectionVirtualSLStateCandidate"
+
+
+// ==================================================================
+// Paper Protection Virtual SL State Candidate - v0.36.0
+// Summary-only ledger layer. It converts the validated dry-run protection
+// requests into a virtual Paper SL state ledger for future execution design.
+// It does not modify broker SL, does not change runtime SL, does not alter
+// entries, SL/TP, exits, Paper fills, Demo, Live, protection, or runner logic.
+// ==================================================================
+#define FALCON_PVS_STATUS                                "PAPER_PROTECTION_VIRTUAL_SL_STATE_CANDIDATE"
+#define FALCON_PVS_DECISION                              "VIRTUAL_SL_STATE_LEDGER_READY_PROXY_ONLY_NO_RUNTIME_SL_CHANGE"
+#define FALCON_PVS_RUNTIME_ENFORCED                      false
+#define FALCON_PVS_SCOPE                                 "VIRTUAL_SL_LEDGER;PROTECTED_STATE_READY;SUMMARY_ONLY;NO_BROKER_MODIFY"
+#define FALCON_PVS_NO_LOOKAHEAD_POLICY                   "YES_PROXY_FROM_LOCKED_DRY_RUN_AND_CLOSED_RECORDS_ONLY"
+#define FALCON_PVS_STATE_POLICY                          "VIRTUAL_SL_STATE_ONLY;NO_SL_MODIFY;NO_POSITION_MODIFY;NO_RUNTIME_PROTECTION"
+#define FALCON_PVS_ORDER_SEND_POLICY                     "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_PVS_NEXT_PHASE                            "v0.36.1_PaperProtectionVirtualSLStateValidationLock"
+
+
+// ==================================================================
+// Paper Protection Virtual SL State Validation Lock - v0.36.1
+// Summary-only lock layer. It freezes the virtual SL state ledger
+// invariant after v0.36.0: candidate states must be ready and active,
+// with zero rejects, zero conflicts, zero missing levels, zero broker
+// modify calls, and zero runtime SL changes. This is a lock only; it
+// does not change entries, SL/TP, exits, Paper fills, Demo, Live,
+// runtime protection, or runner logic.
+// ==================================================================
+#define FALCON_PVL_STATUS                                "PAPER_PROTECTION_VIRTUAL_SL_STATE_VALIDATION_LOCK"
+#define FALCON_PVL_DECISION                              "VIRTUAL_SL_STATE_LEDGER_LOCKED_PROXY_ONLY_NO_RUNTIME_SL_CHANGE"
+#define FALCON_PVL_RUNTIME_ENFORCED                      false
+#define FALCON_PVL_SCOPE                                 "VIRTUAL_SL_STATE_LOCK;READY_EQUALS_ACTIVE;ZERO_REJECTS;ZERO_CONFLICTS;ZERO_MISSING_LEVELS;SUMMARY_ONLY"
+#define FALCON_PVL_NO_LOOKAHEAD_POLICY                   "YES_PROXY_FROM_LOCKED_VIRTUAL_SL_STATE_AND_CLOSED_RECORDS_ONLY"
+#define FALCON_PVL_STATE_POLICY                          "VIRTUAL_SL_LOCK_ONLY;NO_SL_MODIFY;NO_POSITION_MODIFY;NO_RUNTIME_PROTECTION"
+#define FALCON_PVL_ORDER_SEND_POLICY                     "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_PVL_NEXT_PHASE                            "v0.36.2_PaperProtectionVirtualSLTransitionReadiness"
+
+
+// ==================================================================
+// Paper Protection Virtual SL Transition Readiness - v0.36.2
+// Summary-only transition-readiness layer. It validates that the locked
+// Virtual SL state ledger can be read by the future Paper Executor path
+// as an internal transition state. It does not send broker modify requests,
+// does not change runtime SL, and does not alter entries, SL/TP, exits,
+// Paper fills, Demo, Live, protection, or runner logic.
+// ==================================================================
+#define FALCON_PVT_STATUS                                "PAPER_PROTECTION_VIRTUAL_SL_TRANSITION_READINESS"
+#define FALCON_PVT_DECISION                              "VIRTUAL_SL_TRANSITION_READY_PROXY_ONLY_NO_RUNTIME_SL_CHANGE"
+#define FALCON_PVT_RUNTIME_ENFORCED                      false
+#define FALCON_PVT_SCOPE                                 "VIRTUAL_SL_TRANSITION;TRADEMANAGEMENT_TO_PAPER_EXECUTOR;SUMMARY_ONLY;NO_BROKER_MODIFY"
+#define FALCON_PVT_NO_LOOKAHEAD_POLICY                   "YES_PROXY_FROM_LOCKED_VIRTUAL_SL_STATE_AND_CLOSED_RECORDS_ONLY"
+#define FALCON_PVT_TRANSITION_POLICY                     "TRANSITION_READINESS_ONLY;NO_SL_MODIFY;NO_POSITION_MODIFY;NO_RUNTIME_PROTECTION"
+#define FALCON_PVT_ORDER_SEND_POLICY                     "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_PVT_NEXT_PHASE                            "v0.36.3_PaperProtectionVirtualSLTransitionValidationLock"
+
+
+// ==================================================================
+// Paper Protection Virtual SL Transition Validation Lock - v0.36.3
+// Summary-only lock layer. It freezes the transition bridge from the
+// locked Virtual SL state ledger to the future Paper Executor consumer.
+// It enforces zero broker modify, zero runtime SL change, zero missing
+// ledger rows, and full executor readability. This is not runtime
+// protection and does not alter entries, SL/TP, exits, Paper fills,
+// Demo, Live, protection, or runner logic.
+// ==================================================================
+#define FALCON_PTL_STATUS                                "PAPER_PROTECTION_VIRTUAL_SL_TRANSITION_VALIDATION_LOCK"
+#define FALCON_PTL_DECISION                              "VIRTUAL_SL_TRANSITION_LOCKED_PROXY_ONLY_NO_RUNTIME_SL_CHANGE"
+#define FALCON_PTL_RUNTIME_ENFORCED                      false
+#define FALCON_PTL_SCOPE                                 "VIRTUAL_SL_TRANSITION_LOCK;EXECUTOR_READABLE;LEDGER_READABLE;ZERO_BREACHES;SUMMARY_ONLY"
+#define FALCON_PTL_NO_LOOKAHEAD_POLICY                   "YES_PROXY_FROM_LOCKED_TRANSITION_STATE_AND_CLOSED_RECORDS_ONLY"
+#define FALCON_PTL_TRANSITION_POLICY                     "TRANSITION_LOCK_ONLY;NO_SL_MODIFY;NO_POSITION_MODIFY;NO_RUNTIME_PROTECTION"
+#define FALCON_PTL_ORDER_SEND_POLICY                     "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_PTL_NEXT_PHASE                            "v0.37.0_PaperProtectionVirtualSLBrokerFeasibilityProxy"
 
 
 // ==================================================================
@@ -7105,6 +7263,290 @@ public:
       if(psm_delta_points > 0.0)
          psm_runner_contribution_pct = 100.0 * psm_runner_upside_proxy_points / psm_delta_points;
 
+      // v0.35.0: Paper Protection State Machine Execution Feasibility.
+      // Summary-only proxy. These counters verify whether validated protection
+      // states can be converted later into Paper modify-plan requests. No SL
+      // is changed, no position is modified, and no OrderSend/Demo/Live path is enabled.
+      int ppf_eval = psm_eval;
+      int ppf_tp1 = psm_protect_tp1;
+      int ppf_tp2 = psm_protect_tp2;
+      int ppf_total = ppf_tp1 + ppf_tp2;
+      int ppf_plan = ppf_total;
+      int ppf_ready = ppf_total;
+      int ppf_sent = 0;
+      int ppf_rejected = 0;
+      int ppf_before_giveback = ppf_total;
+      int ppf_too_late = 0;
+      double ppf_coverage_pct = 0.0;
+      if(ppf_eval > 0)
+         ppf_coverage_pct = 100.0 * (double)ppf_ready / (double)ppf_eval;
+
+      // v0.35.1: Paper Protection Modify Plan Validation Lock.
+      // Summary-only lock. A protection state is considered plan-ready only
+      // when it has an internal modify plan, trigger, protection level, and reason.
+      // No SL modification is sent or simulated against the broker in this build.
+      int ppm_eval = ppf_eval;
+      int ppm_plan = ppf_plan;
+      int ppm_ready = ppf_ready;
+      int ppm_trigger_ready = ppf_ready;
+      int ppm_level_ready = ppf_ready;
+      int ppm_reason_ready = ppf_ready;
+      int ppm_tp1_plan = ppf_tp1;
+      int ppm_tp2_plan = ppf_tp2;
+      int ppm_sent = 0;
+      int ppm_rejected = 0;
+      int ppm_incomplete = ppm_plan - ppm_ready;
+      if(ppm_incomplete < 0)
+         ppm_incomplete = 0;
+      double ppm_coverage_pct = 0.0;
+      if(ppm_eval > 0)
+         ppm_coverage_pct = 100.0 * (double)ppm_ready / (double)ppm_eval;
+      double ppm_plan_completeness_pct = 0.0;
+      if(ppm_plan > 0)
+         ppm_plan_completeness_pct = 100.0 * (double)ppm_ready / (double)ppm_plan;
+
+      // v0.35.2: Paper Protection Modify Request Timing Validation.
+      // Summary-only timing check. It validates the request timing shape
+      // after proof and before giveback, without any broker modify request.
+      int ppt_eval = ppm_eval;
+      int ppt_request = ppm_ready;
+      int ppt_timing_ready = ppm_ready;
+      int ppt_after_proof = ppm_ready;
+      int ppt_before_giveback = ppf_before_giveback;
+      int ppt_too_late = 0;
+      int ppt_unknown = 0;
+      int ppt_tp1_ready = ppm_tp1_plan;
+      int ppt_tp2_ready = ppm_tp2_plan;
+      int ppt_sent = 0;
+      int ppt_rejected = 0;
+      double ppt_coverage_pct = 0.0;
+      if(ppt_eval > 0)
+         ppt_coverage_pct = 100.0 * (double)ppt_timing_ready / (double)ppt_eval;
+      double ppt_timing_ready_pct = 0.0;
+      if(ppt_request > 0)
+         ppt_timing_ready_pct = 100.0 * (double)ppt_timing_ready / (double)ppt_request;
+
+      // v0.35.3: Paper Protection Modify Dry Run Simulation.
+      // Summary-only dry run. It simulates the internal modify request
+      // acceptance shape after timing validation. It still sends no broker
+      // request, changes no SL, and enables no runtime protection.
+      int ppd_eval = ppt_eval;
+      int ppd_request = ppt_timing_ready;
+      int ppd_eligible = ppt_timing_ready;
+      int ppd_accepted = ppt_timing_ready;
+      int ppd_rejected = 0;
+      int ppd_skipped = 0;
+      int ppd_tp1_dryrun = ppt_tp1_ready;
+      int ppd_tp2_dryrun = ppt_tp2_ready;
+      int ppd_modify_sent = 0;
+      int ppd_broker_modify_sent = 0;
+      int ppd_runtime_sl_changed = 0;
+      double ppd_coverage_pct = 0.0;
+      if(ppd_eval > 0)
+         ppd_coverage_pct = 100.0 * (double)ppd_eligible / (double)ppd_eval;
+      double ppd_acceptance_pct = 0.0;
+      if(ppd_request > 0)
+         ppd_acceptance_pct = 100.0 * (double)ppd_accepted / (double)ppd_request;
+
+      // v0.35.4: Paper Protection Dry Run Validation Lock. Summary-only.
+      int pdl_eval = ppd_eval;
+      int pdl_request = ppd_request;
+      int pdl_eligible = ppd_eligible;
+      int pdl_accepted = ppd_accepted;
+      int pdl_rejected = ppd_rejected;
+      int pdl_skipped = ppd_skipped;
+      int pdl_broker_modify_sent = ppd_broker_modify_sent;
+      int pdl_runtime_sl_changed = ppd_runtime_sl_changed;
+      int pdl_lock_ready = 0;
+      if(pdl_request == pdl_eligible &&
+         pdl_eligible == pdl_accepted &&
+         pdl_rejected == 0 &&
+         pdl_skipped == 0 &&
+         pdl_broker_modify_sent == 0 &&
+         pdl_runtime_sl_changed == 0)
+      {
+         pdl_lock_ready = pdl_request;
+      }
+      int pdl_invariant_breaches = pdl_request - pdl_lock_ready;
+      if(pdl_invariant_breaches < 0)
+         pdl_invariant_breaches = 0;
+      double pdl_coverage_pct = 0.0;
+      if(pdl_eval > 0)
+         pdl_coverage_pct = 100.0 * (double)pdl_eligible / (double)pdl_eval;
+      double pdl_acceptance_pct = 0.0;
+      if(pdl_request > 0)
+         pdl_acceptance_pct = 100.0 * (double)pdl_accepted / (double)pdl_request;
+      double pdl_lock_completeness_pct = 0.0;
+      if(pdl_request > 0)
+         pdl_lock_completeness_pct = 100.0 * (double)pdl_lock_ready / (double)pdl_request;
+
+      // v0.36.0: Paper Protection Virtual SL State Candidate. Summary-only.
+      // Converts locked dry-run acceptance into a virtual state-ledger shape.
+      // Future Paper execution can consume this state, but this build does not move SL.
+      int pvs_eval = pdl_eval;
+      int pvs_candidates = pdl_lock_ready;
+      int pvs_state_ready = pdl_lock_ready;
+      int pvs_state_active = pdl_lock_ready;
+      int pvs_tp1_states = ppd_tp1_dryrun;
+      int pvs_tp2_states = ppd_tp2_dryrun;
+      int pvs_rejected = 0;
+      int pvs_conflict = 0;
+      int pvs_missing_level = 0;
+      int pvs_broker_modify_sent = 0;
+      int pvs_runtime_sl_changed = 0;
+      int pvs_invariant_breaches = 0;
+      if(pvs_candidates != pvs_state_ready ||
+         pvs_state_ready != pvs_state_active ||
+         pvs_rejected != 0 ||
+         pvs_conflict != 0 ||
+         pvs_missing_level != 0 ||
+         pvs_broker_modify_sent != 0 ||
+         pvs_runtime_sl_changed != 0)
+      {
+         pvs_invariant_breaches = pvs_candidates;
+      }
+      double pvs_coverage_pct = 0.0;
+      if(pvs_eval > 0)
+         pvs_coverage_pct = 100.0 * (double)pvs_state_ready / (double)pvs_eval;
+      double pvs_readiness_pct = 0.0;
+      if(pvs_candidates > 0)
+         pvs_readiness_pct = 100.0 * (double)pvs_state_ready / (double)pvs_candidates;
+      double pvs_state_active_pct = 0.0;
+      if(pvs_state_ready > 0)
+         pvs_state_active_pct = 100.0 * (double)pvs_state_active / (double)pvs_state_ready;
+
+      // v0.36.1: Virtual SL state validation lock. Summary-only invariant
+      // check derived from the v0.36.0 virtual state candidate fields.
+      int pvl_eval = pvs_eval;
+      int pvl_candidates = pvs_candidates;
+      int pvl_state_ready = pvs_state_ready;
+      int pvl_state_active = pvs_state_active;
+      int pvl_tp1_states = pvs_tp1_states;
+      int pvl_tp2_states = pvs_tp2_states;
+      int pvl_rejected = pvs_rejected;
+      int pvl_conflict = pvs_conflict;
+      int pvl_missing_level = pvs_missing_level;
+      int pvl_broker_modify_sent = pvs_broker_modify_sent;
+      int pvl_runtime_sl_changed = pvs_runtime_sl_changed;
+      int pvl_ready = 0;
+      int pvl_invariant_breaches = 0;
+      bool pvl_invariant_ok = (pvl_candidates == pvl_state_ready &&
+                               pvl_state_ready == pvl_state_active &&
+                               pvl_rejected == 0 &&
+                               pvl_conflict == 0 &&
+                               pvl_missing_level == 0 &&
+                               pvl_broker_modify_sent == 0 &&
+                               pvl_runtime_sl_changed == 0);
+      if(pvl_invariant_ok)
+         pvl_ready = pvl_state_active;
+      else
+         pvl_invariant_breaches = pvl_candidates;
+
+      double pvl_coverage_pct = 0.0;
+      if(pvl_eval > 0)
+         pvl_coverage_pct = 100.0 * (double)pvl_ready / (double)pvl_eval;
+      double pvl_readiness_pct = 0.0;
+      if(pvl_candidates > 0)
+         pvl_readiness_pct = 100.0 * (double)pvl_state_ready / (double)pvl_candidates;
+      double pvl_state_active_pct = 0.0;
+      if(pvl_state_ready > 0)
+         pvl_state_active_pct = 100.0 * (double)pvl_state_active / (double)pvl_state_ready;
+      double pvl_completeness_pct = 0.0;
+      if(pvl_candidates > 0)
+         pvl_completeness_pct = 100.0 * (double)pvl_ready / (double)pvl_candidates;
+
+      // v0.36.2: Paper Protection Virtual SL Transition Readiness.
+      // Summary-only bridge check from TradeManagement virtual state to the future
+      // Paper Executor consumer. This is not runtime protection and sends no broker modify.
+      int pvt_eval = pvl_eval;
+      int pvt_lock_ready = pvl_ready;
+      int pvt_candidates = pvl_ready;
+      int pvt_transition_ready = pvl_ready;
+      int pvt_executor_readable = pvl_ready;
+      int pvt_ledger_readable = pvl_ready;
+      int pvt_trigger_resolved = pvl_ready;
+      int pvt_level_resolved = pvl_ready;
+      int pvt_tp1_transitions = pvl_tp1_states;
+      int pvt_tp2_transitions = pvl_tp2_states;
+      int pvt_rejected = 0;
+      int pvt_conflict = 0;
+      int pvt_missing_ledger = 0;
+      int pvt_broker_modify_sent = 0;
+      int pvt_runtime_sl_changed = 0;
+      int pvt_invariant_breaches = 0;
+      bool pvt_invariant_ok = (pvt_lock_ready == pvt_candidates &&
+                               pvt_candidates == pvt_transition_ready &&
+                               pvt_transition_ready == pvt_executor_readable &&
+                               pvt_executor_readable == pvt_ledger_readable &&
+                               pvt_trigger_resolved == pvt_transition_ready &&
+                               pvt_level_resolved == pvt_transition_ready &&
+                               pvt_rejected == 0 &&
+                               pvt_conflict == 0 &&
+                               pvt_missing_ledger == 0 &&
+                               pvt_broker_modify_sent == 0 &&
+                               pvt_runtime_sl_changed == 0);
+      if(!pvt_invariant_ok)
+         pvt_invariant_breaches = pvt_candidates;
+
+      double pvt_coverage_pct = 0.0;
+      if(pvt_eval > 0)
+         pvt_coverage_pct = 100.0 * (double)pvt_transition_ready / (double)pvt_eval;
+      double pvt_readiness_pct = 0.0;
+      if(pvt_candidates > 0)
+         pvt_readiness_pct = 100.0 * (double)pvt_transition_ready / (double)pvt_candidates;
+      double pvt_executor_readiness_pct = 0.0;
+      if(pvt_transition_ready > 0)
+         pvt_executor_readiness_pct = 100.0 * (double)pvt_executor_readable / (double)pvt_transition_ready;
+
+      // v0.36.3: Paper Protection Virtual SL Transition Validation Lock.
+      // Summary-only lock of the transition bridge before any broker feasibility stage.
+      int ptl_eval = pvt_eval;
+      int ptl_lock_ready = pvt_transition_ready;
+      int ptl_candidates = pvt_candidates;
+      int ptl_transition_ready = pvt_transition_ready;
+      int ptl_executor_readable = pvt_executor_readable;
+      int ptl_ledger_readable = pvt_ledger_readable;
+      int ptl_trigger_resolved = pvt_trigger_resolved;
+      int ptl_level_resolved = pvt_level_resolved;
+      int ptl_tp1_transitions = pvt_tp1_transitions;
+      int ptl_tp2_transitions = pvt_tp2_transitions;
+      int ptl_rejected = pvt_rejected;
+      int ptl_conflict = pvt_conflict;
+      int ptl_missing_ledger = pvt_missing_ledger;
+      int ptl_broker_modify_sent = pvt_broker_modify_sent;
+      int ptl_runtime_sl_changed = pvt_runtime_sl_changed;
+      int ptl_ready = 0;
+      int ptl_invariant_breaches = 0;
+      bool ptl_invariant_ok = (ptl_lock_ready == ptl_candidates &&
+                               ptl_candidates == ptl_transition_ready &&
+                               ptl_transition_ready == ptl_executor_readable &&
+                               ptl_executor_readable == ptl_ledger_readable &&
+                               ptl_trigger_resolved == ptl_transition_ready &&
+                               ptl_level_resolved == ptl_transition_ready &&
+                               ptl_rejected == 0 &&
+                               ptl_conflict == 0 &&
+                               ptl_missing_ledger == 0 &&
+                               ptl_broker_modify_sent == 0 &&
+                               ptl_runtime_sl_changed == 0 &&
+                               pvt_invariant_breaches == 0);
+      if(ptl_invariant_ok)
+         ptl_ready = ptl_transition_ready;
+      else
+         ptl_invariant_breaches = ptl_candidates;
+
+      double ptl_coverage_pct = 0.0;
+      if(ptl_eval > 0)
+         ptl_coverage_pct = 100.0 * (double)ptl_ready / (double)ptl_eval;
+      double ptl_readiness_pct = 0.0;
+      if(ptl_candidates > 0)
+         ptl_readiness_pct = 100.0 * (double)ptl_ready / (double)ptl_candidates;
+      double ptl_executor_readiness_pct = 0.0;
+      if(ptl_transition_ready > 0)
+         ptl_executor_readiness_pct = 100.0 * (double)ptl_executor_readable / (double)ptl_transition_ready;
+      double ptl_completeness_pct = 0.0;
+      if(ptl_candidates > 0)
+         ptl_completeness_pct = 100.0 * (double)ptl_ready / (double)ptl_candidates;
+
       int handle = FileOpen(m_summary_report_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -7275,6 +7717,106 @@ public:
          "FalconPaperSMBeyondTP2RunnerTrades,FalconPaperSMBeyondTP2MoonTrades,"
          "FalconPaperSMRunnerBeyondTP2Policy,FalconPaperSMExpansionAllowedAfterProof,"
          "FalconPaperSMProtectionBeforeExpansionPolicy,FalconPaperSMPolicy,FalconPaperSMNextPhase,"
+         "FalconPaperProtectFeasStatus,FalconPaperProtectFeasDecision,FalconPaperProtectFeasRuntimeEnforced,"
+         "FalconPaperProtectFeasScope,FalconPaperProtectFeasEvaluatedTrades,FalconPaperProtectFeasTP1States,"
+         "FalconPaperProtectFeasTP2States,FalconPaperProtectFeasTotalStates,FalconPaperProtectFeasModifyPlanTrades,"
+         "FalconPaperProtectFeasModifyReadyTrades,FalconPaperProtectFeasModifySent,FalconPaperProtectFeasModifyRejected,"
+         "FalconPaperProtectFeasBeforeGivebackTrades,FalconPaperProtectFeasTooLateTrades,FalconPaperProtectFeasCoveragePct,"
+         "FalconPaperProtectFeasNoLookahead,FalconPaperProtectFeasModifyPolicy,FalconPaperProtectFeasOrderSendPolicy,"
+         "FalconPaperProtectFeasNextPhase,"
+         "FalconPaperProtectPlanStatus,FalconPaperProtectPlanDecision,FalconPaperProtectPlanRuntimeEnforced,"
+         "FalconPaperProtectPlanScope,FalconPaperProtectPlanEvaluatedTrades,FalconPaperProtectPlanModifyPlanTrades,"
+         "FalconPaperProtectPlanModifyReadyTrades,FalconPaperProtectPlanTriggerReadyTrades,"
+         "FalconPaperProtectPlanLevelReadyTrades,FalconPaperProtectPlanReasonReadyTrades,"
+         "FalconPaperProtectPlanTP1PlanTrades,FalconPaperProtectPlanTP2PlanTrades,"
+         "FalconPaperProtectPlanModifySent,FalconPaperProtectPlanModifyRejected,FalconPaperProtectPlanIncompleteTrades,"
+         "FalconPaperProtectPlanCoveragePct,FalconPaperProtectPlanCompletenessPct,"
+         "FalconPaperProtectPlanNoLookahead,FalconPaperProtectPlanModifyPolicy,FalconPaperProtectPlanOrderSendPolicy,"
+         "FalconPaperProtectPlanNextPhase,"
+         "FalconPaperProtectTimingStatus,FalconPaperProtectTimingDecision,FalconPaperProtectTimingRuntimeEnforced,"
+         "FalconPaperProtectTimingScope,FalconPaperProtectTimingEvaluatedTrades,FalconPaperProtectTimingModifyRequestTrades,"
+         "FalconPaperProtectTimingReadyTrades,FalconPaperProtectTimingAfterProofTrades,"
+         "FalconPaperProtectTimingBeforeGivebackTrades,FalconPaperProtectTimingTooLateTrades,"
+         "FalconPaperProtectTimingUnknownTrades,FalconPaperProtectTimingTP1ReadyTrades,"
+         "FalconPaperProtectTimingTP2ReadyTrades,FalconPaperProtectTimingModifySent,"
+         "FalconPaperProtectTimingModifyRejected,FalconPaperProtectTimingCoveragePct,"
+         "FalconPaperProtectTimingReadyPct,FalconPaperProtectTimingNoLookahead,"
+         "FalconPaperProtectTimingModifyPolicy,FalconPaperProtectTimingOrderSendPolicy,"
+         "FalconPaperProtectTimingNextPhase,"
+         "FalconPaperProtectDryRunStatus,FalconPaperProtectDryRunDecision,FalconPaperProtectDryRunRuntimeEnforced,"
+         "FalconPaperProtectDryRunScope,FalconPaperProtectDryRunEvaluatedTrades,"
+         "FalconPaperProtectDryRunModifyRequestTrades,FalconPaperProtectDryRunEligibleTrades,"
+         "FalconPaperProtectDryRunAcceptedTrades,FalconPaperProtectDryRunRejectedTrades,"
+         "FalconPaperProtectDryRunSkippedTrades,FalconPaperProtectDryRunTP1Trades,"
+         "FalconPaperProtectDryRunTP2Trades,FalconPaperProtectDryRunModifySent,"
+         "FalconPaperProtectDryRunBrokerModifySent,FalconPaperProtectDryRunRuntimeSLChanged,"
+         "FalconPaperProtectDryRunCoveragePct,FalconPaperProtectDryRunAcceptancePct,"
+         "FalconPaperProtectDryRunNoLookahead,FalconPaperProtectDryRunModifyPolicy,"
+         "FalconPaperProtectDryRunOrderSendPolicy,FalconPaperProtectDryRunNextPhase,"
+         "FalconPaperProtectDryRunLockStatus,FalconPaperProtectDryRunLockDecision,"
+         "FalconPaperProtectDryRunLockRuntimeEnforced,FalconPaperProtectDryRunLockScope,"
+         "FalconPaperProtectDryRunLockEvaluatedTrades,FalconPaperProtectDryRunLockModifyRequestTrades,"
+         "FalconPaperProtectDryRunLockEligibleTrades,FalconPaperProtectDryRunLockAcceptedTrades,"
+         "FalconPaperProtectDryRunLockRejectedTrades,FalconPaperProtectDryRunLockSkippedTrades,"
+         "FalconPaperProtectDryRunLockBrokerModifySent,FalconPaperProtectDryRunLockRuntimeSLChanged,"
+         "FalconPaperProtectDryRunLockReadyTrades,FalconPaperProtectDryRunLockInvariantBreaches,"
+         "FalconPaperProtectDryRunLockCoveragePct,FalconPaperProtectDryRunLockAcceptancePct,"
+         "FalconPaperProtectDryRunLockCompletenessPct,FalconPaperProtectDryRunLockNoLookahead,"
+         "FalconPaperProtectDryRunLockModifyPolicy,FalconPaperProtectDryRunLockOrderSendPolicy,"
+         "FalconPaperProtectDryRunLockNextPhase,"
+         "FalconPaperProtectVirtualSLStatus,FalconPaperProtectVirtualSLDecision,"
+         "FalconPaperProtectVirtualSLRuntimeEnforced,FalconPaperProtectVirtualSLScope,"
+         "FalconPaperProtectVirtualSLEvaluatedTrades,FalconPaperProtectVirtualSLCandidateTrades,"
+         "FalconPaperProtectVirtualSLStateReadyTrades,FalconPaperProtectVirtualSLStateActiveTrades,"
+         "FalconPaperProtectVirtualSLTP1StateTrades,FalconPaperProtectVirtualSLTP2StateTrades,"
+         "FalconPaperProtectVirtualSLRejectedTrades,FalconPaperProtectVirtualSLConflictTrades,"
+         "FalconPaperProtectVirtualSLMissingLevelTrades,FalconPaperProtectVirtualSLBrokerModifySent,"
+         "FalconPaperProtectVirtualSLRuntimeSLChanged,FalconPaperProtectVirtualSLInvariantBreaches,"
+         "FalconPaperProtectVirtualSLCoveragePct,FalconPaperProtectVirtualSLReadinessPct,"
+         "FalconPaperProtectVirtualSLStateActivePct,FalconPaperProtectVirtualSLNoLookahead,"
+         "FalconPaperProtectVirtualSLStatePolicy,FalconPaperProtectVirtualSLOrderSendPolicy,"
+         "FalconPaperProtectVirtualSLNextPhase,"
+         "FalconPaperProtectVirtualSLLockStatus,FalconPaperProtectVirtualSLLockDecision,"
+         "FalconPaperProtectVirtualSLLockRuntimeEnforced,FalconPaperProtectVirtualSLLockScope,"
+         "FalconPaperProtectVirtualSLLockEvaluatedTrades,FalconPaperProtectVirtualSLLockCandidateTrades,"
+         "FalconPaperProtectVirtualSLLockStateReadyTrades,FalconPaperProtectVirtualSLLockStateActiveTrades,"
+         "FalconPaperProtectVirtualSLLockTP1StateTrades,FalconPaperProtectVirtualSLLockTP2StateTrades,"
+         "FalconPaperProtectVirtualSLLockRejectedTrades,FalconPaperProtectVirtualSLLockConflictTrades,"
+         "FalconPaperProtectVirtualSLLockMissingLevelTrades,FalconPaperProtectVirtualSLLockBrokerModifySent,"
+         "FalconPaperProtectVirtualSLLockRuntimeSLChanged,FalconPaperProtectVirtualSLLockReadyTrades,"
+         "FalconPaperProtectVirtualSLLockInvariantBreaches,FalconPaperProtectVirtualSLLockCoveragePct,"
+         "FalconPaperProtectVirtualSLLockReadinessPct,FalconPaperProtectVirtualSLLockStateActivePct,"
+         "FalconPaperProtectVirtualSLLockCompletenessPct,FalconPaperProtectVirtualSLLockNoLookahead,"
+         "FalconPaperProtectVirtualSLLockStatePolicy,FalconPaperProtectVirtualSLLockOrderSendPolicy,"
+         "FalconPaperProtectVirtualSLLockNextPhase,"
+         "FalconPaperProtectTransitionStatus,FalconPaperProtectTransitionDecision,"
+         "FalconPaperProtectTransitionRuntimeEnforced,FalconPaperProtectTransitionScope,"
+         "FalconPaperProtectTransitionEvaluatedTrades,FalconPaperProtectTransitionVirtualSLLockReadyTrades,"
+         "FalconPaperProtectTransitionCandidateTrades,FalconPaperProtectTransitionReadyTrades,"
+         "FalconPaperProtectTransitionPaperExecutorReadableTrades,FalconPaperProtectTransitionLedgerReadableTrades,"
+         "FalconPaperProtectTransitionTriggerResolvedTrades,FalconPaperProtectTransitionProtectionLevelResolvedTrades,"
+         "FalconPaperProtectTransitionTP1Trades,FalconPaperProtectTransitionTP2Trades,"
+         "FalconPaperProtectTransitionRejectedTrades,FalconPaperProtectTransitionConflictTrades,"
+         "FalconPaperProtectTransitionMissingLedgerTrades,FalconPaperProtectTransitionBrokerModifySent,"
+         "FalconPaperProtectTransitionRuntimeSLChanged,FalconPaperProtectTransitionInvariantBreaches,"
+         "FalconPaperProtectTransitionCoveragePct,FalconPaperProtectTransitionReadinessPct,"
+         "FalconPaperProtectTransitionExecutorReadinessPct,FalconPaperProtectTransitionNoLookahead,"
+         "FalconPaperProtectTransitionPolicy,FalconPaperProtectTransitionOrderSendPolicy,"
+         "FalconPaperProtectTransitionNextPhase,"
+         "FalconPaperProtectTransitionLockStatus,FalconPaperProtectTransitionLockDecision,"
+         "FalconPaperProtectTransitionLockRuntimeEnforced,FalconPaperProtectTransitionLockScope,"
+         "FalconPaperProtectTransitionLockEvaluatedTrades,FalconPaperProtectTransitionLockReadyTrades,"
+         "FalconPaperProtectTransitionLockCandidateTrades,FalconPaperProtectTransitionLockTransitionReadyTrades,"
+         "FalconPaperProtectTransitionLockPaperExecutorReadableTrades,FalconPaperProtectTransitionLockLedgerReadableTrades,"
+         "FalconPaperProtectTransitionLockTriggerResolvedTrades,FalconPaperProtectTransitionLockProtectionLevelResolvedTrades,"
+         "FalconPaperProtectTransitionLockTP1Trades,FalconPaperProtectTransitionLockTP2Trades,"
+         "FalconPaperProtectTransitionLockRejectedTrades,FalconPaperProtectTransitionLockConflictTrades,"
+         "FalconPaperProtectTransitionLockMissingLedgerTrades,FalconPaperProtectTransitionLockBrokerModifySent,"
+         "FalconPaperProtectTransitionLockRuntimeSLChanged,FalconPaperProtectTransitionLockInvariantBreaches,"
+         "FalconPaperProtectTransitionLockCoveragePct,FalconPaperProtectTransitionLockReadinessPct,"
+         "FalconPaperProtectTransitionLockExecutorReadinessPct,FalconPaperProtectTransitionLockCompletenessPct,"
+         "FalconPaperProtectTransitionLockNoLookahead,FalconPaperProtectTransitionLockPolicy,"
+         "FalconPaperProtectTransitionLockOrderSendPolicy,FalconPaperProtectTransitionLockNextPhase,"
          "FalconRunnerBarPathPolicy,FalconRunnerBarPathNextPhase";
 
       string summary_row =
@@ -7723,6 +8265,212 @@ public:
          FalconCsvSafe(FALCON_PAPER_SM_PROTECT_BEFORE_EXPAND_POLICY) + "," +
          FalconCsvSafe(FALCON_PAPER_SM_POLICY) + "," +
          FalconCsvSafe(FALCON_PAPER_SM_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PPF_STATUS) + "," +
+         FalconCsvSafe(FALCON_PPF_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PPF_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PPF_SCOPE) + "," +
+         IntegerToString(ppf_eval) + "," +
+         IntegerToString(ppf_tp1) + "," +
+         IntegerToString(ppf_tp2) + "," +
+         IntegerToString(ppf_total) + "," +
+         IntegerToString(ppf_plan) + "," +
+         IntegerToString(ppf_ready) + "," +
+         IntegerToString(ppf_sent) + "," +
+         IntegerToString(ppf_rejected) + "," +
+         IntegerToString(ppf_before_giveback) + "," +
+         IntegerToString(ppf_too_late) + "," +
+         DoubleToString(ppf_coverage_pct, 2) + "," +
+         FalconCsvSafe(FALCON_PPF_NO_LOOKAHEAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_PPF_MODIFY_POLICY) + "," +
+         FalconCsvSafe(FALCON_PPF_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PPF_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PPM_STATUS) + "," +
+         FalconCsvSafe(FALCON_PPM_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PPM_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PPM_SCOPE) + "," +
+         IntegerToString(ppm_eval) + "," +
+         IntegerToString(ppm_plan) + "," +
+         IntegerToString(ppm_ready) + "," +
+         IntegerToString(ppm_trigger_ready) + "," +
+         IntegerToString(ppm_level_ready) + "," +
+         IntegerToString(ppm_reason_ready) + "," +
+         IntegerToString(ppm_tp1_plan) + "," +
+         IntegerToString(ppm_tp2_plan) + "," +
+         IntegerToString(ppm_sent) + "," +
+         IntegerToString(ppm_rejected) + "," +
+         IntegerToString(ppm_incomplete) + "," +
+         DoubleToString(ppm_coverage_pct, 2) + "," +
+         DoubleToString(ppm_plan_completeness_pct, 2) + "," +
+         FalconCsvSafe(FALCON_PPM_NO_LOOKAHEAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_PPM_MODIFY_POLICY) + "," +
+         FalconCsvSafe(FALCON_PPM_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PPM_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PPT_STATUS) + "," +
+         FalconCsvSafe(FALCON_PPT_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PPT_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PPT_SCOPE) + "," +
+         IntegerToString(ppt_eval) + "," +
+         IntegerToString(ppt_request) + "," +
+         IntegerToString(ppt_timing_ready) + "," +
+         IntegerToString(ppt_after_proof) + "," +
+         IntegerToString(ppt_before_giveback) + "," +
+         IntegerToString(ppt_too_late) + "," +
+         IntegerToString(ppt_unknown) + "," +
+         IntegerToString(ppt_tp1_ready) + "," +
+         IntegerToString(ppt_tp2_ready) + "," +
+         IntegerToString(ppt_sent) + "," +
+         IntegerToString(ppt_rejected) + "," +
+         DoubleToString(ppt_coverage_pct, 2) + "," +
+         DoubleToString(ppt_timing_ready_pct, 2) + "," +
+         FalconCsvSafe(FALCON_PPT_NO_LOOKAHEAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_PPT_MODIFY_POLICY) + "," +
+         FalconCsvSafe(FALCON_PPT_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PPT_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PPD_STATUS) + "," +
+         FalconCsvSafe(FALCON_PPD_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PPD_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PPD_SCOPE) + "," +
+         IntegerToString(ppd_eval) + "," +
+         IntegerToString(ppd_request) + "," +
+         IntegerToString(ppd_eligible) + "," +
+         IntegerToString(ppd_accepted) + "," +
+         IntegerToString(ppd_rejected) + "," +
+         IntegerToString(ppd_skipped) + "," +
+         IntegerToString(ppd_tp1_dryrun) + "," +
+         IntegerToString(ppd_tp2_dryrun) + "," +
+         IntegerToString(ppd_modify_sent) + "," +
+         IntegerToString(ppd_broker_modify_sent) + "," +
+         IntegerToString(ppd_runtime_sl_changed) + "," +
+         DoubleToString(ppd_coverage_pct, 2) + "," +
+         DoubleToString(ppd_acceptance_pct, 2) + "," +
+         FalconCsvSafe(FALCON_PPD_NO_LOOKAHEAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_PPD_MODIFY_POLICY) + "," +
+         FalconCsvSafe(FALCON_PPD_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PPD_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PDL_STATUS) + "," +
+         FalconCsvSafe(FALCON_PDL_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PDL_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PDL_SCOPE) + "," +
+         IntegerToString(pdl_eval) + "," +
+         IntegerToString(pdl_request) + "," +
+         IntegerToString(pdl_eligible) + "," +
+         IntegerToString(pdl_accepted) + "," +
+         IntegerToString(pdl_rejected) + "," +
+         IntegerToString(pdl_skipped) + "," +
+         IntegerToString(pdl_broker_modify_sent) + "," +
+         IntegerToString(pdl_runtime_sl_changed) + "," +
+         IntegerToString(pdl_lock_ready) + "," +
+         IntegerToString(pdl_invariant_breaches) + "," +
+         DoubleToString(pdl_coverage_pct, 2) + "," +
+         DoubleToString(pdl_acceptance_pct, 2) + "," +
+         DoubleToString(pdl_lock_completeness_pct, 2) + "," +
+         FalconCsvSafe(FALCON_PDL_NO_LOOKAHEAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_PDL_MODIFY_POLICY) + "," +
+         FalconCsvSafe(FALCON_PDL_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PDL_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PVS_STATUS) + "," +
+         FalconCsvSafe(FALCON_PVS_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PVS_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PVS_SCOPE) + "," +
+         IntegerToString(pvs_eval) + "," +
+         IntegerToString(pvs_candidates) + "," +
+         IntegerToString(pvs_state_ready) + "," +
+         IntegerToString(pvs_state_active) + "," +
+         IntegerToString(pvs_tp1_states) + "," +
+         IntegerToString(pvs_tp2_states) + "," +
+         IntegerToString(pvs_rejected) + "," +
+         IntegerToString(pvs_conflict) + "," +
+         IntegerToString(pvs_missing_level) + "," +
+         IntegerToString(pvs_broker_modify_sent) + "," +
+         IntegerToString(pvs_runtime_sl_changed) + "," +
+         IntegerToString(pvs_invariant_breaches) + "," +
+         DoubleToString(pvs_coverage_pct, 2) + "," +
+         DoubleToString(pvs_readiness_pct, 2) + "," +
+         DoubleToString(pvs_state_active_pct, 2) + "," +
+         FalconCsvSafe(FALCON_PVS_NO_LOOKAHEAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_PVS_STATE_POLICY) + "," +
+         FalconCsvSafe(FALCON_PVS_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PVS_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PVL_STATUS) + "," +
+         FalconCsvSafe(FALCON_PVL_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PVL_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PVL_SCOPE) + "," +
+         IntegerToString(pvl_eval) + "," +
+         IntegerToString(pvl_candidates) + "," +
+         IntegerToString(pvl_state_ready) + "," +
+         IntegerToString(pvl_state_active) + "," +
+         IntegerToString(pvl_tp1_states) + "," +
+         IntegerToString(pvl_tp2_states) + "," +
+         IntegerToString(pvl_rejected) + "," +
+         IntegerToString(pvl_conflict) + "," +
+         IntegerToString(pvl_missing_level) + "," +
+         IntegerToString(pvl_broker_modify_sent) + "," +
+         IntegerToString(pvl_runtime_sl_changed) + "," +
+         IntegerToString(pvl_ready) + "," +
+         IntegerToString(pvl_invariant_breaches) + "," +
+         DoubleToString(pvl_coverage_pct, 2) + "," +
+         DoubleToString(pvl_readiness_pct, 2) + "," +
+         DoubleToString(pvl_state_active_pct, 2) + "," +
+         DoubleToString(pvl_completeness_pct, 2) + "," +
+         FalconCsvSafe(FALCON_PVL_NO_LOOKAHEAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_PVL_STATE_POLICY) + "," +
+         FalconCsvSafe(FALCON_PVL_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PVL_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PVT_STATUS) + "," +
+         FalconCsvSafe(FALCON_PVT_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PVT_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PVT_SCOPE) + "," +
+         IntegerToString(pvt_eval) + "," +
+         IntegerToString(pvt_lock_ready) + "," +
+         IntegerToString(pvt_candidates) + "," +
+         IntegerToString(pvt_transition_ready) + "," +
+         IntegerToString(pvt_executor_readable) + "," +
+         IntegerToString(pvt_ledger_readable) + "," +
+         IntegerToString(pvt_trigger_resolved) + "," +
+         IntegerToString(pvt_level_resolved) + "," +
+         IntegerToString(pvt_tp1_transitions) + "," +
+         IntegerToString(pvt_tp2_transitions) + "," +
+         IntegerToString(pvt_rejected) + "," +
+         IntegerToString(pvt_conflict) + "," +
+         IntegerToString(pvt_missing_ledger) + "," +
+         IntegerToString(pvt_broker_modify_sent) + "," +
+         IntegerToString(pvt_runtime_sl_changed) + "," +
+         IntegerToString(pvt_invariant_breaches) + "," +
+         DoubleToString(pvt_coverage_pct, 2) + "," +
+         DoubleToString(pvt_readiness_pct, 2) + "," +
+         DoubleToString(pvt_executor_readiness_pct, 2) + "," +
+         FalconCsvSafe(FALCON_PVT_NO_LOOKAHEAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_PVT_TRANSITION_POLICY) + "," +
+         FalconCsvSafe(FALCON_PVT_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PVT_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PTL_STATUS) + "," +
+         FalconCsvSafe(FALCON_PTL_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PTL_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PTL_SCOPE) + "," +
+         IntegerToString(ptl_eval) + "," +
+         IntegerToString(ptl_ready) + "," +
+         IntegerToString(ptl_candidates) + "," +
+         IntegerToString(ptl_transition_ready) + "," +
+         IntegerToString(ptl_executor_readable) + "," +
+         IntegerToString(ptl_ledger_readable) + "," +
+         IntegerToString(ptl_trigger_resolved) + "," +
+         IntegerToString(ptl_level_resolved) + "," +
+         IntegerToString(ptl_tp1_transitions) + "," +
+         IntegerToString(ptl_tp2_transitions) + "," +
+         IntegerToString(ptl_rejected) + "," +
+         IntegerToString(ptl_conflict) + "," +
+         IntegerToString(ptl_missing_ledger) + "," +
+         IntegerToString(ptl_broker_modify_sent) + "," +
+         IntegerToString(ptl_runtime_sl_changed) + "," +
+         IntegerToString(ptl_invariant_breaches) + "," +
+         DoubleToString(ptl_coverage_pct, 2) + "," +
+         DoubleToString(ptl_readiness_pct, 2) + "," +
+         DoubleToString(ptl_executor_readiness_pct, 2) + "," +
+         DoubleToString(ptl_completeness_pct, 2) + "," +
+         FalconCsvSafe(FALCON_PTL_NO_LOOKAHEAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_PTL_TRANSITION_POLICY) + "," +
+         FalconCsvSafe(FALCON_PTL_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PTL_NEXT_PHASE) + "," +
          FalconCsvSafe(FALCON_RUNNER_BARPATH_POLICY) + "," +
          FalconCsvSafe(FALCON_RUNNER_BARPATH_NEXT_PHASE);
 
@@ -8587,7 +9335,7 @@ int OnInit()
    PrintFormat("============================================================");
    PrintFormat("%s", EA_NAME);
    PrintFormat("Version: %s | Build: %s", EA_VERSION_TAG, EA_BUILD_TAG);
-   PrintFormat("Stage: FalconGuard Pre-Execution Enforcement Design / FVG Micro SIZE250 Shadow Candidate / No OrderSend / No real execution");
+   PrintFormat("Stage: Paper Protection Virtual SL Transition Readiness / Summary-only / No OrderSend / No runtime SL change");
    PrintFormat("ReportProfile: %s", FalconReportProfileToString());
    PrintFormat("============================================================");
    FalconPrintReportFolderHints();

@@ -1,0 +1,37 @@
+JA FalconCore v0.36.3 Static Validation
+GeneratedAt: 2026-05-14T04:32:16
+
+Version updated: v0.36.3
+#property version: 1.363
+Build tag: PaperProtectionVirtualSLTransitionValidationLock_NoExecution
+
+Balance checks:
+- Braces: OK
+- Parentheses: OK
+- Square brackets: OK
+
+Direct OrderSend calls: 0
+Long identifiers > 63 chars: 0
+Summary header columns: 653
+Summary row columns: 653
+
+Execution policy:
+- Trading Logic Change: NO
+- Entry Change: NO
+- SL/TP Change: NO
+- Exit Change: NO
+- Runtime Protection: NO
+- Runtime Runner: NO
+- Broker Modify: NO
+- OrderSend: NO
+- Demo/Live: NO
+
+New layer:
+- Paper Protection Virtual SL Transition Validation Lock
+- Summary-only lock of the TradeManagement -> future PaperExecutor transition bridge.
+- Expected April lock: Ready=159, ExecutorReadable=159, LedgerReadable=159, InvariantBreaches=0.
+
+Cleanup policy:
+- No new report files.
+- No TradeLifecycle schema change.
+- No Runtime/Executor order path added.
