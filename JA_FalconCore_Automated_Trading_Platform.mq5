@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.32.1 - Paper Partial Runner Branch Validation Lock |
+//|                     Version: v0.34.2 - Paper Protection Runner State Machine Validation Lock |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.321"
+#property version   "1.342"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.32.1"
-#define EA_BUILD_TAG   "PaperPartialRunnerBranchValidationLock_NoExecution"
+#define EA_VERSION_TAG "v0.34.2"
+#define EA_BUILD_TAG   "PaperProtectionRunnerStateMachineValidationLock_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -356,6 +356,38 @@ long   g_fvg_hold_quality_score_total                = 0;
 #define FALCON_PPR_RUNNER_POLICY                         "SIMULATE_RUNNER_BRANCH_READINESS_FROM_FAST_TM_RUNNER_CANDIDATE_PLAN"
 #define FALCON_PPR_BRANCH_ORDER_SEND_POLICY              "ORDER_SEND_HARD_BLOCKED;PAPER_BRANCH_SIMULATION_ONLY"
 #define FALCON_PPR_BRANCH_NEXT_PHASE                     "v0.33.0_PaperPartialRunnerOutcomeSimulation"
+
+// ==================================================================
+// Paper Partial / Runner Outcome Validation Lock - v0.33.1
+// Validation lock for paper partial/runner outcome proxy simulation. It preserves paper branch outcome metrics
+// without changing Shadow lifecycle totals, SL/TP, exits, OrderSend, Demo, or Live.
+// ==================================================================
+#define FALCON_PPR_OUT_STATUS                            "PAPER_PARTIAL_RUNNER_OUTCOME_VALIDATION_LOCK"
+#define FALCON_PPR_OUT_DECISION                          "PARTIAL_RUNNER_OUTCOME_PROXY_FULL_VALIDATION_LOCKED_NO_RUNTIME_EXIT_CHANGE"
+#define FALCON_PPR_OUT_RUNTIME_ENFORCED                  false
+#define FALCON_PPR_OUT_SCOPE                             "PAPER_PARTIAL_OUTCOME;PAPER_RUNNER_OUTCOME;VALIDATION_LOCK;PROXY_ONLY;NO_BROKER_ORDERS;NO_RUNTIME_EXIT_CHANGE"
+#define FALCON_PPR_OUT_POLICY                            "VALIDATION_LOCK_PROXY_ONLY_FROM_BRANCH_AND_BARPATH_DIAGNOSTICS_NOT_EXPECTED_NET"
+#define FALCON_PPR_OUT_NEXT_PHASE                        "v0.34.0_PaperProtectionRunnerStateMachineSimulation"
+
+// ==================================================================
+// Paper Protection / Runner State Machine Validation Lock - v0.34.2
+// Validation lock for the Paper Protection / Runner State Machine.
+// TP2 remains a proof checkpoint rather than a mandatory final target.
+// Runner and Moon Mode remain proxy-only beyond TP2 after proof and protection.
+// No SL/TP, exit, OrderSend, Paper fill, Demo, or Live behavior changes.
+// ==================================================================
+#define FALCON_PAPER_SM_STATUS                           "PAPER_PROTECTION_RUNNER_STATE_MACHINE_VALIDATION_LOCK"
+#define FALCON_PAPER_SM_DECISION                         "STATE_MACHINE_FULL_VALIDATION_LOCKED_TP2_GATE_NO_RUNTIME_EXIT_CHANGE"
+#define FALCON_PAPER_SM_RUNTIME_ENFORCED                 false
+#define FALCON_PAPER_SM_SCOPE                            "PAPER_PROTECTION_STATE;PAPER_RUNNER_STATE;TP2_PROOF_GATE;MOON_MODE_PROXY;VALIDATION_LOCK;NO_BROKER_ORDERS;NO_RUNTIME_EXIT_CHANGE"
+#define FALCON_PAPER_SM_POLICY                           "VALIDATION_LOCK;PROTECTION_FIRST;TP2_IS_NOT_FINAL_TARGET;RUNNER_ONLY_AFTER_PROOF;MOON_MODE_ONLY_AFTER_STRONG_PROOF"
+#define FALCON_PAPER_SM_TP2_IS_CHECKPOINT                true
+#define FALCON_PAPER_SM_TP2_EXIT_MANDATORY               false
+#define FALCON_PAPER_SM_RUNNER_BEYOND_TP2_POLICY         "RUNNER_CAN_EXPAND_BEYOND_TP2_ONLY_AFTER_PROOF_AND_PROTECTION"
+#define FALCON_PAPER_SM_EXPANSION_AFTER_PROOF            true
+#define FALCON_PAPER_SM_PROTECT_BEFORE_EXPAND_POLICY     "PROTECT_FIRST_THEN_EXPAND;NO_EARLY_BE;NO_UNPROTECTED_RUNNER"
+#define FALCON_PAPER_SM_NEXT_PHASE                       "v0.35.0_PaperProtectionStateMachineExecutionFeasibility"
+
 
 // ==================================================================
 // FVG SIZE250 Runtime Candidate counter alignment lock - v0.25.1
@@ -7012,6 +7044,67 @@ public:
       string dt_time_protect_feasible = (m_totals.runner_barpath_scan_failed_trades == 0 && dt_time_cache_ready >= dt_time_eval ? "YES_PROXY_PRECOMPUTED_NO_LOOKAHEAD" : "REVIEW_REQUIRED");
       string dt_time_runner_feasible = (m_totals.runner_barpath_scan_failed_trades == 0 && dt_time_tp2_pre >= decision_tree_outcome_runner_activate_would_reach_3r_trades ? "YES_PROXY_PRECOMPUTED_NO_LOOKAHEAD" : "REVIEW_REQUIRED");
 
+      // v0.33.0: Paper Partial / Runner Outcome Simulation. These are
+      // conservative proxy metrics derived from branch readiness and bar-path
+      // diagnostics. They do not replace base TotalProfit/TotalLoss/Net metrics
+      // and do not alter Shadow lifecycle, SL/TP, exits, OrderSend, Paper, Demo, or Live.
+      int po_eval = m_totals.total_trades;
+      int po_partial_branches = m_totals.fast_tm_conservative_partial_ready_trades;
+      int po_runner_branches = m_totals.fast_tm_immediate_runner_candidate_trades;
+      int po_tp1_protect = dt_out_tp1_protect_reduce_rtl;
+      int po_tp2_protect = dt_out_tp2_protect_reduce_rtl;
+      int po_runner_3r = decision_tree_outcome_runner_activate_would_reach_3r_trades;
+      int po_runner_5r = decision_tree_outcome_runner_activate_would_reach_5r_trades;
+      double po_protect_proxy_points = (double)po_tp1_protect * runner_barpath_giveback_after_tp1_avg_points * 0.50;
+      po_protect_proxy_points += (double)po_tp2_protect * runner_barpath_giveback_after_tp2_avg_points * 0.25;
+      double po_runner_proxy_points = (double)po_runner_3r * runner_barpath_tp2_to_max_run_avg_points * 0.33;
+      double po_delta_points = po_protect_proxy_points + po_runner_proxy_points;
+      double po_sim_net_points = m_totals.net_index_points + po_delta_points;
+      double po_delta_usd = FalconEstimateUsdByRawPoints(po_delta_points, FixedLotSize, m_symbol_context);
+      double po_sim_net_usd = m_totals.net_usd + po_delta_usd;
+      double po_protect_cov_pct = 0.0;
+      int po_total_rtl = m_totals.runner_barpath_returned_to_loss_after_tp1_trades + m_totals.runner_barpath_returned_to_loss_after_tp2_trades;
+      if(po_total_rtl > 0)
+         po_protect_cov_pct = 100.0 * (double)(po_tp1_protect + po_tp2_protect) / (double)po_total_rtl;
+      if(po_protect_cov_pct > 100.0)
+         po_protect_cov_pct = 100.0;
+      double po_runner3r_pct = 0.0;
+      if(po_runner_branches > 0)
+         po_runner3r_pct = 100.0 * (double)po_runner_3r / (double)po_runner_branches;
+      double po_runner5r_pct = 0.0;
+      if(po_runner_branches > 0)
+         po_runner5r_pct = 100.0 * (double)po_runner_5r / (double)po_runner_branches;
+
+      // v0.34.0: Paper Protection / Runner State Machine Simulation.
+      // This is a summary-only proxy built from validated paper outcome,
+      // decision-tree, and bar-path counters. It never changes exits, SL/TP,
+      // Paper fills, OrderSend, Demo, or Live behavior.
+      int psm_eval = m_totals.total_trades;
+      int psm_entry_state = m_totals.total_trades;
+      int psm_filled_state = m_totals.total_trades;
+      int psm_tp1_proof_state = m_totals.runner_barpath_tp1_touched_trades;
+      int psm_tp2_proof_state = m_totals.runner_barpath_tp2_touched_trades;
+      int psm_protect_tp1 = po_tp1_protect;
+      int psm_protect_tp2 = po_tp2_protect;
+      int psm_runner_candidate = po_runner_branches;
+      int psm_runner_3r = po_runner_3r;
+      int psm_moon_5r = po_runner_5r;
+      int psm_exit_warning = dt_out_exitwarn_catch_rtl;
+      int psm_antiproof = dt_out_antiproof_catch_rtl;
+      int psm_return_loss_preventable = psm_protect_tp1 + psm_protect_tp2;
+      double psm_protected_giveback_proxy_points = po_protect_proxy_points;
+      double psm_runner_upside_proxy_points = po_runner_proxy_points;
+      double psm_delta_points = po_delta_points;
+      double psm_sim_net_points = po_sim_net_points;
+      double psm_delta_usd = po_delta_usd;
+      double psm_sim_net_usd = po_sim_net_usd;
+      double psm_protection_contribution_pct = 0.0;
+      if(psm_delta_points > 0.0)
+         psm_protection_contribution_pct = 100.0 * psm_protected_giveback_proxy_points / psm_delta_points;
+      double psm_runner_contribution_pct = 0.0;
+      if(psm_delta_points > 0.0)
+         psm_runner_contribution_pct = 100.0 * psm_runner_upside_proxy_points / psm_delta_points;
+
       int handle = FileOpen(m_summary_report_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -7160,6 +7253,28 @@ public:
          "FalconPaperExecRejectedReason,FalconPaperExecStateModel,FalconPaperExecNoLookaheadPolicy,"
          "FalconPaperExecNextPhase,FalconPaperSimStatus,FalconPaperSimDecision,FalconPaperSimScope,FalconPaperSimEvaluatedTrades,FalconPaperSimPlannedOrders,FalconPaperSimStagedOrders,FalconPaperSimAcceptedOrders,FalconPaperSimFilledOrders,FalconPaperSimClosedOrders,FalconPaperSimRejectedOrders,FalconPaperSimSLAttachedOrders,FalconPaperSimTPAttachedOrders,FalconPaperSimPartialBranchesPrepared,FalconPaperSimRunnerBranchesPrepared,FalconPaperSimOrderSendBypass,FalconPaperSimNoLookaheadPolicy,FalconPaperSimNextPhase,"
          "FalconPaperBranchStatus,FalconPaperBranchDecision,FalconPaperBranchRuntimeEnforced,FalconPaperBranchScope,FalconPaperBranchEvaluatedTrades,FalconPaperBranchPartialBranchesSimulated,FalconPaperBranchRunnerBranchesSimulated,FalconPaperBranchPartialFillReadyTrades,FalconPaperBranchRunnerFillReadyTrades,FalconPaperBranchPartialNoOrderSendTrades,FalconPaperBranchRunnerNoOrderSendTrades,FalconPaperBranchPartialRejected,FalconPaperBranchRunnerRejected,FalconPaperBranchOrderSendPolicy,FalconPaperBranchPartialPolicy,FalconPaperBranchRunnerPolicy,FalconPaperBranchNextPhase,"
+         "FalconPaperOutcomeStatus,FalconPaperOutcomeDecision,FalconPaperOutcomeRuntimeEnforced,FalconPaperOutcomeScope,"
+         "FalconPaperOutcomeEvaluatedTrades,FalconPaperOutcomePartialBranches,FalconPaperOutcomeRunnerBranches,"
+         "FalconPaperOutcomeTP1ProtectTrades,FalconPaperOutcomeTP2ProtectTrades,"
+         "FalconPaperOutcomeRunner3RTrades,FalconPaperOutcomeRunner5RTrades,"
+         "FalconPaperOutcomeProtectedGivebackProxyPoints,FalconPaperOutcomeRunnerUpsideProxyPoints,"
+         "FalconPaperOutcomeDeltaPointsProxy,FalconPaperOutcomeSimulatedNetPointsProxy,"
+         "FalconPaperOutcomeDeltaUSDProxy,FalconPaperOutcomeSimulatedNetUSDProxy,"
+         "FalconPaperOutcomeProtectionCoveragePct,FalconPaperOutcomeRunner3RSelectivityPct,FalconPaperOutcomeRunner5RSelectivityPct,"
+         "FalconPaperOutcomePolicy,FalconPaperOutcomeNextPhase,"
+         "FalconPaperSMStatus,FalconPaperSMDecision,FalconPaperSMRuntimeEnforced,FalconPaperSMScope,"
+         "FalconPaperSMEvaluatedTrades,FalconPaperSMEntryStateTrades,FalconPaperSMFilledStateTrades,"
+         "FalconPaperSMTP1ProofStateTrades,FalconPaperSMTP2ProofStateTrades,"
+         "FalconPaperSMProtectAfterTP1StateTrades,FalconPaperSMProtectAfterTP2StateTrades,"
+         "FalconPaperSMRunnerCandidateStateTrades,FalconPaperSMRunnerActive3RStateTrades,FalconPaperSMMoonMode5RStateTrades,"
+         "FalconPaperSMExitWarningStateTrades,FalconPaperSMAntiProofStateTrades,"
+         "FalconPaperSMReturnedLossPreventableTrades,FalconPaperSMProtectedGivebackProxyPoints,"
+         "FalconPaperSMRunnerUpsideProxyPoints,FalconPaperSMDeltaPointsProxy,FalconPaperSMSimulatedNetPointsProxy,"
+         "FalconPaperSMDeltaUSDProxy,FalconPaperSMSimulatedNetUSDProxy,FalconPaperSMProtectionContributionPct,"
+         "FalconPaperSMRunnerContributionPct,FalconPaperSMTP2IsCheckpoint,FalconPaperSMTP2ExitMandatory,"
+         "FalconPaperSMBeyondTP2RunnerTrades,FalconPaperSMBeyondTP2MoonTrades,"
+         "FalconPaperSMRunnerBeyondTP2Policy,FalconPaperSMExpansionAllowedAfterProof,"
+         "FalconPaperSMProtectionBeforeExpansionPolicy,FalconPaperSMPolicy,FalconPaperSMNextPhase,"
          "FalconRunnerBarPathPolicy,FalconRunnerBarPathNextPhase";
 
       string summary_row =
@@ -7552,6 +7667,62 @@ public:
          FalconCsvSafe(FALCON_PPR_PARTIAL_POLICY) + "," +
          FalconCsvSafe(FALCON_PPR_RUNNER_POLICY) + "," +
          FalconCsvSafe(FALCON_PPR_BRANCH_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PPR_OUT_STATUS) + "," +
+         FalconCsvSafe(FALCON_PPR_OUT_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PPR_OUT_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PPR_OUT_SCOPE) + "," +
+         IntegerToString(po_eval) + "," +
+         IntegerToString(po_partial_branches) + "," +
+         IntegerToString(po_runner_branches) + "," +
+         IntegerToString(po_tp1_protect) + "," +
+         IntegerToString(po_tp2_protect) + "," +
+         IntegerToString(po_runner_3r) + "," +
+         IntegerToString(po_runner_5r) + "," +
+         DoubleToString(po_protect_proxy_points, 2) + "," +
+         DoubleToString(po_runner_proxy_points, 2) + "," +
+         DoubleToString(po_delta_points, 2) + "," +
+         DoubleToString(po_sim_net_points, 2) + "," +
+         DoubleToString(po_delta_usd, 2) + "," +
+         DoubleToString(po_sim_net_usd, 2) + "," +
+         DoubleToString(po_protect_cov_pct, 2) + "," +
+         DoubleToString(po_runner3r_pct, 2) + "," +
+         DoubleToString(po_runner5r_pct, 2) + "," +
+         FalconCsvSafe(FALCON_PPR_OUT_POLICY) + "," +
+         FalconCsvSafe(FALCON_PPR_OUT_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PAPER_SM_STATUS) + "," +
+         FalconCsvSafe(FALCON_PAPER_SM_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PAPER_SM_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PAPER_SM_SCOPE) + "," +
+         IntegerToString(psm_eval) + "," +
+         IntegerToString(psm_entry_state) + "," +
+         IntegerToString(psm_filled_state) + "," +
+         IntegerToString(psm_tp1_proof_state) + "," +
+         IntegerToString(psm_tp2_proof_state) + "," +
+         IntegerToString(psm_protect_tp1) + "," +
+         IntegerToString(psm_protect_tp2) + "," +
+         IntegerToString(psm_runner_candidate) + "," +
+         IntegerToString(psm_runner_3r) + "," +
+         IntegerToString(psm_moon_5r) + "," +
+         IntegerToString(psm_exit_warning) + "," +
+         IntegerToString(psm_antiproof) + "," +
+         IntegerToString(psm_return_loss_preventable) + "," +
+         DoubleToString(psm_protected_giveback_proxy_points, 2) + "," +
+         DoubleToString(psm_runner_upside_proxy_points, 2) + "," +
+         DoubleToString(psm_delta_points, 2) + "," +
+         DoubleToString(psm_sim_net_points, 2) + "," +
+         DoubleToString(psm_delta_usd, 2) + "," +
+         DoubleToString(psm_sim_net_usd, 2) + "," +
+         DoubleToString(psm_protection_contribution_pct, 2) + "," +
+         DoubleToString(psm_runner_contribution_pct, 2) + "," +
+         FalconBoolToYesNo(FALCON_PAPER_SM_TP2_IS_CHECKPOINT) + "," +
+         FalconBoolToYesNo(FALCON_PAPER_SM_TP2_EXIT_MANDATORY) + "," +
+         IntegerToString(psm_runner_3r) + "," +
+         IntegerToString(psm_moon_5r) + "," +
+         FalconCsvSafe(FALCON_PAPER_SM_RUNNER_BEYOND_TP2_POLICY) + "," +
+         FalconBoolToYesNo(FALCON_PAPER_SM_EXPANSION_AFTER_PROOF) + "," +
+         FalconCsvSafe(FALCON_PAPER_SM_PROTECT_BEFORE_EXPAND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PAPER_SM_POLICY) + "," +
+         FalconCsvSafe(FALCON_PAPER_SM_NEXT_PHASE) + "," +
          FalconCsvSafe(FALCON_RUNNER_BARPATH_POLICY) + "," +
          FalconCsvSafe(FALCON_RUNNER_BARPATH_NEXT_PHASE);
 
