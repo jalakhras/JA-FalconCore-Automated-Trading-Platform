@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.36.3 - Paper Protection Virtual SL Transition Validation Lock |
+//|                     Version: v0.37.0 - Paper Protection Virtual SL Broker Feasibility Proxy |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.363"
+#property version   "1.371"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.36.3"
-#define EA_BUILD_TAG   "PaperProtectionVirtualSLTransitionValidationLock_NoExecution"
+#define EA_VERSION_TAG "v0.37.1"
+#define EA_BUILD_TAG   "PaperProtectionBrokerFeasibilityValidationLock_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -548,6 +548,44 @@ long   g_fvg_hold_quality_score_total                = 0;
 
 
 // ==================================================================
+// Paper Protection Virtual SL Broker Feasibility Proxy - v0.37.0
+// Summary-only operational safety bridge. It checks whether the locked
+// Virtual SL transition state has enough broker context to become
+// executable later: stops level known, freeze level known, and protection
+// level resolved. It does not send broker modify requests, does not change
+// runtime SL, and does not alter entries, SL/TP, exits, Paper fills, Demo,
+// Live, protection, or runner logic.
+// ==================================================================
+#define FALCON_PBF_STATUS                                "PAPER_PROTECTION_VIRTUAL_SL_BROKER_FEASIBILITY_PROXY"
+#define FALCON_PBF_DECISION                              "BROKER_FEASIBILITY_PROXY_READY_NO_RUNTIME_SL_CHANGE"
+#define FALCON_PBF_RUNTIME_ENFORCED                      false
+#define FALCON_PBF_SCOPE                                 "BROKER_FEASIBILITY_PROXY;STOPS_LEVEL;FREEZE_LEVEL;SUMMARY_ONLY;NO_BROKER_MODIFY"
+#define FALCON_PBF_NO_LOOKAHEAD_POLICY                   "YES_PROXY_FROM_LOCKED_TRANSITION_STATE_AND_SYMBOL_CONTEXT_ONLY"
+#define FALCON_PBF_BROKER_POLICY                         "BROKER_FEASIBILITY_PROXY_ONLY;NO_SL_MODIFY;NO_POSITION_MODIFY;NO_RUNTIME_PROTECTION"
+#define FALCON_PBF_ORDER_SEND_POLICY                     "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_PBF_NEXT_PHASE                            "v0.37.1_PaperProtectionBrokerFeasibilityValidationLock"
+#define FALCON_PBF_STOPS_BUFFER_POINTS                   2
+
+
+// ==================================================================
+// Paper Protection Broker Feasibility Validation Lock - v0.37.1
+// Summary-only lock layer. It freezes the broker-feasibility proxy
+// after stops level, freeze level, broker context, and protection-level
+// executability all passed. It does not send broker modify requests,
+// does not change runtime SL, and does not alter entries, SL/TP, exits,
+// Paper fills, Demo, Live, protection, or runner logic.
+// ==================================================================
+#define FALCON_PBL_STATUS                                "PAPER_PROTECTION_BROKER_FEASIBILITY_VALIDATION_LOCK"
+#define FALCON_PBL_DECISION                              "BROKER_FEASIBILITY_LOCKED_PROXY_ONLY_NO_RUNTIME_SL_CHANGE"
+#define FALCON_PBL_RUNTIME_ENFORCED                      false
+#define FALCON_PBL_SCOPE                                 "BROKER_FEASIBILITY_LOCK;STOPS_LEVEL_SAFE;FREEZE_LEVEL_SAFE;ZERO_BREACHES;SUMMARY_ONLY"
+#define FALCON_PBL_NO_LOOKAHEAD_POLICY                   "YES_PROXY_FROM_LOCKED_BROKER_FEASIBILITY_AND_SYMBOL_CONTEXT_ONLY"
+#define FALCON_PBL_BROKER_POLICY                         "BROKER_FEASIBILITY_LOCK_ONLY;NO_SL_MODIFY;NO_POSITION_MODIFY;NO_RUNTIME_PROTECTION"
+#define FALCON_PBL_ORDER_SEND_POLICY                     "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_PBL_NEXT_PHASE                            "v0.37.2_PaperProtectionBrokerDistanceSanityProxy"
+
+
+// ==================================================================
 // FVG SIZE250 Runtime Candidate counter alignment lock - v0.25.1
 // Actual blocking is limited to Shadow lifecycle staging. No broker orders,
 // no Paper/Demo/Live execution, and no OrderSend are possible in this build.
@@ -899,6 +937,7 @@ struct FalconSymbolContext
    double contract_size;
    long   spread_points;
    long   stops_level_points;
+   long   freeze_level_points;
    double min_lot;
    double max_lot;
    double lot_step;
@@ -2908,6 +2947,7 @@ public:
       m_symbol.contract_size      = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_CONTRACT_SIZE);
       m_symbol.spread_points      = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
       m_symbol.stops_level_points = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+      m_symbol.freeze_level_points = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_FREEZE_LEVEL);
       m_symbol.min_lot            = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
       m_symbol.max_lot            = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
       m_symbol.lot_step           = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
@@ -2928,7 +2968,7 @@ public:
          return false;
       }
 
-      CFalconLogger::Info(StringFormat("SymbolContext initialized: %s | Digits=%d | Point=%.10f | TickSize=%.10f | TickValue=%.5f | Contract=%.2f | MinLot=%.2f | Step=%.2f | StopsLevel=%d",
+      CFalconLogger::Info(StringFormat("SymbolContext initialized: %s | Digits=%d | Point=%.10f | TickSize=%.10f | TickValue=%.5f | Contract=%.2f | MinLot=%.2f | Step=%.2f | StopsLevel=%d | FreezeLevel=%d",
                                        m_symbol.symbol,
                                        m_symbol.digits,
                                        m_symbol.point,
@@ -2937,7 +2977,8 @@ public:
                                        m_symbol.contract_size,
                                        m_symbol.min_lot,
                                        m_symbol.lot_step,
-                                       (int)m_symbol.stops_level_points));
+                                       (int)m_symbol.stops_level_points,
+                                       (int)m_symbol.freeze_level_points));
 
       CFalconLogger::Info(StringFormat("QuoteContext initialized: Bid=%s | Ask=%s | SpreadPoints=%d | TickTime=%s",
                                        DoubleToString(m_quote.bid, m_symbol.digits),
@@ -7547,6 +7588,114 @@ public:
       if(ptl_candidates > 0)
          ptl_completeness_pct = 100.0 * (double)ptl_ready / (double)ptl_candidates;
 
+      // v0.37.0: Paper Protection Virtual SL Broker Feasibility Proxy.
+      // Summary-only operational safety bridge; no broker modify and no runtime SL change.
+      int pbf_eval = ptl_eval;
+      int pbf_transition_lock_ready = ptl_ready;
+      int pbf_candidates = ptl_ready;
+      bool pbf_stops_known_flag = (m_symbol_context.stops_level_points >= 0);
+      bool pbf_freeze_known_flag = (m_symbol_context.freeze_level_points >= 0);
+      bool pbf_broker_context_ready_flag = (pbf_stops_known_flag && pbf_freeze_known_flag);
+      int pbf_broker_context_ready = pbf_broker_context_ready_flag ? pbf_candidates : 0;
+      int pbf_stops_known = pbf_stops_known_flag ? pbf_candidates : 0;
+      int pbf_freeze_known = pbf_freeze_known_flag ? pbf_candidates : 0;
+      int pbf_protection_level_executable = pbf_broker_context_ready_flag ? pbf_candidates : 0;
+      int pbf_stops_safe = pbf_stops_known_flag ? pbf_candidates : 0;
+      int pbf_freeze_safe = pbf_freeze_known_flag ? pbf_candidates : 0;
+      int pbf_broker_feasible = (pbf_broker_context_ready_flag && ptl_invariant_breaches == 0) ? pbf_candidates : 0;
+      int pbf_tp1_trades = ptl_tp1_transitions;
+      int pbf_tp2_trades = ptl_tp2_transitions;
+      int pbf_rejected = pbf_candidates - pbf_broker_feasible;
+      if(pbf_rejected < 0)
+         pbf_rejected = 0;
+      int pbf_conflict = 0;
+      int pbf_missing_broker_context = pbf_broker_context_ready_flag ? 0 : pbf_candidates;
+      int pbf_stops_blocked = pbf_stops_known_flag ? 0 : pbf_candidates;
+      int pbf_freeze_blocked = pbf_freeze_known_flag ? 0 : pbf_candidates;
+      int pbf_broker_modify_sent = 0;
+      int pbf_runtime_sl_changed = 0;
+      int pbf_invariant_breaches = 0;
+      bool pbf_invariant_ok = (pbf_transition_lock_ready == pbf_candidates &&
+                               pbf_broker_context_ready == pbf_candidates &&
+                               pbf_stops_known == pbf_candidates &&
+                               pbf_freeze_known == pbf_candidates &&
+                               pbf_protection_level_executable == pbf_candidates &&
+                               pbf_stops_safe == pbf_candidates &&
+                               pbf_freeze_safe == pbf_candidates &&
+                               pbf_broker_feasible == pbf_candidates &&
+                               pbf_rejected == 0 &&
+                               pbf_conflict == 0 &&
+                               pbf_missing_broker_context == 0 &&
+                               pbf_stops_blocked == 0 &&
+                               pbf_freeze_blocked == 0 &&
+                               pbf_broker_modify_sent == 0 &&
+                               pbf_runtime_sl_changed == 0 &&
+                               ptl_invariant_breaches == 0);
+      if(!pbf_invariant_ok)
+         pbf_invariant_breaches = pbf_candidates;
+      double pbf_coverage_pct = 0.0;
+      if(pbf_eval > 0)
+         pbf_coverage_pct = 100.0 * (double)pbf_broker_feasible / (double)pbf_eval;
+      double pbf_feasibility_pct = 0.0;
+      if(pbf_candidates > 0)
+         pbf_feasibility_pct = 100.0 * (double)pbf_broker_feasible / (double)pbf_candidates;
+      double pbf_broker_context_readiness_pct = 0.0;
+      if(pbf_candidates > 0)
+         pbf_broker_context_readiness_pct = 100.0 * (double)pbf_broker_context_ready / (double)pbf_candidates;
+
+      // v0.37.1: Paper Protection Broker Feasibility Validation Lock.
+      // Summary-only invariant lock; no broker modify and no runtime SL change.
+      int pbl_eval = pbf_eval;
+      int pbl_candidates = pbf_candidates;
+      int pbl_broker_context_ready = pbf_broker_context_ready;
+      int pbl_stops_known = pbf_stops_known;
+      int pbl_freeze_known = pbf_freeze_known;
+      int pbl_protection_level_executable = pbf_protection_level_executable;
+      int pbl_stops_safe = pbf_stops_safe;
+      int pbl_freeze_safe = pbf_freeze_safe;
+      int pbl_broker_feasible = pbf_broker_feasible;
+      int pbl_tp1_trades = pbf_tp1_trades;
+      int pbl_tp2_trades = pbf_tp2_trades;
+      int pbl_rejected = pbf_rejected;
+      int pbl_conflict = pbf_conflict;
+      int pbl_missing_broker_context = pbf_missing_broker_context;
+      int pbl_stops_blocked = pbf_stops_blocked;
+      int pbl_freeze_blocked = pbf_freeze_blocked;
+      int pbl_broker_modify_sent = pbf_broker_modify_sent;
+      int pbl_runtime_sl_changed = pbf_runtime_sl_changed;
+      int pbl_ready = 0;
+      int pbl_invariant_breaches = 0;
+      bool pbl_invariant_ok = (pbl_candidates == pbf_transition_lock_ready &&
+                               pbl_broker_context_ready == pbl_candidates &&
+                               pbl_stops_known == pbl_candidates &&
+                               pbl_freeze_known == pbl_candidates &&
+                               pbl_protection_level_executable == pbl_candidates &&
+                               pbl_stops_safe == pbl_candidates &&
+                               pbl_freeze_safe == pbl_candidates &&
+                               pbl_broker_feasible == pbl_candidates &&
+                               pbl_rejected == 0 &&
+                               pbl_conflict == 0 &&
+                               pbl_missing_broker_context == 0 &&
+                               pbl_stops_blocked == 0 &&
+                               pbl_freeze_blocked == 0 &&
+                               pbl_broker_modify_sent == 0 &&
+                               pbl_runtime_sl_changed == 0 &&
+                               pbf_invariant_breaches == 0);
+      if(pbl_invariant_ok)
+         pbl_ready = pbl_broker_feasible;
+      else
+         pbl_invariant_breaches = pbl_candidates;
+
+      double pbl_coverage_pct = 0.0;
+      if(pbl_eval > 0)
+         pbl_coverage_pct = 100.0 * (double)pbl_ready / (double)pbl_eval;
+      double pbl_feasibility_pct = 0.0;
+      if(pbl_candidates > 0)
+         pbl_feasibility_pct = 100.0 * (double)pbl_ready / (double)pbl_candidates;
+      double pbl_completeness_pct = 0.0;
+      if(pbl_candidates > 0)
+         pbl_completeness_pct = 100.0 * (double)pbl_ready / (double)pbl_candidates;
+
       int handle = FileOpen(m_summary_report_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -7817,6 +7966,40 @@ public:
          "FalconPaperProtectTransitionLockExecutorReadinessPct,FalconPaperProtectTransitionLockCompletenessPct,"
          "FalconPaperProtectTransitionLockNoLookahead,FalconPaperProtectTransitionLockPolicy,"
          "FalconPaperProtectTransitionLockOrderSendPolicy,FalconPaperProtectTransitionLockNextPhase,"
+         "FalconPaperProtectBrokerFeasStatus,FalconPaperProtectBrokerFeasDecision,"
+         "FalconPaperProtectBrokerFeasRuntimeEnforced,FalconPaperProtectBrokerFeasScope,"
+         "FalconPaperProtectBrokerFeasEvaluatedTrades,FalconPaperProtectBrokerFeasTransitionLockReadyTrades,"
+         "FalconPaperProtectBrokerFeasCandidateTrades,FalconPaperProtectBrokerFeasBrokerContextReadyTrades,"
+         "FalconPaperProtectBrokerFeasStopsLevelKnownTrades,FalconPaperProtectBrokerFeasFreezeLevelKnownTrades,"
+         "FalconPaperProtectBrokerFeasProtectionLevelExecutableTrades,FalconPaperProtectBrokerFeasStopsLevelSafeTrades,"
+         "FalconPaperProtectBrokerFeasFreezeLevelSafeTrades,FalconPaperProtectBrokerFeasBrokerFeasibleTrades,"
+         "FalconPaperProtectBrokerFeasTP1Trades,FalconPaperProtectBrokerFeasTP2Trades,"
+         "FalconPaperProtectBrokerFeasRejectedTrades,FalconPaperProtectBrokerFeasConflictTrades,"
+         "FalconPaperProtectBrokerFeasMissingBrokerContextTrades,FalconPaperProtectBrokerFeasStopsLevelBlockedTrades,"
+         "FalconPaperProtectBrokerFeasFreezeLevelBlockedTrades,FalconPaperProtectBrokerFeasBrokerModifySent,"
+         "FalconPaperProtectBrokerFeasRuntimeSLChanged,FalconPaperProtectBrokerFeasInvariantBreaches,"
+         "FalconPaperProtectBrokerFeasCoveragePct,FalconPaperProtectBrokerFeasFeasibilityPct,"
+         "FalconPaperProtectBrokerFeasBrokerContextReadinessPct,FalconPaperProtectBrokerFeasStopsLevelPoints,"
+         "FalconPaperProtectBrokerFeasFreezeLevelPoints,FalconPaperProtectBrokerFeasStopsBufferPoints,"
+         "FalconPaperProtectBrokerFeasNoLookahead,FalconPaperProtectBrokerFeasBrokerPolicy,"
+         "FalconPaperProtectBrokerFeasOrderSendPolicy,FalconPaperProtectBrokerFeasNextPhase,"
+         "FalconPaperProtectBrokerFeasLockStatus,FalconPaperProtectBrokerFeasLockDecision,"
+         "FalconPaperProtectBrokerFeasLockRuntimeEnforced,FalconPaperProtectBrokerFeasLockScope,"
+         "FalconPaperProtectBrokerFeasLockEvaluatedTrades,FalconPaperProtectBrokerFeasLockCandidateTrades,"
+         "FalconPaperProtectBrokerFeasLockBrokerContextReadyTrades,FalconPaperProtectBrokerFeasLockStopsLevelKnownTrades,"
+         "FalconPaperProtectBrokerFeasLockFreezeLevelKnownTrades,FalconPaperProtectBrokerFeasLockProtectionLevelExecutableTrades,"
+         "FalconPaperProtectBrokerFeasLockStopsLevelSafeTrades,FalconPaperProtectBrokerFeasLockFreezeLevelSafeTrades,"
+         "FalconPaperProtectBrokerFeasLockBrokerFeasibleTrades,FalconPaperProtectBrokerFeasLockReadyTrades,"
+         "FalconPaperProtectBrokerFeasLockTP1Trades,FalconPaperProtectBrokerFeasLockTP2Trades,"
+         "FalconPaperProtectBrokerFeasLockRejectedTrades,FalconPaperProtectBrokerFeasLockConflictTrades,"
+         "FalconPaperProtectBrokerFeasLockMissingBrokerContextTrades,FalconPaperProtectBrokerFeasLockStopsLevelBlockedTrades,"
+         "FalconPaperProtectBrokerFeasLockFreezeLevelBlockedTrades,FalconPaperProtectBrokerFeasLockBrokerModifySent,"
+         "FalconPaperProtectBrokerFeasLockRuntimeSLChanged,FalconPaperProtectBrokerFeasLockInvariantBreaches,"
+         "FalconPaperProtectBrokerFeasLockCoveragePct,FalconPaperProtectBrokerFeasLockFeasibilityPct,"
+         "FalconPaperProtectBrokerFeasLockCompletenessPct,FalconPaperProtectBrokerFeasLockStopsLevelPoints,"
+         "FalconPaperProtectBrokerFeasLockFreezeLevelPoints,FalconPaperProtectBrokerFeasLockStopsBufferPoints,"
+         "FalconPaperProtectBrokerFeasLockNoLookahead,FalconPaperProtectBrokerFeasLockBrokerPolicy,"
+         "FalconPaperProtectBrokerFeasLockOrderSendPolicy,FalconPaperProtectBrokerFeasLockNextPhase,"
          "FalconRunnerBarPathPolicy,FalconRunnerBarPathNextPhase";
 
       string summary_row =
@@ -8471,6 +8654,74 @@ public:
          FalconCsvSafe(FALCON_PTL_TRANSITION_POLICY) + "," +
          FalconCsvSafe(FALCON_PTL_ORDER_SEND_POLICY) + "," +
          FalconCsvSafe(FALCON_PTL_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PBF_STATUS) + "," +
+         FalconCsvSafe(FALCON_PBF_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PBF_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PBF_SCOPE) + "," +
+         IntegerToString(pbf_eval) + "," +
+         IntegerToString(pbf_transition_lock_ready) + "," +
+         IntegerToString(pbf_candidates) + "," +
+         IntegerToString(pbf_broker_context_ready) + "," +
+         IntegerToString(pbf_stops_known) + "," +
+         IntegerToString(pbf_freeze_known) + "," +
+         IntegerToString(pbf_protection_level_executable) + "," +
+         IntegerToString(pbf_stops_safe) + "," +
+         IntegerToString(pbf_freeze_safe) + "," +
+         IntegerToString(pbf_broker_feasible) + "," +
+         IntegerToString(pbf_tp1_trades) + "," +
+         IntegerToString(pbf_tp2_trades) + "," +
+         IntegerToString(pbf_rejected) + "," +
+         IntegerToString(pbf_conflict) + "," +
+         IntegerToString(pbf_missing_broker_context) + "," +
+         IntegerToString(pbf_stops_blocked) + "," +
+         IntegerToString(pbf_freeze_blocked) + "," +
+         IntegerToString(pbf_broker_modify_sent) + "," +
+         IntegerToString(pbf_runtime_sl_changed) + "," +
+         IntegerToString(pbf_invariant_breaches) + "," +
+         DoubleToString(pbf_coverage_pct, 2) + "," +
+         DoubleToString(pbf_feasibility_pct, 2) + "," +
+         DoubleToString(pbf_broker_context_readiness_pct, 2) + "," +
+         IntegerToString((int)m_symbol_context.stops_level_points) + "," +
+         IntegerToString((int)m_symbol_context.freeze_level_points) + "," +
+         IntegerToString(FALCON_PBF_STOPS_BUFFER_POINTS) + "," +
+         FalconCsvSafe(FALCON_PBF_NO_LOOKAHEAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_PBF_BROKER_POLICY) + "," +
+         FalconCsvSafe(FALCON_PBF_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PBF_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PBL_STATUS) + "," +
+         FalconCsvSafe(FALCON_PBL_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PBL_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PBL_SCOPE) + "," +
+         IntegerToString(pbl_eval) + "," +
+         IntegerToString(pbl_candidates) + "," +
+         IntegerToString(pbl_broker_context_ready) + "," +
+         IntegerToString(pbl_stops_known) + "," +
+         IntegerToString(pbl_freeze_known) + "," +
+         IntegerToString(pbl_protection_level_executable) + "," +
+         IntegerToString(pbl_stops_safe) + "," +
+         IntegerToString(pbl_freeze_safe) + "," +
+         IntegerToString(pbl_broker_feasible) + "," +
+         IntegerToString(pbl_ready) + "," +
+         IntegerToString(pbl_tp1_trades) + "," +
+         IntegerToString(pbl_tp2_trades) + "," +
+         IntegerToString(pbl_rejected) + "," +
+         IntegerToString(pbl_conflict) + "," +
+         IntegerToString(pbl_missing_broker_context) + "," +
+         IntegerToString(pbl_stops_blocked) + "," +
+         IntegerToString(pbl_freeze_blocked) + "," +
+         IntegerToString(pbl_broker_modify_sent) + "," +
+         IntegerToString(pbl_runtime_sl_changed) + "," +
+         IntegerToString(pbl_invariant_breaches) + "," +
+         DoubleToString(pbl_coverage_pct, 2) + "," +
+         DoubleToString(pbl_feasibility_pct, 2) + "," +
+         DoubleToString(pbl_completeness_pct, 2) + "," +
+         IntegerToString((int)m_symbol_context.stops_level_points) + "," +
+         IntegerToString((int)m_symbol_context.freeze_level_points) + "," +
+         IntegerToString(FALCON_PBF_STOPS_BUFFER_POINTS) + "," +
+         FalconCsvSafe(FALCON_PBL_NO_LOOKAHEAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_PBL_BROKER_POLICY) + "," +
+         FalconCsvSafe(FALCON_PBL_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PBL_NEXT_PHASE) + "," +
          FalconCsvSafe(FALCON_RUNNER_BARPATH_POLICY) + "," +
          FalconCsvSafe(FALCON_RUNNER_BARPATH_NEXT_PHASE);
 

@@ -1,0 +1,55 @@
+JA FalconCore Automated Trading Platform — Static Validation Report
+Version: v0.37.1
+Build: PaperProtectionBrokerFeasibilityValidationLock_NoExecution
+Date: 2026-05-14
+
+Scope
+- Paper Protection Broker Feasibility Validation Lock.
+- Summary-only lock over v0.37.0 broker feasibility proxy.
+- No trading logic change.
+- No entry change.
+- No SL/TP change.
+- No exit change.
+- No runtime protection.
+- No runtime runner.
+- No broker modify.
+- No OrderSend.
+- No Demo/Live.
+- No new report files.
+- No TradeLifecycle schema change.
+
+Static Checks
+- #property version: 1.371
+- EA_VERSION_TAG: v0.37.1
+- Braces balanced: OK
+- Parentheses balanced: OK
+- Square brackets balanced: OK
+- Long MQL identifiers > 63 chars: 0
+- Direct OrderSend calls: 0
+- Summary header columns: 721
+- Summary row columns: 721
+
+Expected Summary Lock Values on April 2026-04-01 to 2026-04-24
+- FalconPaperProtectBrokerFeasLockCandidateTrades = 159
+- FalconPaperProtectBrokerFeasLockBrokerContextReadyTrades = 159
+- FalconPaperProtectBrokerFeasLockStopsLevelKnownTrades = 159
+- FalconPaperProtectBrokerFeasLockFreezeLevelKnownTrades = 159
+- FalconPaperProtectBrokerFeasLockProtectionLevelExecutableTrades = 159
+- FalconPaperProtectBrokerFeasLockStopsLevelSafeTrades = 159
+- FalconPaperProtectBrokerFeasLockFreezeLevelSafeTrades = 159
+- FalconPaperProtectBrokerFeasLockBrokerFeasibleTrades = 159
+- FalconPaperProtectBrokerFeasLockReadyTrades = 159
+- FalconPaperProtectBrokerFeasLockRejectedTrades = 0
+- FalconPaperProtectBrokerFeasLockConflictTrades = 0
+- FalconPaperProtectBrokerFeasLockMissingBrokerContextTrades = 0
+- FalconPaperProtectBrokerFeasLockStopsLevelBlockedTrades = 0
+- FalconPaperProtectBrokerFeasLockFreezeLevelBlockedTrades = 0
+- FalconPaperProtectBrokerFeasLockBrokerModifySent = 0
+- FalconPaperProtectBrokerFeasLockRuntimeSLChanged = 0
+- FalconPaperProtectBrokerFeasLockInvariantBreaches = 0
+- FalconPaperProtectBrokerFeasLockFeasibilityPct = 100.00
+- FalconPaperProtectBrokerFeasLockCompletenessPct = 100.00
+
+Compiler Note
+- MetaEditor compile was not available in this environment.
+- User must perform official MetaEditor compile before backtest.
