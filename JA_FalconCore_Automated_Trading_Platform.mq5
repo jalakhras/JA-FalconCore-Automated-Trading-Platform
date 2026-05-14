@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.31.1 - Paper Order Lifecycle Simulation Validation Lock |
+//|                     Version: v0.32.1 - Paper Partial Runner Branch Validation Lock |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.311"
+#property version   "1.321"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.31.1"
-#define EA_BUILD_TAG   "PaperOrderLifecycleSimulationValidationLock_NoExecution"
+#define EA_VERSION_TAG "v0.32.1"
+#define EA_BUILD_TAG   "PaperPartialRunnerBranchValidationLock_NoExecution"
 
 #define FALCON_MTF_COUNT       6
 
@@ -329,7 +329,7 @@ long   g_fvg_hold_quality_score_total                = 0;
 #define FALCON_PAPER_EXEC_SCOPE                          "ORDER_REQUEST;ORDER_STAGING;FILL_STATE;SL_TP_PLAN;PARTIAL_RUNNER_PLAN;REJECTION_REASON"
 #define FALCON_PAPER_EXEC_ORDER_STATE_MODEL              "PLANNED_REQUEST;STAGED_REQUEST;ACCEPTED;FILLED;PARTIAL_FILLED;MODIFY_PENDING;CLOSED;REJECTED"
 #define FALCON_PAPER_EXEC_NO_LOOKAHEAD_POLICY            "PAPER_READINESS_USES_EXISTING_STAGED_PLAN_AND_CLOSED_TRADE_RECORDS_ONLY"
-#define FALCON_PAPER_EXEC_NEXT_PHASE                     "v0.32.0_PaperPartialRunnerBranchSimulation"
+#define FALCON_PAPER_EXEC_NEXT_PHASE                     "v0.32.1_PaperPartialRunnerBranchValidationLock"
 
 // ==================================================================
 // Paper Order Lifecycle Simulation Validation Lock - v0.31.1
@@ -340,7 +340,22 @@ long   g_fvg_hold_quality_score_total                = 0;
 #define FALCON_PAPER_SIM_SCOPE                           "INTERNAL_PAPER_ORDER_STATES;NO_BROKER_ORDERS;NO_DEMO;NO_LIVE"
 #define FALCON_PAPER_SIM_ORDER_SEND_BYPASS               "ORDER_SEND_HARD_BLOCKED;PAPER_SIM_USES_CLOSED_SHADOW_RECORDS"
 #define FALCON_PAPER_SIM_NO_LOOKAHEAD_POLICY             "PAPER_SIMULATION_USES_EXISTING_CLOSED_TRADE_LIFECYCLE_RECORDS_ONLY"
-#define FALCON_PAPER_SIM_NEXT_PHASE                      "v0.32.0_PaperPartialRunnerBranchSimulation"
+#define FALCON_PAPER_SIM_NEXT_PHASE                      "v0.32.1_PaperPartialRunnerBranchValidationLock"
+
+// ==================================================================
+// Paper Partial / Runner Branch Validation Lock - v0.32.1
+// Internal paper branch simulation only. It does not send broker orders,
+// does not alter exits, does not activate runtime partials/runners, and
+// uses already prepared Fast TM / Decision Tree readiness counters.
+// ==================================================================
+#define FALCON_PPR_BRANCH_STATUS                         "PAPER_PARTIAL_RUNNER_BRANCH_VALIDATION_LOCK"
+#define FALCON_PPR_BRANCH_DECISION                       "PARTIAL_RUNNER_BRANCHES_FULL_VALIDATION_LOCKED_NO_ORDER_SEND"
+#define FALCON_PPR_BRANCH_RUNTIME_ENFORCED               false
+#define FALCON_PPR_BRANCH_SCOPE                          "PAPER_PARTIAL_BRANCH;PAPER_RUNNER_BRANCH;VALIDATION_LOCK;NO_BROKER_ORDERS;NO_RUNTIME_EXIT_CHANGE"
+#define FALCON_PPR_PARTIAL_POLICY                        "SIMULATE_PARTIAL_BRANCH_READINESS_FROM_FAST_TM_CONSERVATIVE_PARTIAL_PLAN"
+#define FALCON_PPR_RUNNER_POLICY                         "SIMULATE_RUNNER_BRANCH_READINESS_FROM_FAST_TM_RUNNER_CANDIDATE_PLAN"
+#define FALCON_PPR_BRANCH_ORDER_SEND_POLICY              "ORDER_SEND_HARD_BLOCKED;PAPER_BRANCH_SIMULATION_ONLY"
+#define FALCON_PPR_BRANCH_NEXT_PHASE                     "v0.33.0_PaperPartialRunnerOutcomeSimulation"
 
 // ==================================================================
 // FVG SIZE250 Runtime Candidate counter alignment lock - v0.25.1
@@ -7144,6 +7159,7 @@ public:
          "FalconPaperExecOrdersSent,FalconPaperExecOrdersFilled,FalconPaperExecOrdersRejected,"
          "FalconPaperExecRejectedReason,FalconPaperExecStateModel,FalconPaperExecNoLookaheadPolicy,"
          "FalconPaperExecNextPhase,FalconPaperSimStatus,FalconPaperSimDecision,FalconPaperSimScope,FalconPaperSimEvaluatedTrades,FalconPaperSimPlannedOrders,FalconPaperSimStagedOrders,FalconPaperSimAcceptedOrders,FalconPaperSimFilledOrders,FalconPaperSimClosedOrders,FalconPaperSimRejectedOrders,FalconPaperSimSLAttachedOrders,FalconPaperSimTPAttachedOrders,FalconPaperSimPartialBranchesPrepared,FalconPaperSimRunnerBranchesPrepared,FalconPaperSimOrderSendBypass,FalconPaperSimNoLookaheadPolicy,FalconPaperSimNextPhase,"
+         "FalconPaperBranchStatus,FalconPaperBranchDecision,FalconPaperBranchRuntimeEnforced,FalconPaperBranchScope,FalconPaperBranchEvaluatedTrades,FalconPaperBranchPartialBranchesSimulated,FalconPaperBranchRunnerBranchesSimulated,FalconPaperBranchPartialFillReadyTrades,FalconPaperBranchRunnerFillReadyTrades,FalconPaperBranchPartialNoOrderSendTrades,FalconPaperBranchRunnerNoOrderSendTrades,FalconPaperBranchPartialRejected,FalconPaperBranchRunnerRejected,FalconPaperBranchOrderSendPolicy,FalconPaperBranchPartialPolicy,FalconPaperBranchRunnerPolicy,FalconPaperBranchNextPhase,"
          "FalconRunnerBarPathPolicy,FalconRunnerBarPathNextPhase";
 
       string summary_row =
@@ -7519,6 +7535,23 @@ public:
          FalconCsvSafe(FALCON_PAPER_SIM_ORDER_SEND_BYPASS) + "," +
          FalconCsvSafe(FALCON_PAPER_SIM_NO_LOOKAHEAD_POLICY) + "," +
          FalconCsvSafe(FALCON_PAPER_SIM_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PPR_BRANCH_STATUS) + "," +
+         FalconCsvSafe(FALCON_PPR_BRANCH_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PPR_BRANCH_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PPR_BRANCH_SCOPE) + "," +
+         IntegerToString(m_totals.total_trades) + "," +
+         IntegerToString(m_totals.fast_tm_conservative_partial_ready_trades) + "," +
+         IntegerToString(m_totals.fast_tm_immediate_runner_candidate_trades) + "," +
+         IntegerToString(m_totals.fast_tm_conservative_partial_ready_trades) + "," +
+         IntegerToString(m_totals.fast_tm_immediate_runner_candidate_trades) + "," +
+         IntegerToString(m_totals.fast_tm_conservative_partial_ready_trades) + "," +
+         IntegerToString(m_totals.fast_tm_immediate_runner_candidate_trades) + "," +
+         IntegerToString(0) + "," +
+         IntegerToString(0) + "," +
+         FalconCsvSafe(FALCON_PPR_BRANCH_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PPR_PARTIAL_POLICY) + "," +
+         FalconCsvSafe(FALCON_PPR_RUNNER_POLICY) + "," +
+         FalconCsvSafe(FALCON_PPR_BRANCH_NEXT_PHASE) + "," +
          FalconCsvSafe(FALCON_RUNNER_BARPATH_POLICY) + "," +
          FalconCsvSafe(FALCON_RUNNER_BARPATH_NEXT_PHASE);
 
