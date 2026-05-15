@@ -1,0 +1,14 @@
+OrderSend: 0
+OrderSendAsync: 0
+PositionModify: 0
+CTrade_Buy: 0
+CTrade_Sell: 0
+EnableCapitalFlowSimulation_refs: 0
+CapitalFlowSimulationScenario_refs: 0
+FALCON_CAPFLOW_SIM_refs: 0
+CapitalFlowSimulationAuditStatus_refs: 0
+braces_balance: 0
+paren_balance: 0
+duplicate_EA_VERSION_TAG: 1
+Trade_columns: 30
+Summary_columns: 51

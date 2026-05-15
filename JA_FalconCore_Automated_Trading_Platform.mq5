@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.55.5 - Minimal Report Final Pass       |
+//|                     Version: v0.55.6b - Capital Flow Clean Lock       |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.5550"
+#property version   "1.5562"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.55.5"
-#define EA_BUILD_TAG   "CapitalFlowSourceClassification"
+#define EA_VERSION_TAG "v0.55.6b"
+#define EA_BUILD_TAG   "CapitalFlowCleanLock"
 
 #define FALCON_MTF_COUNT       6
 
@@ -1392,6 +1392,12 @@ enum ENUM_FALCON_REPORT_PROFILE
 
 
 // ==================================================================
+// Capital Flow Clean Lock - v0.55.6b
+// The temporary simulation scaffold was removed after validation.
+// Runtime keeps only real capital-flow classification fields.
+// ==================================================================
+
+// ==================================================================
 // 01 - EA Safety & Risk / إعدادات المستخدم الأساسية
 // ==================================================================
 input group "01 - EA Safety & Risk / إعدادات المستخدم الأساسية";
@@ -1611,6 +1617,21 @@ double g_falcon_session_start_balance = 0.0;
 
 
 // ==================================================================
+// Capital Flow Source Classification Clean Lock - v0.55.6b
+// Temporary simulation inputs and audit columns were removed after
+// Regression / Injection / Withdrawal / Mixed scenario validation.
+// Runtime keeps true capital-flow classification only, with no test scaffold.
+// ==================================================================
+#define FALCON_CFS_STATUS                         "CAPITAL_FLOW_SOURCE_CLASSIFICATION_CLEAN_LOCK"
+#define FALCON_CFS_DECISION                       "REMOVE_TEMPORARY_CAPITAL_FLOW_SIMULATION_INPUTS_AND_REPORT_FIELDS_AFTER_VALIDATION"
+#define FALCON_CFS_RUNTIME_ENFORCED               true
+#define FALCON_CFS_SCOPE                          "CAPITAL_FLOW;INJECTION;WITHDRAWAL;MIXED_EVENTS_VALIDATED;SIMULATION_SCAFFOLD_REMOVED;NO_TRADE_LOGIC_CHANGE"
+#define FALCON_CFS_POLICY                         "RUNTIME_CLASSIFIES_TRUE_CAPITAL_FLOW_ONLY;INJECTION_NOT_STRATEGY_PROFIT;WITHDRAWAL_NOT_STRATEGY_LOSS;NO_SIMULATION_INPUTS_IN_LOCK"
+#define FALCON_CFS_ORDER_SEND_POLICY              "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
+#define FALCON_CFS_NEXT_PHASE                     "v0.55.7_NEXT_CAPITAL_OR_EVENT_MODEL_LAYER"
+
+
+// ==================================================================
 // 02 - Execution Stage / مرحلة التنفيذ
 // ==================================================================
 input group "02 - Execution Stage / مرحلة التنفيذ";
@@ -1651,6 +1672,7 @@ input bool                       UseCommonFilesFolderForReports = true;
 input bool                       EnableVerboseExpertsLog       = true;
 input bool                       EnableFastRuntimeSmokeMode    = true;
 input int                        RuntimeDiagnosticsEveryNTicks = 1000;
+
 
 // Internal report constants. Keep these out of user inputs.
 #define FALCON_ENABLE_REPORT_PERIOD_IN_FILE_NAMES      true
@@ -8917,7 +8939,7 @@ public:
       summary_row += FalconCsvSafe(row_count_status) + ",";
       summary_row += DoubleToString(final_net_diff, 4) + ",";
       summary_row += DoubleToString(raw_net_diff, 4) + ",";
-      summary_row += FalconCsvSafe("MINIMAL_REPORT_FINAL_PASS: default reports keep only decision fields, final working USD truth, dynamic lot essentials, emergency outcome, and integrity audit fields.");
+      summary_row += FalconCsvSafe("MINIMAL_REPORT_FINAL_PASS: decision fields only; capital-flow classification clean lock; simulation scaffold removed after validation.");
 
       FileWriteString(handle, SlimSummaryHeaderV0555() + "\r\n");
       FileWriteString(handle, summary_row + "\r\n");
@@ -9881,13 +9903,29 @@ private:
          record.falcon_capital_flow_external_event = 1;
          if(external_delta > 0.0)
          {
-            record.falcon_capital_flow_source = "INJECTION";
-            record.falcon_capital_flow_reason = "CAPITAL_DELTA_EXCEEDS_TRADE_DELTA_POSITIVE_EXTERNAL_FLOW";
+            if(final_trade_delta > 0.0001)
+            {
+               record.falcon_capital_flow_source = "MIXED_PROFIT_PLUS_INJECTION";
+               record.falcon_capital_flow_reason = "TRADE_PROFIT_PLUS_POSITIVE_EXTERNAL_CAPITAL_FLOW";
+            }
+            else
+            {
+               record.falcon_capital_flow_source = "INJECTION";
+               record.falcon_capital_flow_reason = "CAPITAL_DELTA_EXCEEDS_TRADE_DELTA_POSITIVE_EXTERNAL_FLOW";
+            }
          }
          else
          {
-            record.falcon_capital_flow_source = "WITHDRAWAL";
-            record.falcon_capital_flow_reason = "CAPITAL_DELTA_EXCEEDS_TRADE_DELTA_NEGATIVE_EXTERNAL_FLOW";
+            if(final_trade_delta < -0.0001)
+            {
+               record.falcon_capital_flow_source = "MIXED_LOSS_PLUS_WITHDRAWAL";
+               record.falcon_capital_flow_reason = "TRADE_LOSS_PLUS_NEGATIVE_EXTERNAL_CAPITAL_FLOW";
+            }
+            else
+            {
+               record.falcon_capital_flow_source = "WITHDRAWAL";
+               record.falcon_capital_flow_reason = "CAPITAL_DELTA_EXCEEDS_TRADE_DELTA_NEGATIVE_EXTERNAL_FLOW";
+            }
          }
          // External capital movement is not a reporting failure; it must be classified and separated from strategy P/L.
          record.falcon_capital_flow_status = "PASS";
@@ -10245,6 +10283,16 @@ private:
          m_totals.capital_flow_injection_events++;
       else if(record.falcon_capital_flow_source == "WITHDRAWAL")
          m_totals.capital_flow_withdrawal_events++;
+      else if(record.falcon_capital_flow_source == "MIXED_PROFIT_PLUS_INJECTION")
+      {
+         m_totals.capital_flow_trade_profit_events++;
+         m_totals.capital_flow_injection_events++;
+      }
+      else if(record.falcon_capital_flow_source == "MIXED_LOSS_PLUS_WITHDRAWAL")
+      {
+         m_totals.capital_flow_trade_loss_events++;
+         m_totals.capital_flow_withdrawal_events++;
+      }
       else
          m_totals.capital_flow_unknown_events++;
       if(record.falcon_capital_flow_status != "PASS")
@@ -10760,7 +10808,7 @@ private:
 
    string SlimTradeHeaderV0555()
    {
-      // v0.55.5: final minimal per-trade surface.
+      // v0.55.6b: final minimal per-trade surface; capital-flow classification retained without simulation scaffold.
       // Keep only changing trade facts, final USD truth fields, dynamic lot essentials, emergency outcome, and row integrity.
       string trade_header = "TradeId,StrategyId,EngineId,Direction,EntryTime,ExitTime,";
       trade_header += "Stage,Outcome,CloseReason,ActiveLot,";
@@ -10772,7 +10820,7 @@ private:
 
    string SlimSummaryHeaderV0555()
    {
-      // v0.55.5: final minimal window-level decision surface.
+      // v0.55.6b: final minimal window-level decision surface; simulation test scaffold removed after lock.
       string summary_header = "EAName,Version,Build,Symbol,GeneratedAt,ReportProfile,FromDateTag,ToDateTag,UseFixedLot,FixedLotSize,";
       summary_header += "TotalTrades,WinTrades,LoseTrades,WinRate,";
       summary_header += "RawTotalProfitUSD,RawTotalLossUSD,RawNetUSD,";
@@ -10780,6 +10828,7 @@ private:
       summary_header += "BuyTrades,BuyWinRate,SellTrades,SellWinRate,";
       summary_header += "ProtectionActivatedTrades,RunnerActivatedTrades,";
       summary_header += "DynamicLotEvaluatedTrades,DynamicLotFixedModeTrades,DynamicLotDynamicModeTrades,DynamicLotActiveLotAvg,DynamicLotActiveLotMax,";
+      summary_header += "";
       summary_header += "CapitalFlowEvaluatedTrades,CapitalTradeProfitEvents,CapitalTradeLossEvents,CapitalInjectionEvents,CapitalWithdrawalEvents,ExternalCapitalNetUSD,CapitalFlowIntegrityStatus,";
       summary_header += "EmergencyTriggeredTrades,EmergencyBlockedEntries,";
       summary_header += "SafetyOrderSend,BrokerModifySent,RuntimeSLChanged,InvariantBreaches,";
@@ -10880,7 +10929,7 @@ public:
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.55.5. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement, SL/TP, Smart TM, Bar-Path, Decision Tree, and Timing diagnostics are reporting-only beyond the controlled Shadow guard.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.55.6a. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement, SL/TP, Smart TM, Bar-Path, Decision Tree, and Timing diagnostics are reporting-only beyond the controlled Shadow guard.");
    }
 };
 

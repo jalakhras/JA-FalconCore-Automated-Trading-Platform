@@ -1,0 +1,43 @@
+JA FalconCore v0.55.6b — Capital Flow Clean Lock — LOCKED
+
+Verdict: LOCKED / ACCEPTED
+Type: Capital Accounting Cleanup / No Trading Logic Change
+
+Purpose:
+- Finalize capital-flow source classification after v0.55.6a simulation validation.
+- Remove temporary simulation inputs and simulation audit fields before lock.
+- Keep real capital-flow classification active and clean.
+
+Validated regression reports:
+1) April Full 2026-04-01 → 2026-04-30 — Fixed 0.01
+   FinalWorkingNetUSD = 1102.45
+2) April Full 2026-04-01 → 2026-04-30 — Dynamic
+   FinalWorkingNetUSD = 4524.85
+3) May Fresh 2026-05-01 → 2026-05-14 — Fixed 0.01
+   FinalWorkingNetUSD = 759.45
+4) May Fresh 2026-05-01 → 2026-05-14 — Dynamic
+   FinalWorkingNetUSD = 1103.55
+
+Capital flow checks:
+- CapitalInjectionEvents = 0
+- CapitalWithdrawalEvents = 0
+- ExternalCapitalNetUSD = 0.0000 / negative-zero rounding only
+- CapitalFlowIntegrityStatus = PASS
+
+Safety invariants:
+- OrderSend = 0
+- BrokerModifySent = 0
+- RuntimeSLChanged = 0
+- InvariantBreaches = 0
+- ReportIntegrityStatus = PASS
+- TradeRowsVsSummaryStatus = PASS
+
+Clean-up completed:
+- Removed EnableCapitalFlowSimulation input.
+- Removed CapitalFlowSimulationScenario input.
+- Removed CapitalFlowSimulationAfterTrade input.
+- Removed CapitalFlowSimulationAmountUSD input.
+- Removed temporary simulation audit summary fields.
+
+Next recommended step:
+- Continue to the next capital/risk layer only after preserving this clean lock baseline.
