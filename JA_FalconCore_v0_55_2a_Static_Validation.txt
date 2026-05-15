@@ -1,0 +1,21 @@
+File: JA_FalconCore_Automated_Trading_Platform_v0_55_2a_DynamicCapitalAwareSingleTradeLossCapFix.mq5
+Version: v0.55.2a - Dynamic Capital-Aware Single Trade Loss Cap Fix
+Scope: Dynamic Paper risk capital before every trade; updates after every closed Paper trade; no OrderSend/BrokerModify.
+OrderSend( 0
+OrderSendAsync( 0
+PositionModify( 0
+trade.Buy( 0
+trade.Sell( 0
+DuplicateMacros: NONE
+BracesBalance: 675 open / 675 close
+ParenthesesBalance: 5000 open / 5000 close
+DynamicCapitalMode: PRESENT
+DynamicCapitalUpdatesAfterTrade: PRESENT
+InvariantFix_AllowsBlockingLoserBenefit: PRESENT
+TradeLifecycleRowAppendCount: 136
+TradeLifecycleDynamicColumns: 8 added
+SummaryDynamicColumns: 9 added
+TradeLifecycleHeaderColumns: 136
+TradeLifecycleRowColumns: 136
+SummaryHeaderColumns: 1503
+DocxRenderPages: 2

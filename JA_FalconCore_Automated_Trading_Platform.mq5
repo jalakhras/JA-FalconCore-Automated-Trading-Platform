@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.55.1 - Low-Capital Risk Feasibility Foundation       |
+//|                     Version: v0.55.2a - Dynamic Capital-Aware Single Trade Loss Cap Fix       |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.551"
+#property version   "1.5521"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.55.1"
-#define EA_BUILD_TAG   "LowCapitalRiskFeasibilityFoundation"
+#define EA_VERSION_TAG "v0.55.2a"
+#define EA_BUILD_TAG   "DynamicCapitalAwareSingleTradeLossCapFix"
 
 #define FALCON_MTF_COUNT       6
 
@@ -1513,7 +1513,7 @@ double g_falcon_session_start_balance = 0.0;
 #define FALCON_TDL_SCOPE                        "PROMOTION_APPLICATION;DEMOTION_APPLICATION;ACTIVE_POSITIONS_UNCHANGED;NEXT_TRADES_USE_APPLIED_TIER;PAPER_ONLY"
 #define FALCON_TDL_POLICY                       "PROMOTION_MUST_BE_EARNED;DEMOTION_IS_IMMEDIATE;DEMOTION_PRIORITY;NO_TRANSITION_WHEN_REQUIREMENTS_FAIL"
 #define FALCON_TDL_ORDER_SEND_POLICY            "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
-#define FALCON_TDL_NEXT_PHASE                   "v0.55.1_LowCapitalRiskFeasibilityFoundation"
+#define FALCON_TDL_NEXT_PHASE                   "v0.55.2a_DynamicCapitalAwareSingleTradeLossCapFix"
 
 
 // ==================================================================
@@ -1531,7 +1531,7 @@ double g_falcon_session_start_balance = 0.0;
 #define FALCON_ARCH_POLICY                       "NO_ENTRY_CHANGE;NO_EXIT_CHANGE;NO_SLTP_CHANGE;NO_PROTECTION_CHANGE;NO_RUNNER_CHANGE;NO_EMERGENCY_CHANGE;NO_TIER_CHANGE"
 #define FALCON_ARCH_ORDER_SEND_POLICY            "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
 #define FALCON_ARCH_REPORT_POLICY                "SUMMARY_VERSION_BUILD_ONLY;NO_NEW_CSV_REPORTS;NO_DIAGNOSTIC_SPAM"
-#define FALCON_ARCH_NEXT_PHASE                   "v0.55.1_LowCapitalRiskFeasibilityFoundation_ACTIVE_MEASUREMENT"
+#define FALCON_ARCH_NEXT_PHASE                   "v0.55.2a_DynamicCapitalAwareSingleTradeLossCapFix"
 
 #define FALCON_RISK_MANAGER_STATUS               "CONSOLIDATED_OWNER_FOR_GUARD_TIER_EMERGENCY_DECISIONS"
 #define FALCON_LOT_SIZING_MANAGER_STATUS         "PARTIAL_FIXED_LOT_MIN_LOT_AWARE_DYNAMIC_RISK_NOT_YET_ACTIVE"
@@ -1561,7 +1561,30 @@ double g_falcon_session_start_balance = 0.0;
 #define FALCON_LCRF_ORDER_SEND_POLICY             "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
 #define FALCON_LCRF_DEFAULT_SINGLE_TRADE_CAP_PCT  50.0
 #define FALCON_LCRF_BORDERLINE_MULTIPLIER         1.20
-#define FALCON_LCRF_NEXT_PHASE                    "v0.55.2_SingleTradeLossCapEnforcement_AFTER_VALIDATION"
+#define FALCON_LCRF_NEXT_PHASE                    "v0.55.2a_DynamicCapitalAwareSingleTradeLossCapFix"
+
+
+// ==================================================================
+// Dynamic Capital-Aware Single Trade Loss Cap - v0.55.2a
+// Fixes v0.55.2 by making the single-trade cap relative to Paper risk
+// capital before each trade. Capital starts from configured/auto capital
+// and updates after every closed Paper trade. A trade rejected at $50 may
+// become allowed later if profits or an explicit capital injection make
+// its minimum-lot risk acceptable. This does not auto-promote the strategy;
+// promotion must still be earned by the tier transition rules.
+// ==================================================================
+#define FALCON_STLC_STATUS                        "DYNAMIC_CAPITAL_AWARE_SINGLE_TRADE_LOSS_CAP_FIX"
+#define FALCON_STLC_DECISION                      "ENFORCE_DYNAMIC_CAPITAL_RELATIVE_SINGLE_TRADE_CAP_AFTER_EACH_PAPER_TRADE"
+#define FALCON_STLC_RUNTIME_ENFORCED              true
+#define FALCON_STLC_SCOPE                         "LOTSIZINGMANAGER;DYNAMIC_CAPITAL;MIN_LOT;SINGLE_TRADE_CAP;PAPER_EQUITY_CURVE;NO_AUTO_PROMOTION"
+#define FALCON_STLC_POLICY                        "DYNAMIC_CAPITAL_AWARE_ENFORCEMENT;STRICT_CAP_REMAINS_MEASUREMENT;RISK_FEASIBILITY_UPDATES_AFTER_EACH_TRADE;PROMOTION_STILL_EARNED;NO_ORDER_SEND"
+#define FALCON_STLC_ORDER_SEND_POLICY             "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
+#define FALCON_STLC_DRAWDOWN_CAP_MULTIPLIER       2.0
+#define FALCON_STLC_ABSOLUTE_MAX_R                50.0
+#define FALCON_STLC_DYNAMIC_MAX_RISK_PCT          50.0
+#define FALCON_STLC_DYNAMIC_CAPITAL_FLOOR_USD     1.0
+#define FALCON_STLC_DYNAMIC_CAPITAL_MODE          "PAPER_RISK_CAPITAL_BEFORE_TRADE_UPDATES_AFTER_EACH_CLOSED_TRADE"
+#define FALCON_STLC_NEXT_PHASE                    "v0.55.2a_DYNAMIC_CAPITAL_MULTI_WINDOW_VALIDATION_LOCK"
 
 
 // ==================================================================
@@ -2560,6 +2583,32 @@ struct FalconTradeLifecycleRecord
    double                    falcon_max_single_trade_loss_r;
    int                       falcon_single_trade_loss_cap_breach;
 
+   // v0.55.2: Calibrated Single Trade Loss Cap Enforcement Candidate fields.
+   string                    falcon_single_trade_loss_cap_status;
+   string                    falcon_single_trade_loss_cap_decision;
+   string                    falcon_single_trade_loss_cap_reason;
+   int                       falcon_single_trade_loss_cap_runtime_enforced;
+   double                    falcon_single_trade_loss_cap_strict_cap_r;
+   double                    falcon_single_trade_loss_cap_calibrated_cap_r;
+   double                    falcon_single_trade_loss_cap_risk_pct_cap;
+   int                       falcon_single_trade_loss_cap_blocked;
+   double                    falcon_single_trade_loss_cap_before_net_points;
+   double                    falcon_single_trade_loss_cap_after_net_points;
+   double                    falcon_single_trade_loss_cap_impact_points;
+   double                    falcon_single_trade_loss_cap_before_net_usd;
+   double                    falcon_single_trade_loss_cap_after_net_usd;
+   double                    falcon_single_trade_loss_cap_impact_usd;
+
+   // v0.55.2a: Dynamic capital-aware risk fields.
+   string                    falcon_dynamic_capital_mode;
+   double                    falcon_dynamic_risk_capital_before_trade;
+   double                    falcon_dynamic_risk_capital_after_trade;
+   string                    falcon_dynamic_risk_tier_by_capital;
+   double                    falcon_dynamic_risk_pct_of_capital;
+   double                    falcon_dynamic_single_trade_cap_pct;
+   int                       falcon_dynamic_capital_aware_blocked;
+   string                    falcon_dynamic_capital_reason;
+
    // v0.53.1: Three-Layer Emergency active paper replacement fields.
    string                    falcon_emergency_status;
    int                       falcon_emergency_triggered_layer;
@@ -2838,6 +2887,34 @@ struct FalconReportTotals
    double lotsizing_min_lot_risk_pct_max;
    double lotsizing_potential_loss_r_total;
    double lotsizing_potential_loss_r_max;
+
+   // v0.55.2: Calibrated Single Trade Loss Cap totals.
+   int    single_trade_loss_cap_evaluated_trades;
+   int    single_trade_loss_cap_allowed_trades;
+   int    single_trade_loss_cap_blocked_trades;
+   int    single_trade_loss_cap_invalid_trades;
+   int    single_trade_loss_cap_strict_breach_trades;
+   int    single_trade_loss_cap_calibrated_breach_trades;
+   double single_trade_loss_cap_before_net_points;
+   double single_trade_loss_cap_after_net_points;
+   double single_trade_loss_cap_impact_points;
+   double single_trade_loss_cap_before_net_usd;
+   double single_trade_loss_cap_after_net_usd;
+   double single_trade_loss_cap_impact_usd;
+   double single_trade_loss_cap_rejected_profit_usd;
+   double single_trade_loss_cap_rejected_loss_usd;
+   double single_trade_loss_cap_calibrated_cap_r_max;
+   double single_trade_loss_cap_risk_pct_cap_max;
+
+   // v0.55.2a: Dynamic capital-aware totals.
+   double single_trade_loss_cap_dynamic_capital_start;
+   double single_trade_loss_cap_dynamic_capital_min;
+   double single_trade_loss_cap_dynamic_capital_max;
+   double single_trade_loss_cap_dynamic_capital_end;
+   double single_trade_loss_cap_dynamic_risk_pct_max;
+   double single_trade_loss_cap_dynamic_cap_pct_max;
+   int    single_trade_loss_cap_dynamic_capital_updates;
+   int    single_trade_loss_cap_dynamic_capital_blocks;
 
    // v0.53.1: Three-Layer Emergency active replacement totals.
    int    paper_emergency_evaluated_trades;
@@ -3307,6 +3384,43 @@ bool FalconLowCapitalRiskFeasibilityContractReady()
    return true;
 }
 
+double FalconDynamicSingleTradeLossCapRiskPct(const string tier)
+{
+   double cap_pct = FalconCapitalTierMaxDrawdownPct(tier) * FALCON_STLC_DRAWDOWN_CAP_MULTIPLIER;
+   if(FALCON_STLC_DYNAMIC_MAX_RISK_PCT > 0.0 && cap_pct > FALCON_STLC_DYNAMIC_MAX_RISK_PCT)
+      cap_pct = FALCON_STLC_DYNAMIC_MAX_RISK_PCT;
+   return cap_pct;
+}
+
+double FalconCalibratedSingleTradeLossCapR(const string tier)
+{
+   double base_risk_pct = FalconCapitalTierBaseRiskPct(tier);
+   if(base_risk_pct <= 0.0) return 0.0;
+   double dynamic_cap_r = FalconDynamicSingleTradeLossCapRiskPct(tier) / base_risk_pct;
+   if(FALCON_STLC_ABSOLUTE_MAX_R > 0.0 && dynamic_cap_r > FALCON_STLC_ABSOLUTE_MAX_R)
+      dynamic_cap_r = FALCON_STLC_ABSOLUTE_MAX_R;
+   return dynamic_cap_r;
+}
+
+double FalconCalibratedSingleTradeLossCapRiskPct(const string tier)
+{
+   return FalconDynamicSingleTradeLossCapRiskPct(tier);
+}
+
+bool FalconSingleTradeLossCapContractReady()
+{
+   if(!FalconLowCapitalRiskFeasibilityContractReady()) return false;
+   if(!FALCON_STLC_RUNTIME_ENFORCED) return false;
+   if(FALCON_STLC_DRAWDOWN_CAP_MULTIPLIER <= 0.0) return false;
+   if(FALCON_STLC_ABSOLUTE_MAX_R <= 0.0) return false;
+   if(FALCON_STLC_DYNAMIC_MAX_RISK_PCT <= 0.0) return false;
+   if(FALCON_STLC_DYNAMIC_CAPITAL_FLOOR_USD <= 0.0) return false;
+   if(StringFind(FALCON_STLC_POLICY, "DYNAMIC_CAPITAL_AWARE_ENFORCEMENT") < 0) return false;
+   if(StringFind(FALCON_STLC_POLICY, "STRICT_CAP_REMAINS_MEASUREMENT") < 0) return false;
+   if(StringFind(FALCON_STLC_POLICY, "PROMOTION_STILL_EARNED") < 0) return false;
+   if(StringFind(FALCON_STLC_ORDER_SEND_POLICY, "ORDER_SEND_HARD_BLOCKED") < 0) return false;
+   return true;
+}
 
 string FalconCapitalNextTierName(const string tier)
 {
@@ -8555,6 +8669,7 @@ public:
       ApplyPaperRuntimeRunnerApplication(record);
       ApplyCapitalTierFoundation(record);
       ApplyLowCapitalRiskFeasibilityFoundation(record);
+      ApplyCalibratedSingleTradeLossCapEnforcement(record);
       ApplyThreeLayerEmergencyApplication(record);
       UpdateTotals(record);
       AppendTradeRecord(record);
@@ -10074,6 +10189,23 @@ public:
       double lcrf_readiness_pct = (lcrf_invariant_breaches == 0 ? 100.0 : 0.0);
       double lcrf_application_pct = (m_totals.total_trades > 0 ? 100.0 * (double)lcrf_evaluated_trades / (double)m_totals.total_trades : 0.0);
 
+      int stlc_contract_ready = (FalconSingleTradeLossCapContractReady() ? 1 : 0);
+      int stlc_runtime_enforced = (FALCON_STLC_RUNTIME_ENFORCED ? 1 : 0);
+      int stlc_evaluated_trades = m_totals.single_trade_loss_cap_evaluated_trades;
+      int stlc_order_send = 0;
+      int stlc_broker_modify_sent = 0;
+      int stlc_runtime_sl_changed = 0;
+      int stlc_invariant_breaches = 0;
+      if(stlc_contract_ready != 1 || stlc_runtime_enforced != 1 ||
+         stlc_evaluated_trades != m_totals.total_trades ||
+         stlc_order_send != 0 || stlc_broker_modify_sent != 0 || stlc_runtime_sl_changed != 0 ||
+         m_totals.single_trade_loss_cap_dynamic_capital_updates != stlc_evaluated_trades)
+      {
+         stlc_invariant_breaches = 1;
+      }
+      double stlc_readiness_pct = (stlc_invariant_breaches == 0 ? 100.0 : 0.0);
+      double stlc_application_pct = (m_totals.total_trades > 0 ? 100.0 * (double)stlc_evaluated_trades / (double)m_totals.total_trades : 0.0);
+
       int handle = FileOpen(m_summary_report_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -10739,7 +10871,22 @@ public:
          "FalconLowCapitalRiskFeasibilityRuntimeSLChanged,FalconLowCapitalRiskFeasibilityInvariantBreaches,"
          "FalconLowCapitalRiskFeasibilityReadinessPct,FalconLowCapitalRiskFeasibilityApplicationPct,"
          "FalconLowCapitalRiskFeasibilityPolicy,FalconLowCapitalRiskFeasibilityOrderSendPolicy,"
-         "FalconLowCapitalRiskFeasibilityNextPhase";
+         "FalconLowCapitalRiskFeasibilityNextPhase,"
+         "FalconSingleTradeLossCapStatus,FalconSingleTradeLossCapDecision,FalconSingleTradeLossCapRuntimeEnforced,"
+         "FalconSingleTradeLossCapScope,FalconSingleTradeLossCapContractReady,FalconSingleTradeLossCapEvaluatedTrades,"
+         "FalconSingleTradeLossCapAllowedTrades,FalconSingleTradeLossCapBlockedTrades,FalconSingleTradeLossCapInvalidTrades,"
+         "FalconSingleTradeLossCapStrictBreachTrades,FalconSingleTradeLossCapCalibratedBreachTrades,"
+         "FalconSingleTradeLossCapBeforeNetUSD,FalconSingleTradeLossCapAfterNetUSD,FalconSingleTradeLossCapImpactUSD,"
+         "FalconSingleTradeLossCapRejectedProfitUSD,FalconSingleTradeLossCapRejectedLossUSD,"
+         "FalconSingleTradeLossCapMaxCalibratedCapR,FalconSingleTradeLossCapMaxRiskPctCap,"
+         "FalconSingleTradeLossCapDynamicCapitalMode,FalconSingleTradeLossCapDynamicCapitalStart,"
+         "FalconSingleTradeLossCapDynamicCapitalMin,FalconSingleTradeLossCapDynamicCapitalMax,"
+         "FalconSingleTradeLossCapDynamicCapitalEnd,FalconSingleTradeLossCapDynamicCapitalUpdates,"
+         "FalconSingleTradeLossCapDynamicRiskPctMax,FalconSingleTradeLossCapDynamicCapPctMax,"
+         "FalconSingleTradeLossCapDynamicCapitalBlocks,"
+         "FalconSingleTradeLossCapOrderSend,FalconSingleTradeLossCapBrokerModifySent,FalconSingleTradeLossCapRuntimeSLChanged,"
+         "FalconSingleTradeLossCapInvariantBreaches,FalconSingleTradeLossCapReadinessPct,FalconSingleTradeLossCapApplicationPct,"
+         "FalconSingleTradeLossCapPolicy,FalconSingleTradeLossCapOrderSendPolicy,FalconSingleTradeLossCapNextPhase";
 
       // v0.45.0a compile fix: split the very long Summary row expression into small
       // append chunks. This changes only compiler expression shape; CSV schema and
@@ -12243,7 +12390,43 @@ public:
          DoubleToString(lcrf_application_pct, 2) + "," +
          FalconCsvSafe(FALCON_LCRF_POLICY) + "," +
          FalconCsvSafe(FALCON_LCRF_ORDER_SEND_POLICY) + "," +
-         FalconCsvSafe(FALCON_LCRF_NEXT_PHASE);
+         FalconCsvSafe(FALCON_LCRF_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_STLC_STATUS) + "," +
+         FalconCsvSafe(FALCON_STLC_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_STLC_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_STLC_SCOPE) + "," +
+         IntegerToString(stlc_contract_ready) + "," +
+         IntegerToString(stlc_evaluated_trades) + "," +
+         IntegerToString(m_totals.single_trade_loss_cap_allowed_trades) + "," +
+         IntegerToString(m_totals.single_trade_loss_cap_blocked_trades) + "," +
+         IntegerToString(m_totals.single_trade_loss_cap_invalid_trades) + "," +
+         IntegerToString(m_totals.single_trade_loss_cap_strict_breach_trades) + "," +
+         IntegerToString(m_totals.single_trade_loss_cap_calibrated_breach_trades) + "," +
+         DoubleToString(m_totals.single_trade_loss_cap_before_net_usd, 2) + "," +
+         DoubleToString(m_totals.single_trade_loss_cap_after_net_usd, 2) + "," +
+         DoubleToString(m_totals.single_trade_loss_cap_impact_usd, 2) + "," +
+         DoubleToString(m_totals.single_trade_loss_cap_rejected_profit_usd, 2) + "," +
+         DoubleToString(m_totals.single_trade_loss_cap_rejected_loss_usd, 2) + "," +
+         DoubleToString(m_totals.single_trade_loss_cap_calibrated_cap_r_max, 2) + "," +
+         DoubleToString(m_totals.single_trade_loss_cap_risk_pct_cap_max, 2) + "," +
+         FalconCsvSafe(FALCON_STLC_DYNAMIC_CAPITAL_MODE) + "," +
+         DoubleToString(m_totals.single_trade_loss_cap_dynamic_capital_start, 2) + "," +
+         DoubleToString(m_totals.single_trade_loss_cap_dynamic_capital_min, 2) + "," +
+         DoubleToString(m_totals.single_trade_loss_cap_dynamic_capital_max, 2) + "," +
+         DoubleToString(m_totals.single_trade_loss_cap_dynamic_capital_end, 2) + "," +
+         IntegerToString(m_totals.single_trade_loss_cap_dynamic_capital_updates) + "," +
+         DoubleToString(m_totals.single_trade_loss_cap_dynamic_risk_pct_max, 2) + "," +
+         DoubleToString(m_totals.single_trade_loss_cap_dynamic_cap_pct_max, 2) + "," +
+         IntegerToString(m_totals.single_trade_loss_cap_dynamic_capital_blocks) + "," +
+         IntegerToString(stlc_order_send) + "," +
+         IntegerToString(stlc_broker_modify_sent) + "," +
+         IntegerToString(stlc_runtime_sl_changed) + "," +
+         IntegerToString(stlc_invariant_breaches) + "," +
+         DoubleToString(stlc_readiness_pct, 2) + "," +
+         DoubleToString(stlc_application_pct, 2) + "," +
+         FalconCsvSafe(FALCON_STLC_POLICY) + "," +
+         FalconCsvSafe(FALCON_STLC_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_STLC_NEXT_PHASE);
 
       // v0.20.2: Write CRLF explicitly as separate strings. This prevents MetaTrader/CSV
       // readers from receiving the header and summary row concatenated on a single line.
@@ -12565,6 +12748,18 @@ private:
    }
 
 
+   double CurrentPaperRiskCapitalBeforeTrade()
+   {
+      double capital = FalconEffectiveCapitalForTier();
+      if(m_tle_equity > 0.0)
+         capital = m_tle_equity;
+      if(capital <= 0.0 && ManualCapital > 0.0)
+         capital = ManualCapital;
+      if(capital <= 0.0)
+         capital = FALCON_STLC_DYNAMIC_CAPITAL_FLOOR_USD;
+      return capital;
+   }
+
    void ApplyCapitalTierFoundation(FalconTradeLifecycleRecord &record)
    {
       double effective_balance = FalconEffectiveCapitalForTier();
@@ -12580,6 +12775,16 @@ private:
       record.falcon_broker_min_lot = m_symbol_context.min_lot;
       record.falcon_fixed_lot = FixedLotSize;
       record.falcon_min_lot_constraint = FalconMinLotConstraintStatus(m_symbol_context.min_lot, FixedLotSize);
+
+      // v0.55.2a: dynamic risk capital is separate from earned tier promotion.
+      record.falcon_dynamic_capital_mode = FALCON_STLC_DYNAMIC_CAPITAL_MODE;
+      record.falcon_dynamic_risk_capital_before_trade = CurrentPaperRiskCapitalBeforeTrade();
+      record.falcon_dynamic_risk_capital_after_trade = record.falcon_dynamic_risk_capital_before_trade;
+      record.falcon_dynamic_risk_tier_by_capital = FalconCapitalTierName(record.falcon_dynamic_risk_capital_before_trade);
+      record.falcon_dynamic_risk_pct_of_capital = 0.0;
+      record.falcon_dynamic_single_trade_cap_pct = FalconDynamicSingleTradeLossCapRiskPct(record.falcon_dynamic_risk_tier_by_capital);
+      record.falcon_dynamic_capital_aware_blocked = 0;
+      record.falcon_dynamic_capital_reason = "DYNAMIC_CAPITAL_READY_PROMOTION_STILL_EARNED";
    }
 
    void ApplyLowCapitalRiskFeasibilityFoundation(FalconTradeLifecycleRecord &record)
@@ -12595,11 +12800,11 @@ private:
       record.falcon_max_single_trade_loss_r = 0.0;
       record.falcon_single_trade_loss_cap_breach = 0;
 
-      double effective_balance = record.falcon_effective_balance;
+      double effective_balance = record.falcon_dynamic_risk_capital_before_trade;
       if(effective_balance <= 0.0)
-         effective_balance = FalconEffectiveCapitalForTier();
+         effective_balance = CurrentPaperRiskCapitalBeforeTrade();
 
-      string tier_name = record.falcon_tier_at_entry;
+      string tier_name = record.falcon_dynamic_risk_tier_by_capital;
       if(StringLen(tier_name) <= 0)
          tier_name = FalconCapitalTierName(effective_balance);
 
@@ -12678,13 +12883,93 @@ private:
       record.falcon_lotsizing_feasibility_reason = "MIN_LOT_RISK_WITHIN_TIER_BUDGET";
    }
 
+   void ApplyCalibratedSingleTradeLossCapEnforcement(FalconTradeLifecycleRecord &record)
+   {
+      record.falcon_single_trade_loss_cap_status = "INVALID";
+      record.falcon_single_trade_loss_cap_decision = "PASS_THROUGH";
+      record.falcon_single_trade_loss_cap_reason = "NOT_EVALUATED";
+      record.falcon_single_trade_loss_cap_runtime_enforced = (FALCON_STLC_RUNTIME_ENFORCED ? 1 : 0);
+      record.falcon_single_trade_loss_cap_strict_cap_r = record.falcon_max_single_trade_loss_r;
+      record.falcon_single_trade_loss_cap_calibrated_cap_r = 0.0;
+      record.falcon_single_trade_loss_cap_risk_pct_cap = 0.0;
+      record.falcon_single_trade_loss_cap_blocked = 0;
+      record.falcon_single_trade_loss_cap_before_net_points = record.paper_runner_net_index_points;
+      record.falcon_single_trade_loss_cap_after_net_points = record.paper_runner_net_index_points;
+      record.falcon_single_trade_loss_cap_impact_points = 0.0;
+      record.falcon_single_trade_loss_cap_before_net_usd = record.paper_runner_net_usd;
+      record.falcon_single_trade_loss_cap_after_net_usd = record.paper_runner_net_usd;
+      record.falcon_single_trade_loss_cap_impact_usd = 0.0;
+
+      string tier_name = record.falcon_dynamic_risk_tier_by_capital;
+      if(StringLen(tier_name) <= 0)
+         tier_name = FalconCapitalTierName(record.falcon_dynamic_risk_capital_before_trade);
+
+      double dynamic_capital = record.falcon_dynamic_risk_capital_before_trade;
+      if(dynamic_capital <= 0.0)
+         dynamic_capital = CurrentPaperRiskCapitalBeforeTrade();
+
+      double dynamic_risk_pct = 0.0;
+      if(dynamic_capital > 0.0)
+         dynamic_risk_pct = 100.0 * record.falcon_min_lot_risk_usd / dynamic_capital;
+      record.falcon_dynamic_risk_pct_of_capital = dynamic_risk_pct;
+
+      double calibrated_cap_r = FalconCalibratedSingleTradeLossCapR(tier_name);
+      double calibrated_risk_pct_cap = FalconCalibratedSingleTradeLossCapRiskPct(tier_name);
+      record.falcon_single_trade_loss_cap_calibrated_cap_r = calibrated_cap_r;
+      record.falcon_single_trade_loss_cap_risk_pct_cap = calibrated_risk_pct_cap;
+      record.falcon_dynamic_single_trade_cap_pct = calibrated_risk_pct_cap;
+
+      if(dynamic_capital <= 0.0 || record.falcon_min_lot_risk_usd <= 0.0 || calibrated_risk_pct_cap <= 0.0)
+      {
+         record.falcon_single_trade_loss_cap_status = "INVALID";
+         record.falcon_single_trade_loss_cap_decision = "ALLOW_PASS_THROUGH";
+         record.falcon_single_trade_loss_cap_reason = "DYNAMIC_RISK_INPUT_UNKNOWN";
+         record.falcon_dynamic_capital_reason = "DYNAMIC_RISK_INPUT_UNKNOWN";
+         return;
+      }
+
+      bool strict_cap_breach = (record.falcon_single_trade_loss_cap_breach == 1);
+      bool dynamic_cap_breach = (dynamic_risk_pct > calibrated_risk_pct_cap);
+
+      if(FALCON_STLC_RUNTIME_ENFORCED && dynamic_cap_breach)
+      {
+         record.falcon_single_trade_loss_cap_status = "BLOCKED";
+         record.falcon_single_trade_loss_cap_decision = "BLOCK_ENTRY_IN_PAPER_STATE";
+         record.falcon_single_trade_loss_cap_reason = "DYNAMIC_RISK_PCT_EXCEEDS_CAPITAL_AWARE_CAP";
+         record.falcon_single_trade_loss_cap_blocked = 1;
+         record.falcon_dynamic_capital_aware_blocked = 1;
+         record.falcon_dynamic_capital_reason = "BLOCKED_BY_DYNAMIC_CAPITAL_RELATIVE_RISK";
+         record.falcon_single_trade_loss_cap_after_net_points = 0.0;
+         record.falcon_single_trade_loss_cap_after_net_usd = 0.0;
+      }
+      else if(strict_cap_breach)
+      {
+         record.falcon_single_trade_loss_cap_status = "ALLOWED_DYNAMIC_CAPITAL";
+         record.falcon_single_trade_loss_cap_decision = "ALLOW_STRICT_BREACH_WITHIN_DYNAMIC_CAPITAL_CAP";
+         record.falcon_single_trade_loss_cap_reason = "STRICT_CAP_BREACH_BUT_DYNAMIC_CAPITAL_CAN_ABSORB_MIN_LOT_RISK";
+         record.falcon_dynamic_capital_reason = "ALLOWED_BY_DYNAMIC_CAPITAL_RELATIVE_RISK";
+      }
+      else
+      {
+         record.falcon_single_trade_loss_cap_status = "ALLOWED";
+         record.falcon_single_trade_loss_cap_decision = "ALLOW_WITHIN_STRICT_AND_DYNAMIC_CAP";
+         record.falcon_single_trade_loss_cap_reason = "WITHIN_STRICT_AND_DYNAMIC_CAPITAL_CAP";
+         record.falcon_dynamic_capital_reason = "ALLOWED_WITHIN_STRICT_AND_DYNAMIC_CAPITAL_CAP";
+      }
+
+      record.falcon_single_trade_loss_cap_impact_points = record.falcon_single_trade_loss_cap_after_net_points - record.falcon_single_trade_loss_cap_before_net_points;
+      record.falcon_single_trade_loss_cap_impact_usd = record.falcon_single_trade_loss_cap_after_net_usd - record.falcon_single_trade_loss_cap_before_net_usd;
+   }
+
    void ApplyThreeLayerEmergencyApplication(FalconTradeLifecycleRecord &record)
    {
-      double effective_balance = record.falcon_effective_balance;
+      double effective_balance = record.falcon_dynamic_risk_capital_before_trade;
+      if(effective_balance <= 0.0)
+         effective_balance = record.falcon_effective_balance;
       if(effective_balance <= 0.0)
          effective_balance = FalconEffectiveCapitalForTier();
       if(effective_balance <= 0.0)
-         effective_balance = 1.0;
+         effective_balance = FALCON_STLC_DYNAMIC_CAPITAL_FLOOR_USD;
 
       if(m_tle_equity <= 0.0)
       {
@@ -12734,10 +13019,10 @@ private:
       record.falcon_layer1_max_losses = record.falcon_tier_max_losses;
       record.falcon_layer2_max_daily_r = record.falcon_tier_max_daily_r;
       record.falcon_layer3_max_drawdown_pct = record.falcon_tier_max_drawdown_pct;
-      record.falcon_emergency_before_net_points = record.paper_runner_net_index_points;
-      record.falcon_emergency_before_net_usd = record.paper_runner_net_usd;
-      record.falcon_emergency_after_net_points = record.paper_runner_net_index_points;
-      record.falcon_emergency_after_net_usd = record.paper_runner_net_usd;
+      record.falcon_emergency_before_net_points = record.falcon_single_trade_loss_cap_after_net_points;
+      record.falcon_emergency_before_net_usd = record.falcon_single_trade_loss_cap_after_net_usd;
+      record.falcon_emergency_after_net_points = record.falcon_single_trade_loss_cap_after_net_points;
+      record.falcon_emergency_after_net_usd = record.falcon_single_trade_loss_cap_after_net_usd;
 
       if(m_tle_emergency_active)
       {
@@ -12750,6 +13035,7 @@ private:
          record.falcon_layer2_daily_r = m_tle_daily_r;
          record.falcon_layer3_drawdown_pct = m_tle_max_drawdown_pct;
          record.falcon_reset_status = "EMERGENCY_ACTIVE_BLOCKED";
+         record.falcon_dynamic_risk_capital_after_trade = m_tle_equity;
          return;
       }
 
@@ -12760,14 +13046,14 @@ private:
       if(risk_usd <= 0.0)
          risk_usd = 1.0;
 
-      double trade_r = record.paper_runner_net_usd / risk_usd;
+      double trade_r = record.falcon_single_trade_loss_cap_after_net_usd / risk_usd;
 
       bool layer1_reset_on_win = false;
-      if(record.paper_runner_net_usd < -0.0001)
+      if(record.falcon_single_trade_loss_cap_after_net_usd < -0.0001)
       {
          m_tle_consecutive_losses++;
       }
-      else if(record.paper_runner_net_usd > 0.0001)
+      else if(record.falcon_single_trade_loss_cap_after_net_usd > 0.0001)
       {
          if(m_tle_consecutive_losses > 0)
             layer1_reset_on_win = true;
@@ -12775,7 +13061,7 @@ private:
       }
 
       m_tle_daily_r += trade_r;
-      m_tle_equity += record.paper_runner_net_usd;
+      m_tle_equity += record.falcon_single_trade_loss_cap_after_net_usd;
       bool layer3_reset_on_new_peak = false;
       if(m_tle_equity > m_tle_peak_equity)
       {
@@ -12789,6 +13075,8 @@ private:
          drawdown_pct = 100.0 * (m_tle_peak_equity - m_tle_equity) / m_tle_peak_equity;
       if(drawdown_pct > m_tle_max_drawdown_pct)
          m_tle_max_drawdown_pct = drawdown_pct;
+
+      record.falcon_dynamic_risk_capital_after_trade = m_tle_equity;
 
       record.falcon_layer1_consecutive_losses = m_tle_consecutive_losses;
       record.falcon_layer2_daily_r = m_tle_daily_r;
@@ -13015,6 +13303,31 @@ private:
       m_totals.lotsizing_potential_loss_r_total = 0.0;
       m_totals.lotsizing_potential_loss_r_max = 0.0;
 
+      m_totals.single_trade_loss_cap_evaluated_trades = 0;
+      m_totals.single_trade_loss_cap_allowed_trades = 0;
+      m_totals.single_trade_loss_cap_blocked_trades = 0;
+      m_totals.single_trade_loss_cap_invalid_trades = 0;
+      m_totals.single_trade_loss_cap_strict_breach_trades = 0;
+      m_totals.single_trade_loss_cap_calibrated_breach_trades = 0;
+      m_totals.single_trade_loss_cap_before_net_points = 0.0;
+      m_totals.single_trade_loss_cap_after_net_points = 0.0;
+      m_totals.single_trade_loss_cap_impact_points = 0.0;
+      m_totals.single_trade_loss_cap_before_net_usd = 0.0;
+      m_totals.single_trade_loss_cap_after_net_usd = 0.0;
+      m_totals.single_trade_loss_cap_impact_usd = 0.0;
+      m_totals.single_trade_loss_cap_rejected_profit_usd = 0.0;
+      m_totals.single_trade_loss_cap_rejected_loss_usd = 0.0;
+      m_totals.single_trade_loss_cap_calibrated_cap_r_max = 0.0;
+      m_totals.single_trade_loss_cap_risk_pct_cap_max = 0.0;
+      m_totals.single_trade_loss_cap_dynamic_capital_start = 0.0;
+      m_totals.single_trade_loss_cap_dynamic_capital_min = 0.0;
+      m_totals.single_trade_loss_cap_dynamic_capital_max = 0.0;
+      m_totals.single_trade_loss_cap_dynamic_capital_end = 0.0;
+      m_totals.single_trade_loss_cap_dynamic_risk_pct_max = 0.0;
+      m_totals.single_trade_loss_cap_dynamic_cap_pct_max = 0.0;
+      m_totals.single_trade_loss_cap_dynamic_capital_updates = 0;
+      m_totals.single_trade_loss_cap_dynamic_capital_blocks = 0;
+
       m_totals.paper_emergency_evaluated_trades = 0;
       m_totals.paper_emergency_safe_trades = 0;
       m_totals.paper_emergency_triggered_trades = 0;
@@ -13165,6 +13478,55 @@ private:
       m_totals.lotsizing_potential_loss_r_total += record.falcon_potential_loss_r;
       if(record.falcon_potential_loss_r > m_totals.lotsizing_potential_loss_r_max)
          m_totals.lotsizing_potential_loss_r_max = record.falcon_potential_loss_r;
+
+      m_totals.single_trade_loss_cap_evaluated_trades++;
+      if(record.falcon_single_trade_loss_cap_status == "BLOCKED")
+         m_totals.single_trade_loss_cap_blocked_trades++;
+      else if(record.falcon_single_trade_loss_cap_status == "INVALID")
+         m_totals.single_trade_loss_cap_invalid_trades++;
+      else
+         m_totals.single_trade_loss_cap_allowed_trades++;
+      if(record.falcon_single_trade_loss_cap_breach == 1)
+         m_totals.single_trade_loss_cap_strict_breach_trades++;
+      if(record.falcon_single_trade_loss_cap_blocked == 1)
+      {
+         m_totals.single_trade_loss_cap_calibrated_breach_trades++;
+         if(record.falcon_single_trade_loss_cap_before_net_usd > 0.0)
+            m_totals.single_trade_loss_cap_rejected_profit_usd += record.falcon_single_trade_loss_cap_before_net_usd;
+         else if(record.falcon_single_trade_loss_cap_before_net_usd < 0.0)
+            m_totals.single_trade_loss_cap_rejected_loss_usd += MathAbs(record.falcon_single_trade_loss_cap_before_net_usd);
+      }
+      m_totals.single_trade_loss_cap_before_net_points += record.falcon_single_trade_loss_cap_before_net_points;
+      m_totals.single_trade_loss_cap_after_net_points += record.falcon_single_trade_loss_cap_after_net_points;
+      m_totals.single_trade_loss_cap_impact_points = m_totals.single_trade_loss_cap_after_net_points - m_totals.single_trade_loss_cap_before_net_points;
+      m_totals.single_trade_loss_cap_before_net_usd += record.falcon_single_trade_loss_cap_before_net_usd;
+      m_totals.single_trade_loss_cap_after_net_usd += record.falcon_single_trade_loss_cap_after_net_usd;
+      m_totals.single_trade_loss_cap_impact_usd = m_totals.single_trade_loss_cap_after_net_usd - m_totals.single_trade_loss_cap_before_net_usd;
+      if(record.falcon_single_trade_loss_cap_calibrated_cap_r > m_totals.single_trade_loss_cap_calibrated_cap_r_max)
+         m_totals.single_trade_loss_cap_calibrated_cap_r_max = record.falcon_single_trade_loss_cap_calibrated_cap_r;
+      if(record.falcon_single_trade_loss_cap_risk_pct_cap > m_totals.single_trade_loss_cap_risk_pct_cap_max)
+         m_totals.single_trade_loss_cap_risk_pct_cap_max = record.falcon_single_trade_loss_cap_risk_pct_cap;
+      if(record.falcon_dynamic_capital_aware_blocked == 1)
+         m_totals.single_trade_loss_cap_dynamic_capital_blocks++;
+      if(record.falcon_dynamic_risk_capital_before_trade > 0.0)
+      {
+         if(m_totals.single_trade_loss_cap_dynamic_capital_updates == 0)
+         {
+            m_totals.single_trade_loss_cap_dynamic_capital_start = record.falcon_dynamic_risk_capital_before_trade;
+            m_totals.single_trade_loss_cap_dynamic_capital_min = record.falcon_dynamic_risk_capital_before_trade;
+            m_totals.single_trade_loss_cap_dynamic_capital_max = record.falcon_dynamic_risk_capital_before_trade;
+         }
+         if(record.falcon_dynamic_risk_capital_before_trade < m_totals.single_trade_loss_cap_dynamic_capital_min)
+            m_totals.single_trade_loss_cap_dynamic_capital_min = record.falcon_dynamic_risk_capital_before_trade;
+         if(record.falcon_dynamic_risk_capital_before_trade > m_totals.single_trade_loss_cap_dynamic_capital_max)
+            m_totals.single_trade_loss_cap_dynamic_capital_max = record.falcon_dynamic_risk_capital_before_trade;
+         m_totals.single_trade_loss_cap_dynamic_capital_end = record.falcon_dynamic_risk_capital_after_trade;
+         m_totals.single_trade_loss_cap_dynamic_capital_updates++;
+      }
+      if(record.falcon_dynamic_risk_pct_of_capital > m_totals.single_trade_loss_cap_dynamic_risk_pct_max)
+         m_totals.single_trade_loss_cap_dynamic_risk_pct_max = record.falcon_dynamic_risk_pct_of_capital;
+      if(record.falcon_dynamic_single_trade_cap_pct > m_totals.single_trade_loss_cap_dynamic_cap_pct_max)
+         m_totals.single_trade_loss_cap_dynamic_cap_pct_max = record.falcon_dynamic_single_trade_cap_pct;
 
       m_totals.paper_emergency_evaluated_trades++;
       m_totals.paper_emergency_before_net_points += record.falcon_emergency_before_net_points;
@@ -13540,6 +13902,16 @@ private:
       trade_header += "FalconMinLotRiskPoints,FalconMinLotRiskUSD,FalconMinLotRiskPctOfCapital,";
       trade_header += "FalconTierBaseRiskPct,FalconTierRiskBudgetUSD,FalconPotentialLossR,";
       trade_header += "FalconMaxSingleTradeLossR,FalconSingleTradeLossCapBreach,";
+      trade_header += "FalconSingleTradeLossCapStatus,FalconSingleTradeLossCapDecision,FalconSingleTradeLossCapReason,";
+      trade_header += "FalconSingleTradeLossCapRuntimeEnforced,FalconSingleTradeLossCapStrictCapR,";
+      trade_header += "FalconSingleTradeLossCapCalibratedCapR,FalconSingleTradeLossCapRiskPctCap,";
+      trade_header += "FalconSingleTradeLossCapBlocked,FalconSingleTradeLossCapBeforeNetPoints,";
+      trade_header += "FalconSingleTradeLossCapAfterNetPoints,FalconSingleTradeLossCapImpactPoints,";
+      trade_header += "FalconSingleTradeLossCapBeforeNetUSD,FalconSingleTradeLossCapAfterNetUSD,";
+      trade_header += "FalconSingleTradeLossCapImpactUSD,";
+      trade_header += "FalconDynamicCapitalMode,FalconDynamicRiskCapitalBeforeTrade,FalconDynamicRiskCapitalAfterTrade,";
+      trade_header += "FalconDynamicRiskTierByCapital,FalconDynamicRiskPctOfCapital,FalconDynamicSingleTradeCapPct,";
+      trade_header += "FalconDynamicCapitalAwareBlocked,FalconDynamicCapitalReason,";
       trade_header += "FalconEmergencyStatus,FalconEmergencyTriggeredLayer,FalconEmergencyReason,";
       trade_header += "FalconLayer1ConsecutiveLosses,FalconLayer1MaxLosses,";
       trade_header += "FalconLayer2DailyR,FalconLayer2MaxDailyR,";
@@ -13678,6 +14050,28 @@ private:
       trade_row += DoubleToString(record.falcon_potential_loss_r, 2) + ",";
       trade_row += DoubleToString(record.falcon_max_single_trade_loss_r, 2) + ",";
       trade_row += IntegerToString(record.falcon_single_trade_loss_cap_breach) + ",";
+      trade_row += FalconCsvSafe(record.falcon_single_trade_loss_cap_status) + ",";
+      trade_row += FalconCsvSafe(record.falcon_single_trade_loss_cap_decision) + ",";
+      trade_row += FalconCsvSafe(record.falcon_single_trade_loss_cap_reason) + ",";
+      trade_row += IntegerToString(record.falcon_single_trade_loss_cap_runtime_enforced) + ",";
+      trade_row += DoubleToString(record.falcon_single_trade_loss_cap_strict_cap_r, 2) + ",";
+      trade_row += DoubleToString(record.falcon_single_trade_loss_cap_calibrated_cap_r, 2) + ",";
+      trade_row += DoubleToString(record.falcon_single_trade_loss_cap_risk_pct_cap, 2) + ",";
+      trade_row += IntegerToString(record.falcon_single_trade_loss_cap_blocked) + ",";
+      trade_row += DoubleToString(record.falcon_single_trade_loss_cap_before_net_points, 2) + ",";
+      trade_row += DoubleToString(record.falcon_single_trade_loss_cap_after_net_points, 2) + ",";
+      trade_row += DoubleToString(record.falcon_single_trade_loss_cap_impact_points, 2) + ",";
+      trade_row += DoubleToString(record.falcon_single_trade_loss_cap_before_net_usd, 2) + ",";
+      trade_row += DoubleToString(record.falcon_single_trade_loss_cap_after_net_usd, 2) + ",";
+      trade_row += DoubleToString(record.falcon_single_trade_loss_cap_impact_usd, 2) + ",";
+      trade_row += FalconCsvSafe(record.falcon_dynamic_capital_mode) + ",";
+      trade_row += DoubleToString(record.falcon_dynamic_risk_capital_before_trade, 2) + ",";
+      trade_row += DoubleToString(record.falcon_dynamic_risk_capital_after_trade, 2) + ",";
+      trade_row += FalconCsvSafe(record.falcon_dynamic_risk_tier_by_capital) + ",";
+      trade_row += DoubleToString(record.falcon_dynamic_risk_pct_of_capital, 2) + ",";
+      trade_row += DoubleToString(record.falcon_dynamic_single_trade_cap_pct, 2) + ",";
+      trade_row += IntegerToString(record.falcon_dynamic_capital_aware_blocked) + ",";
+      trade_row += FalconCsvSafe(record.falcon_dynamic_capital_reason) + ",";
       trade_row += FalconCsvSafe(record.falcon_emergency_status) + ",";
       trade_row += IntegerToString(record.falcon_emergency_triggered_layer) + ",";
       trade_row += FalconCsvSafe(record.falcon_emergency_reason) + ",";

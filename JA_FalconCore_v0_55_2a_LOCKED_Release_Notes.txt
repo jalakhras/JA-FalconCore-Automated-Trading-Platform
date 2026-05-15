@@ -1,0 +1,70 @@
+JA FalconCore v0.55.2a - Dynamic Capital-Aware Single Trade Loss Cap Fix
+
+Status: LOCKED / ACCEPTED
+
+Decision
+- v0.55.2a is locked after multi-window validation.
+- It fixes v0.55.2 by making Single Trade Loss Cap relative to dynamic Paper risk capital before each trade.
+- Risk capital starts at configured/initial capital and updates after every closed Paper trade.
+- Strict cap remains measurement only; dynamic capital-aware cap is the active Paper enforcement rule.
+- Promotion still must be earned; dynamic capital growth does not auto-promote the engine or tier.
+
+Validation windows
+- January OOS: 2026-01-01 -> 2026-01-30
+- February OOS: 2026-02-01 -> 2026-02-27
+- March OOS: 2026-03-01 -> 2026-03-31
+- April Full: 2026-04-01 -> 2026-04-30 actual observed
+- May Fresh: 2026-05-01 -> 2026-05-14
+
+Core results
+- Total evaluated trades: 2402
+- Dynamic capital updates: 2402
+- Dynamic capital blocks: 0
+- Cap impact USD: 0.00 across all windows
+- Invariant breaches: 0 across all windows
+- OrderSend: 0
+- BrokerModifySent: 0
+- RuntimeSLChanged: 0
+
+Window results
+January OOS:
+- Trades: 492
+- Working NetUSD: 849.43
+- Dynamic RiskPctMax: 27.24%
+- Dynamic Blocks: 0
+
+February OOS:
+- Trades: 488
+- Working NetUSD: 1312.24
+- Dynamic RiskPctMax: 9.90%
+- Dynamic Blocks: 0
+
+March OOS:
+- Trades: 628
+- Working NetUSD: 1889.39
+- Dynamic RiskPctMax: 7.19%
+- Dynamic Blocks: 0
+
+April Full:
+- Trades: 536
+- Working NetUSD: 1102.45
+- Dynamic RiskPctMax: 18.94%
+- Dynamic Blocks: 0
+- Working Baseline after lock: v0.55.2a April Full = 1102.45
+
+May Fresh:
+- Trades: 258
+- Working NetUSD: 759.45
+- Dynamic RiskPctMax: 21.16%
+- Dynamic Blocks: 0
+
+Locked interpretation
+- v0.55.2a is the correct version versus v0.55.2.
+- v0.55.2 rejected a few trades due to a fixed capital assumption.
+- v0.55.2a allows trades when dynamic capital has grown enough before trade entry.
+- A trade may still be blocked if MinLotRiskUSD / DynamicRiskCapitalBeforeTrade exceeds the dynamic single-trade cap percentage.
+- This closes the dynamic capital-aware Single Trade Loss Cap fix as a Paper Runtime layer.
+
+Next phase
+- Do not proceed to Escalation Detection until this locked package is acknowledged.
+- Recommended next work remains inside capital/lotsizing: dynamic lot sizing design and/or Capital-Aware reporting completion.
