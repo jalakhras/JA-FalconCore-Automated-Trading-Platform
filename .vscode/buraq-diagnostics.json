@@ -2,7 +2,7 @@
     "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\JA_FalconCore_Automated_Trading_Platform.mq5": [
         {
             "file": "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\JA_FalconCore_Automated_Trading_Platform.mq5",
-            "message": "version '1.5521' is incompatible with MQL5 Market, must be xxx.yyy",
+            "message": "version '1.5544' is incompatible with MQL5 Market, must be xxx.yyy",
             "range": {
                 "start": {
                     "line": 6,
@@ -57,6 +57,96 @@
         {
             "file": "c:\\Users\\jalak\\Downloads\\JA_FalconCore_v0_55_3b_DynamicLotSizingSafetyRampMaxGrowthCap_LOCKED_ReleasePackage\\JA_FalconCore_Automated_Trading_Platform_v0_55_3b_DynamicLotSizingSafetyRampMaxGrowthCap.mq5",
             "message": "version '1.5532' is incompatible with MQL5 Market, must be xxx.yyy",
+            "range": {
+                "start": {
+                    "line": 6,
+                    "character": 10
+                },
+                "end": {
+                    "line": 6,
+                    "character": 110
+                }
+            },
+            "severity": "Warning",
+            "code": "68"
+        }
+    ],
+    "c:\\Users\\jalak\\Downloads\\JA_FalconCore_v0_55_4a_SlimReportingTruthIntegrityFix_Candidate_ReleasePackage\\JA_FalconCore_Automated_Trading_Platform_v0_55_4a_SlimReportingTruthIntegrityFix.mq5": [
+        {
+            "file": "c:\\Users\\jalak\\Downloads\\JA_FalconCore_v0_55_4a_SlimReportingTruthIntegrityFix_Candidate_ReleasePackage\\JA_FalconCore_Automated_Trading_Platform_v0_55_4a_SlimReportingTruthIntegrityFix.mq5",
+            "message": "version '1.5541' is incompatible with MQL5 Market, must be xxx.yyy",
+            "range": {
+                "start": {
+                    "line": 6,
+                    "character": 10
+                },
+                "end": {
+                    "line": 6,
+                    "character": 110
+                }
+            },
+            "severity": "Warning",
+            "code": "68"
+        }
+    ],
+    "c:\\Users\\jalak\\Downloads\\JA_FalconCore_v0_55_4b_ReportingPrecisionAuditFix_Candidate_ReleasePackage\\JA_FalconCore_Automated_Trading_Platform_v0_55_4b_ReportingPrecisionAuditFix.mq5": [
+        {
+            "file": "c:\\Users\\jalak\\Downloads\\JA_FalconCore_v0_55_4b_ReportingPrecisionAuditFix_Candidate_ReleasePackage\\JA_FalconCore_Automated_Trading_Platform_v0_55_4b_ReportingPrecisionAuditFix.mq5",
+            "message": "version '1.5542' is incompatible with MQL5 Market, must be xxx.yyy",
+            "range": {
+                "start": {
+                    "line": 6,
+                    "character": 10
+                },
+                "end": {
+                    "line": 6,
+                    "character": 110
+                }
+            },
+            "severity": "Warning",
+            "code": "68"
+        }
+    ],
+    "c:\\Users\\jalak\\Downloads\\JA_FalconCore_v0_55_4c_SlimReportColumnConsolidation_Candidate_ReleasePackage\\JA_FalconCore_Automated_Trading_Platform_v0_55_4c_SlimReportColumnConsolidation.mq5": [
+        {
+            "file": "c:\\Users\\jalak\\Downloads\\JA_FalconCore_v0_55_4c_SlimReportColumnConsolidation_Candidate_ReleasePackage\\JA_FalconCore_Automated_Trading_Platform_v0_55_4c_SlimReportColumnConsolidation.mq5",
+            "message": "version '1.5543' is incompatible with MQL5 Market, must be xxx.yyy",
+            "range": {
+                "start": {
+                    "line": 6,
+                    "character": 10
+                },
+                "end": {
+                    "line": 6,
+                    "character": 110
+                }
+            },
+            "severity": "Warning",
+            "code": "68"
+        }
+    ],
+    "c:\\Users\\jalak\\Downloads\\JA_FalconCore_v0_55_4d_MinimalReportFinalPass_Candidate_ReleasePackage\\JA_FalconCore_Automated_Trading_Platform_v0_55_4d_MinimalReportFinalPass.mq5": [
+        {
+            "file": "c:\\Users\\jalak\\Downloads\\JA_FalconCore_v0_55_4d_MinimalReportFinalPass_Candidate_ReleasePackage\\JA_FalconCore_Automated_Trading_Platform_v0_55_4d_MinimalReportFinalPass.mq5",
+            "message": "version '1.5544' is incompatible with MQL5 Market, must be xxx.yyy",
+            "range": {
+                "start": {
+                    "line": 6,
+                    "character": 10
+                },
+                "end": {
+                    "line": 6,
+                    "character": 110
+                }
+            },
+            "severity": "Warning",
+            "code": "68"
+        }
+    ],
+    "c:\\Users\\jalak\\Downloads\\JA_FalconCore_v0_55_4d_MinimalReportFinalPass_LOCKED_ReleasePackage\\JA_FalconCore_Automated_Trading_Platform_v0_55_4d_MinimalReportFinalPass.mq5": [
+        {
+            "file": "c:\\Users\\jalak\\Downloads\\JA_FalconCore_v0_55_4d_MinimalReportFinalPass_LOCKED_ReleasePackage\\JA_FalconCore_Automated_Trading_Platform_v0_55_4d_MinimalReportFinalPass.mq5",
+            "message": "version '1.5544' is incompatible with MQL5 Market, must be xxx.yyy",
             "range": {
                 "start": {
                     "line": 6,

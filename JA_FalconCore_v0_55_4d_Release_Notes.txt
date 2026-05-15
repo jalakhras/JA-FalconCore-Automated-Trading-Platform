@@ -1,0 +1,45 @@
+JA FalconCore v0.55.4d — Minimal Report Final Pass
+
+Type: Reporting Cleanup / Final Minimal Surface / No Trading Logic Change
+
+Purpose:
+- Finalize the default report surface after v0.55.4c.
+- Keep only decision-grade fields in the default reports.
+- Move locked-layer diagnostics and long explanatory notes out of the default CSV surface.
+
+Changes:
+- TradeLifecycle reduced from 41 columns to 27 columns.
+- Summary reduced from 68 columns to 44 columns.
+- AutoPeriodManifest reduced to metadata-only fields; long notes are no longer written to CSV.
+- TradeLifecycle no longer repeats EAName / Version / Build / Symbol.
+- Raw Profit/Loss remains consolidated into signed RawIndexPoints and RawTradeUSD.
+- PaperGuard remains removed from the minimal surface.
+- DLM tier/capital/growth-ramp diagnostic columns were removed from default TradeLifecycle; only ActiveLot, RecommendedLot, dynamic capital, and risk pct remain.
+- Integrity audit fields remain in Summary.
+
+No Trading Logic Change:
+- No Entry change.
+- No Exit change.
+- No SL/TP change.
+- No Protection/Runner/Emergency change.
+- No Dynamic LotSizing behavior change.
+- No OrderSend / BrokerModify / RuntimeSLChanged.
+
+Test Plan:
+1) Fixed Mode Regression:
+   UseFixedLot=true, FixedLotSize=0.01
+   April Full: 2026-04-01 → 2026-04-30
+   May Fresh: 2026-05-01 → 2026-05-14
+
+2) Dynamic Mode Regression:
+   UseFixedLot=false
+   April Full: 2026-04-01 → 2026-04-30
+   May Fresh: 2026-05-01 → 2026-05-14
+
+Lock Criteria:
+- Compile = 0 errors / 0 warnings.
+- ReportIntegrityStatus = PASS.
+- TradeRowsVsSummaryStatus = PASS.
+- VisibleRawNetUSDDiff <= 0.01.
+- VisibleFinalNetUSDDiff <= 0.01.
+- OrderSend = 0, BrokerModifySent = 0, RuntimeSLChanged = 0, InvariantBreaches = 0.

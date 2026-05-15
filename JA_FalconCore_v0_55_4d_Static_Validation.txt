@@ -1,0 +1,41 @@
+JA FalconCore v0.55.4d Static Validation
+Build: MinimalReportFinalPass
+Scope: Reporting Minimal Final Pass / No Trading Logic Change
+Generated: 2026-05-15 21:58:45
+
+PASS - Version tag
+PASS - Build tag
+PASS - Property version
+PASS - Default report profile remains MINIMAL
+PASS - Trade header helper present
+PASS - Summary header helper present
+PASS - TradeLifecycle does not repeat EAName/Version/Build/Symbol
+PASS - PaperGuard removed from minimal surface
+PASS - LotSizing safety diagnostics removed from minimal surface
+PASS - AutoPeriodManifest long prose removed
+PASS - Visible row audit retained
+PASS - No OrderSend call
+PASS - No OrderSendAsync call
+PASS - No PositionModify call
+PASS - No CTrade Buy/Sell call
+PASS - Braces balanced | {=674 }=674
+PASS - Parentheses balanced | (=3014 )=3014
+PASS - No unclosed/split string literals detected
+PASS - TradeLifecycle minimal header column count | 27
+PASS - Summary minimal header column count | 44
+PASS - AutoPeriodManifest includes FinalFromTag
+PASS - AutoPeriodManifest includes ActualDataToTag
+PASS - AutoPeriodManifest includes MovedCount
+PASS - AutoPeriodManifest includes FailedCount
+
+Expected report surfaces:
+- TradeLifecycle columns: 27
+- Summary columns: 44
+- AutoPeriodManifest: metadata only, no long notes.
+
+Runtime lock criteria:
+- ReportIntegrityStatus = PASS
+- TradeRowsVsSummaryStatus = PASS
+- VisibleRawNetUSDDiff <= 0.01 absolute
+- VisibleFinalNetUSDDiff <= 0.01 absolute
+- OrderSend = 0, BrokerModifySent = 0, RuntimeSLChanged = 0, InvariantBreaches = 0
