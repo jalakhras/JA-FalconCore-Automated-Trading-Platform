@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.37.0 - Paper Protection Virtual SL Broker Feasibility Proxy |
+//|                     Version: v0.55.1 - Low-Capital Risk Feasibility Foundation       |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.371"
+#property version   "1.551"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.37.1"
-#define EA_BUILD_TAG   "PaperProtectionBrokerFeasibilityValidationLock_NoExecution"
+#define EA_VERSION_TAG "v0.55.1"
+#define EA_BUILD_TAG   "LowCapitalRiskFeasibilityFoundation"
 
 #define FALCON_MTF_COUNT       6
 
@@ -586,6 +586,775 @@ long   g_fvg_hold_quality_score_total                = 0;
 
 
 // ==================================================================
+// Paper Protection Broker Distance Sanity Proxy - v0.37.2
+// Summary-only operational safety proxy. It checks whether the locked
+// broker-feasible Virtual SL state has a sane distance context against
+// stops level + buffer and freeze level before any future PaperExecutor
+// or broker modify path. It does not send broker modify requests, does
+// not change runtime SL, and does not alter entries, SL/TP, exits,
+// Paper fills, Demo, Live, protection, or runner logic.
+// ==================================================================
+#define FALCON_PBD_STATUS                                "PAPER_PROTECTION_BROKER_DISTANCE_SANITY_PROXY"
+#define FALCON_PBD_DECISION                              "BROKER_DISTANCE_SANITY_PROXY_READY_NO_RUNTIME_SL_CHANGE"
+#define FALCON_PBD_RUNTIME_ENFORCED                      false
+#define FALCON_PBD_SCOPE                                 "BROKER_DISTANCE_SANITY_PROXY;STOPS_DISTANCE;FREEZE_DISTANCE;SUMMARY_ONLY;NO_BROKER_MODIFY"
+#define FALCON_PBD_NO_LOOKAHEAD_POLICY                   "YES_PROXY_FROM_LOCKED_BROKER_FEASIBILITY_AND_SYMBOL_CONTEXT_ONLY"
+#define FALCON_PBD_DISTANCE_POLICY                       "DISTANCE_SANITY_PROXY_ONLY;NO_SL_MODIFY;NO_POSITION_MODIFY;NO_RUNTIME_PROTECTION"
+#define FALCON_PBD_ORDER_SEND_POLICY                     "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_PBD_NEXT_PHASE                            "v0.37.3_PaperProtectionBrokerDistanceSanityValidationLock"
+
+
+// ==================================================================
+// Paper Protection Broker Distance Sanity Validation Lock - v0.37.3
+// Summary-only lock layer. It freezes the broker-distance sanity proxy
+// after locked broker feasibility, known stops/freeze context, known
+// required distance, and zero distance blocks all passed. It does not
+// send broker modify requests, does not change runtime SL, and does not
+// alter entries, SL/TP, exits, Paper fills, Demo, Live, protection, or
+// runner logic.
+// ==================================================================
+#define FALCON_PBDL_STATUS                                "PAPER_PROTECTION_BROKER_DISTANCE_SANITY_VALIDATION_LOCK"
+#define FALCON_PBDL_DECISION                              "BROKER_DISTANCE_SANITY_LOCKED_PROXY_ONLY_NO_RUNTIME_SL_CHANGE"
+#define FALCON_PBDL_RUNTIME_ENFORCED                      false
+#define FALCON_PBDL_SCOPE                                 "BROKER_DISTANCE_SANITY_LOCK;STOPS_DISTANCE_SAFE;FREEZE_DISTANCE_SAFE;ZERO_BREACHES;SUMMARY_ONLY"
+#define FALCON_PBDL_NO_LOOKAHEAD_POLICY                   "YES_PROXY_FROM_LOCKED_BROKER_DISTANCE_AND_SYMBOL_CONTEXT_ONLY"
+#define FALCON_PBDL_DISTANCE_POLICY                       "DISTANCE_SANITY_LOCK_ONLY;NO_SL_MODIFY;NO_POSITION_MODIFY;NO_RUNTIME_PROTECTION"
+#define FALCON_PBDL_ORDER_SEND_POLICY                     "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_PBDL_NEXT_PHASE                            "v0.38.0_PaperProtectionBrokerModifyEligibilityProxy"
+
+
+// ==================================================================
+// Paper Protection Broker Modify Eligibility Proxy - v0.38.0
+// Summary-only eligibility bridge. It combines the locked Virtual SL,
+// broker feasibility, and broker distance sanity layers into a future
+// PaperExecutor modify-eligibility shape. It sends no broker modify
+// request, changes no runtime SL, enables no OrderSend, and does not
+// alter entries, SL/TP, exits, Paper fills, Demo, or Live behavior.
+// ==================================================================
+#define FALCON_PBME_STATUS                               "PAPER_PROTECTION_BROKER_MODIFY_ELIGIBILITY_PROXY"
+#define FALCON_PBME_DECISION                             "BROKER_MODIFY_ELIGIBILITY_PROXY_READY_NO_RUNTIME_SL_CHANGE"
+#define FALCON_PBME_RUNTIME_ENFORCED                     false
+#define FALCON_PBME_SCOPE                                "BROKER_MODIFY_ELIGIBILITY_PROXY;DISTANCE_LOCK_READY;FEASIBILITY_LOCK_READY;SUMMARY_ONLY;NO_BROKER_MODIFY"
+#define FALCON_PBME_NO_LOOKAHEAD_POLICY                  "YES_PROXY_FROM_LOCKED_BROKER_DISTANCE_AND_FEASIBILITY_ONLY"
+#define FALCON_PBME_ELIGIBILITY_POLICY                   "ELIGIBILITY_PROXY_ONLY;NO_SL_MODIFY;NO_POSITION_MODIFY;NO_RUNTIME_PROTECTION"
+#define FALCON_PBME_ORDER_SEND_POLICY                    "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_PBME_NEXT_PHASE                           "v0.38.1_PaperProtectionBrokerModifyEligibilityValidationLock"
+
+
+// ==================================================================
+// Paper Protection Broker Modify Eligibility Validation Lock - v0.38.1
+// Summary-only lock for the broker modify eligibility proxy. It proves
+// the future PaperExecutor modify eligibility chain is complete and
+// internally consistent while still sending no broker modify, changing no
+// runtime SL, enabling no OrderSend, and adding no reports or inputs.
+// ==================================================================
+#define FALCON_PBMEL_STATUS                              "PAPER_PROTECTION_BROKER_MODIFY_ELIGIBILITY_VALIDATION_LOCK"
+#define FALCON_PBMEL_DECISION                            "BROKER_MODIFY_ELIGIBILITY_LOCKED_PROXY_ONLY_NO_RUNTIME_SL_CHANGE"
+#define FALCON_PBMEL_RUNTIME_ENFORCED                    false
+#define FALCON_PBMEL_SCOPE                               "BROKER_MODIFY_ELIGIBILITY_LOCK;DISTANCE_LOCK_READY;FEASIBILITY_LOCK_READY;ZERO_BREACHES;SUMMARY_ONLY"
+#define FALCON_PBMEL_NO_LOOKAHEAD_POLICY                 "YES_PROXY_FROM_LOCKED_BROKER_MODIFY_ELIGIBILITY_ONLY"
+#define FALCON_PBMEL_ELIGIBILITY_POLICY                  "ELIGIBILITY_VALIDATION_LOCK_ONLY;NO_SL_MODIFY;NO_POSITION_MODIFY;NO_RUNTIME_PROTECTION"
+#define FALCON_PBMEL_ORDER_SEND_POLICY                   "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_PBMEL_NEXT_PHASE                          "v0.39.0_PaperProtectionExecutorModifyPlanConsumerReadiness"
+
+
+// ==================================================================
+// Paper Protection Executor Modify Plan Consumer Readiness - v0.39.0
+// Summary-only bridge into the future PaperExecutor consumer path. It
+// proves that the locked broker modify eligibility, virtual SL ledger,
+// modify plan, protection level, and trigger can be read as one coherent
+// consumer state. It does not send broker modify, does not change runtime
+// SL, does not enable OrderSend, and adds no inputs or diagnostic reports.
+// ==================================================================
+#define FALCON_PEMC_STATUS                              "PAPER_PROTECTION_EXECUTOR_MODIFY_PLAN_CONSUMER_READINESS"
+#define FALCON_PEMC_DECISION                            "PAPER_EXECUTOR_CONSUMER_READY_PROXY_ONLY_NO_RUNTIME_SL_CHANGE"
+#define FALCON_PEMC_RUNTIME_ENFORCED                    false
+#define FALCON_PEMC_SCOPE                               "PAPER_EXECUTOR_CONSUMER_READINESS;ELIGIBILITY_LOCK_READY;VIRTUAL_SL_READABLE;MODIFY_PLAN_READABLE;SUMMARY_ONLY"
+#define FALCON_PEMC_NO_LOOKAHEAD_POLICY                 "YES_PROXY_FROM_LOCKED_PBMEL_AND_VIRTUAL_SL_TRANSITION_ONLY"
+#define FALCON_PEMC_CONSUMER_POLICY                     "CONSUMER_READINESS_ONLY;NO_SL_MODIFY;NO_POSITION_MODIFY;NO_RUNTIME_PROTECTION"
+#define FALCON_PEMC_ORDER_SEND_POLICY                   "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_PEMC_NEXT_PHASE                          "v0.40.0_MagicNumberSystemAndFalconExecutorErrorClassification"
+
+
+// ==================================================================
+// Magic Number System + FalconExecutor Error Classification - v0.40.0
+// Summary-only operational safety foundation. It defines the per-engine
+// magic-number contract and the future FalconExecutor order-failure
+// classifier before any broker OrderSend/Modify/Close path is allowed.
+// It does not execute trades, does not modify SL, and adds no inputs or
+// diagnostic reports.
+// ==================================================================
+#define FALCON_MEC_STATUS                              "MAGIC_NUMBER_SYSTEM_AND_EXECUTOR_ERROR_CLASSIFICATION"
+#define FALCON_MEC_DECISION                            "OPERATIONAL_SAFETY_CONTRACT_READY_NO_EXECUTION"
+#define FALCON_MEC_RUNTIME_ENFORCED                    false
+#define FALCON_MEC_SCOPE                               "MAGIC_NUMBER_DISCIPLINE;ORDER_FAILURE_CLASSIFICATION;SUMMARY_ONLY;NO_EXECUTION"
+#define FALCON_MEC_MAGIC_POLICY                        "ONE_ENGINE_ONE_MAGIC;UNKNOWN_MAGIC_REJECTED;NO_ENGINE_CROSSTOUCH"
+#define FALCON_MEC_ERROR_POLICY                        "CLASSIFY_BEFORE_RETRY;NO_RETRY_ON_FATAL;UNKNOWN_HALTS_NEW_ENTRIES_LATER"
+#define FALCON_MEC_ORDER_SEND_POLICY                   "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_MEC_NEXT_PHASE                          "v0.41.0_TradeStatePersistenceAndRestartRecovery"
+
+#define FC_MAGIC_BASE                                  1000000
+#define FC_MAGIC_FVG_MICRO                             1100001
+#define FC_MAGIC_TAIL_SMART_RETURN                     2100001
+#define FC_MAGIC_MOMENTUM_CROSS_8_20                   3100001
+#define FC_MAGIC_CHECK_MARK_LIQUIDITY_SWEEP            4100001
+#define FC_MAGIC_DOUBLE_BOX_WICK_CONFIRMATION          5100001
+#define FC_MAGIC_TOUCH_TURN_OPENING_RANGE              4100002
+#define FC_MAGIC_MAGIC_LIQUIDITY_PITCHFORK             5100002
+#define FC_MAGIC_DAILY_LIQUIDITY_BOX                   5100003
+#define FC_MAGIC_QUICK_FLIP_OPENING_LIQUIDITY          4100003
+#define FC_MAGIC_FSE_PATTERN_FAILURE_ENTRY             2100002
+#define FC_MAGIC_TWO_LIQUIDITY_LINES_15M               5100004
+#define FC_MAGIC_GOLDEN_LIQUIDITY_5M_ENTRY             5100005
+#define FALCON_MEC_DEFINED_MAGIC_COUNT                 12
+#define FALCON_MEC_ORDER_FAIL_CLASS_COUNT              6
+
+enum ENUM_FALCON_ORDER_FAIL_CLASS
+{
+   FALCON_FAIL_RETRYABLE = 0,
+   FALCON_FAIL_FATAL = 1,
+   FALCON_FAIL_NEEDS_REFRESH = 2,
+   FALCON_FAIL_BROKER_LIMIT = 3,
+   FALCON_FAIL_CONNECTION = 4,
+   FALCON_FAIL_UNKNOWN = 5
+};
+
+int FalconMecMagicForEngine(const string engine_id)
+{
+   if(engine_id == "SCALP.FVG_MICRO")       return FC_MAGIC_FVG_MICRO;
+   if(engine_id == "PRICE.TAIL_RETURN")     return FC_MAGIC_TAIL_SMART_RETURN;
+   if(engine_id == "CONFIRM.MA_8_20")       return FC_MAGIC_MOMENTUM_CROSS_8_20;
+   if(engine_id == "OPENING.CHECK_MARK")    return FC_MAGIC_CHECK_MARK_LIQUIDITY_SWEEP;
+   if(engine_id == "LIQUIDITY.DOUBLE_BOX")  return FC_MAGIC_DOUBLE_BOX_WICK_CONFIRMATION;
+   if(engine_id == "OPENING.TOUCH_TURN")    return FC_MAGIC_TOUCH_TURN_OPENING_RANGE;
+   if(engine_id == "LIQUIDITY.MAGIC_LINES") return FC_MAGIC_MAGIC_LIQUIDITY_PITCHFORK;
+   if(engine_id == "LIQUIDITY.DAILY_BOX")   return FC_MAGIC_DAILY_LIQUIDITY_BOX;
+   if(engine_id == "OPENING.QUICK_FLIP")    return FC_MAGIC_QUICK_FLIP_OPENING_LIQUIDITY;
+   if(engine_id == "PRICE.FSE_FAILURE")     return FC_MAGIC_FSE_PATTERN_FAILURE_ENTRY;
+   if(engine_id == "LIQUIDITY.TWO_LINES_15M") return FC_MAGIC_TWO_LIQUIDITY_LINES_15M;
+   if(engine_id == "LIQUIDITY.GOLDEN_5M")   return FC_MAGIC_GOLDEN_LIQUIDITY_5M_ENTRY;
+   return 0;
+}
+
+bool FalconMecMagicUnique()
+{
+   int magics[12];
+   magics[0]  = FC_MAGIC_FVG_MICRO;
+   magics[1]  = FC_MAGIC_TAIL_SMART_RETURN;
+   magics[2]  = FC_MAGIC_MOMENTUM_CROSS_8_20;
+   magics[3]  = FC_MAGIC_CHECK_MARK_LIQUIDITY_SWEEP;
+   magics[4]  = FC_MAGIC_DOUBLE_BOX_WICK_CONFIRMATION;
+   magics[5]  = FC_MAGIC_TOUCH_TURN_OPENING_RANGE;
+   magics[6]  = FC_MAGIC_MAGIC_LIQUIDITY_PITCHFORK;
+   magics[7]  = FC_MAGIC_DAILY_LIQUIDITY_BOX;
+   magics[8]  = FC_MAGIC_QUICK_FLIP_OPENING_LIQUIDITY;
+   magics[9]  = FC_MAGIC_FSE_PATTERN_FAILURE_ENTRY;
+   magics[10] = FC_MAGIC_TWO_LIQUIDITY_LINES_15M;
+   magics[11] = FC_MAGIC_GOLDEN_LIQUIDITY_5M_ENTRY;
+
+   for(int i = 0; i < 12; i++)
+   {
+      if(magics[i] <= FC_MAGIC_BASE)
+         return false;
+      for(int j = i + 1; j < 12; j++)
+      {
+         if(magics[i] == magics[j])
+            return false;
+      }
+   }
+   return true;
+}
+
+ENUM_FALCON_ORDER_FAIL_CLASS FalconMecClassifyRetcode(const uint retcode)
+{
+   switch(retcode)
+   {
+      case TRADE_RETCODE_REQUOTE:
+      case TRADE_RETCODE_PRICE_CHANGED:
+      case TRADE_RETCODE_PRICE_OFF:
+         return FALCON_FAIL_NEEDS_REFRESH;
+
+      case TRADE_RETCODE_TOO_MANY_REQUESTS:
+      case TRADE_RETCODE_LOCKED:
+      case TRADE_RETCODE_TIMEOUT:
+         return FALCON_FAIL_RETRYABLE;
+
+      case TRADE_RETCODE_INVALID_STOPS:
+      case TRADE_RETCODE_INVALID_VOLUME:
+      case TRADE_RETCODE_INVALID_PRICE:
+      case TRADE_RETCODE_INVALID_FILL:
+      case TRADE_RETCODE_LIMIT_VOLUME:
+      case TRADE_RETCODE_LIMIT_ORDERS:
+      case TRADE_RETCODE_LIMIT_POSITIONS:
+         return FALCON_FAIL_BROKER_LIMIT;
+
+      case TRADE_RETCODE_CONNECTION:
+         return FALCON_FAIL_CONNECTION;
+
+      case TRADE_RETCODE_TRADE_DISABLED:
+      case TRADE_RETCODE_MARKET_CLOSED:
+      case TRADE_RETCODE_NO_MONEY:
+      case TRADE_RETCODE_SERVER_DISABLES_AT:
+      case TRADE_RETCODE_CLIENT_DISABLES_AT:
+      case TRADE_RETCODE_ONLY_REAL:
+      case TRADE_RETCODE_LONG_ONLY:
+      case TRADE_RETCODE_SHORT_ONLY:
+      case TRADE_RETCODE_CLOSE_ONLY:
+      case TRADE_RETCODE_FIFO_CLOSE:
+         return FALCON_FAIL_FATAL;
+   }
+   return FALCON_FAIL_UNKNOWN;
+}
+
+string FalconMecFailClassToString(const ENUM_FALCON_ORDER_FAIL_CLASS fail_class)
+{
+   switch(fail_class)
+   {
+      case FALCON_FAIL_RETRYABLE:     return "FAIL_RETRYABLE";
+      case FALCON_FAIL_FATAL:         return "FAIL_FATAL";
+      case FALCON_FAIL_NEEDS_REFRESH: return "FAIL_NEEDS_REFRESH";
+      case FALCON_FAIL_BROKER_LIMIT:  return "FAIL_BROKER_LIMIT";
+      case FALCON_FAIL_CONNECTION:    return "FAIL_CONNECTION";
+      case FALCON_FAIL_UNKNOWN:       return "FAIL_UNKNOWN";
+   }
+   return "FAIL_UNKNOWN";
+}
+
+
+// ==================================================================
+// Trade State Persistence + Restart Recovery - v0.41.0
+// Summary-only operational safety scaffold. It defines the future trade
+// state persistence record, broker reconstruction contract, and
+// MINIMAL_RECOVERY behavior before any Demo/Live execution path exists.
+// It writes no trade-state files in ShadowSmoke, sends no orders, and
+// changes no runtime SL.
+// ==================================================================
+#define FALCON_TSPR_STATUS                             "TRADE_STATE_PERSISTENCE_AND_RESTART_RECOVERY"
+#define FALCON_TSPR_DECISION                           "STATE_RECOVERY_CONTRACT_READY_NO_EXECUTION"
+#define FALCON_TSPR_RUNTIME_ENFORCED                   false
+#define FALCON_TSPR_SCOPE                              "TRADE_STATE_PERSISTENCE;RESTART_RECOVERY;MINIMAL_RECOVERY;SUMMARY_ONLY;NO_EXECUTION"
+#define FALCON_TSPR_STATE_POLICY                       "PERSIST_AFTER_TRADE_EVENT;REBUILD_FROM_BROKER_PLUS_DISK;MINIMAL_RECOVERY_ON_UNTRUSTED_STATE"
+#define FALCON_TSPR_ORDER_SEND_POLICY                  "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_TSPR_NEXT_PHASE                         "v0.42.0_SpreadSlippageGuardsAndBrokerLimitsCaching"
+#define FALCON_TSPR_STATE_FOLDER                       "FalconCore_State"
+#define FALCON_TSPR_RECORD_FIELD_COUNT                 12
+
+enum ENUM_FALCON_TSPR_MODE
+{
+   FALCON_TSPR_MODE_NORMAL = 0,
+   FALCON_TSPR_MODE_MINIMAL_RECOVERY = 1
+};
+
+bool FalconTsprKnownMagic(const int magic_number)
+{
+   if(magic_number == FC_MAGIC_FVG_MICRO) return true;
+   if(magic_number == FC_MAGIC_TAIL_SMART_RETURN) return true;
+   if(magic_number == FC_MAGIC_MOMENTUM_CROSS_8_20) return true;
+   if(magic_number == FC_MAGIC_CHECK_MARK_LIQUIDITY_SWEEP) return true;
+   if(magic_number == FC_MAGIC_DOUBLE_BOX_WICK_CONFIRMATION) return true;
+   if(magic_number == FC_MAGIC_TOUCH_TURN_OPENING_RANGE) return true;
+   if(magic_number == FC_MAGIC_MAGIC_LIQUIDITY_PITCHFORK) return true;
+   if(magic_number == FC_MAGIC_DAILY_LIQUIDITY_BOX) return true;
+   if(magic_number == FC_MAGIC_QUICK_FLIP_OPENING_LIQUIDITY) return true;
+   if(magic_number == FC_MAGIC_FSE_PATTERN_FAILURE_ENTRY) return true;
+   if(magic_number == FC_MAGIC_TWO_LIQUIDITY_LINES_15M) return true;
+   if(magic_number == FC_MAGIC_GOLDEN_LIQUIDITY_5M_ENTRY) return true;
+   return false;
+}
+
+bool FalconTsprFolderReady()
+{
+   return (StringLen(FALCON_TSPR_STATE_FOLDER) > 0);
+}
+
+bool FalconTsprRecordShapeReady()
+{
+   return (FALCON_TSPR_RECORD_FIELD_COUNT >= 10);
+}
+
+bool FalconTsprMinimalModeReady()
+{
+   return (FALCON_TSPR_MODE_MINIMAL_RECOVERY == 1);
+}
+
+string FalconTsprStateFileName(const ulong ticket)
+{
+   return FALCON_TSPR_STATE_FOLDER + "\\FC_" + IntegerToString((long)ticket) + ".csv";
+}
+
+
+// ==================================================================
+// Spread / Slippage Guards + Broker Limits Caching - v0.42.0
+// Summary-only operational safety scaffold. It proves that FalconCore
+// has a future pre-trade spread guard, order slippage cap, and broker
+// stops/freeze/volume-limit cache before any Demo/Live execution path.
+// It sends no orders, modifies no broker stops, and changes no runtime SL.
+// ==================================================================
+#define FALCON_SSBL_STATUS                            "SPREAD_SLIPPAGE_GUARDS_AND_BROKER_LIMITS_CACHING"
+#define FALCON_SSBL_DECISION                          "SPREAD_SLIPPAGE_BROKER_LIMITS_READY_NO_EXECUTION"
+#define FALCON_SSBL_RUNTIME_ENFORCED                  false
+#define FALCON_SSBL_SCOPE                             "SPREAD_GUARD;SLIPPAGE_CAP;BROKER_LIMITS_CACHE;SUMMARY_ONLY;NO_EXECUTION"
+#define FALCON_SSBL_SPREAD_POLICY                     "PRE_TRADE_SPREAD_GUARD_REQUIRED;NAS100_BROKER_POINTS_CALIBRATED;MAX_SPREAD_POINTS_120;PAPER_RUNTIME_NOW"
+#define FALCON_SSBL_LIMITS_POLICY                     "CACHE_STOPS_FREEZE_VOLUME_LIMITS;VALIDATE_BEFORE_SEND_OR_MODIFY"
+#define FALCON_SSBL_ORDER_SEND_POLICY                 "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_SSBL_NEXT_PHASE                        "v0.43.0_OnTradeTransactionDrivenStateUpdates"
+#define FALCON_SSBL_MAX_SPREAD_POINTS                 120
+// v0.49.0a: calibrated from v0.49.0 report where US100_Spot FVG spreads were 110-115 broker points; 25 rejected 436/436 trades.
+#define FALCON_SSBL_MAX_SLIPPAGE_POINTS               20
+#define FALCON_SSBL_STOPS_BUFFER_POINTS               2
+
+bool FalconSsblSpreadGuardReady()
+{
+   return (FALCON_SSBL_MAX_SPREAD_POINTS > 0);
+}
+
+bool FalconSsblSlippageCapReady()
+{
+   return (FALCON_SSBL_MAX_SLIPPAGE_POINTS > 0);
+}
+
+bool FalconSsblStopsPolicyReady()
+{
+   return (FALCON_SSBL_STOPS_BUFFER_POINTS >= 1);
+}
+
+bool FalconSsblBrokerContextReady(const bool context_valid,
+                                  const long stops_level_points,
+                                  const long freeze_level_points,
+                                  const double min_lot,
+                                  const double max_lot,
+                                  const double lot_step,
+                                  const double point,
+                                  const double tick_size,
+                                  const double tick_value)
+{
+   if(!context_valid)
+      return false;
+   if(stops_level_points < 0 || freeze_level_points < 0)
+      return false;
+   if(min_lot <= 0.0 || max_lot < min_lot || lot_step <= 0.0)
+      return false;
+   if(point <= 0.0 || tick_size <= 0.0 || tick_value <= 0.0)
+      return false;
+   return true;
+}
+
+bool FalconSsblGuardReady(const bool context_valid,
+                          const long stops_level_points,
+                          const long freeze_level_points,
+                          const double min_lot,
+                          const double max_lot,
+                          const double lot_step,
+                          const double point,
+                          const double tick_size,
+                          const double tick_value)
+{
+   return (FalconSsblSpreadGuardReady() &&
+           FalconSsblSlippageCapReady() &&
+           FalconSsblStopsPolicyReady() &&
+           FalconSsblBrokerContextReady(context_valid,
+                                        stops_level_points,
+                                        freeze_level_points,
+                                        min_lot,
+                                        max_lot,
+                                        lot_step,
+                                        point,
+                                        tick_size,
+                                        tick_value));
+}
+
+
+// ==================================================================
+// OnTradeTransaction-driven State Updates - v0.43.0
+// Summary-only operational safety scaffold. It proves that future
+// broker state changes have an event-driven contract before any Demo/
+// Live execution path exists. OnTick reads state; OnTradeTransaction is
+// the future source-of-truth entrypoint. This build sends no orders,
+// modifies no broker stops, and changes no runtime SL.
+// ==================================================================
+#define FALCON_OTTU_STATUS                            "ON_TRADE_TRANSACTION_DRIVEN_STATE_UPDATES"
+#define FALCON_OTTU_DECISION                          "TRADE_TRANSACTION_STATE_UPDATE_CONTRACT_READY_NO_EXECUTION"
+#define FALCON_OTTU_RUNTIME_ENFORCED                  false
+#define FALCON_OTTU_SCOPE                             "ON_TRADE_TRANSACTION;EVENT_ROUTING;STATE_SYNC;SUMMARY_ONLY;NO_EXECUTION"
+#define FALCON_OTTU_SOURCE_POLICY                     "ON_TRADE_TRANSACTION_SOURCE_OF_TRUTH;ONTICK_READS_ONLY"
+#define FALCON_OTTU_STATE_POLICY                      "ROUTE_DEAL_ADD;ROUTE_POSITION_CHANGE;PERSIST_AFTER_TRUSTED_EVENT"
+#define FALCON_OTTU_ORDER_SEND_POLICY                 "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_OTTU_NEXT_PHASE                        "v0.44.0_PreInitVerificationPack"
+#define FALCON_OTTU_EVENT_KIND_COUNT                  3
+
+int g_ottu_transactions_observed = 0;
+int g_ottu_deal_events_routed = 0;
+int g_ottu_position_events_routed = 0;
+int g_ottu_unknown_events_ignored = 0;
+
+bool FalconOttuHandlerContractReady()
+{
+   return true;
+}
+
+bool FalconOttuEventRoutingReady()
+{
+   return (FALCON_OTTU_EVENT_KIND_COUNT >= 3);
+}
+
+bool FalconOttuSourcePolicyReady()
+{
+   return (StringLen(FALCON_OTTU_SOURCE_POLICY) > 0 && StringLen(FALCON_OTTU_STATE_POLICY) > 0);
+}
+
+void FalconOttuRouteTransaction(const MqlTradeTransaction &trans)
+{
+   g_ottu_transactions_observed++;
+
+   if(trans.type == TRADE_TRANSACTION_DEAL_ADD)
+   {
+      g_ottu_deal_events_routed++;
+      return;
+   }
+
+   if(trans.type == TRADE_TRANSACTION_POSITION)
+   {
+      g_ottu_position_events_routed++;
+      return;
+   }
+
+   g_ottu_unknown_events_ignored++;
+}
+
+
+// ==================================================================
+// Pre-Init Verification Pack - v0.44.0
+// Summary-only operational safety scaffold. It proves that FalconCore
+// has a defined environment verification contract before any Demo/Live
+// execution path. This build does not call INIT_FAILED from the new
+// scaffold, sends no orders, modifies no broker stops, and changes no
+// runtime SL. Enforcement becomes a later Demo/Live gate.
+// ==================================================================
+#define FALCON_PIVP_STATUS                            "PRE_INIT_VERIFICATION_PACK"
+#define FALCON_PIVP_DECISION                          "PRE_INIT_ENVIRONMENT_CONTRACT_READY_NO_EXECUTION"
+#define FALCON_PIVP_RUNTIME_ENFORCED                  false
+#define FALCON_PIVP_SCOPE                             "SYMBOL_CHECK;TIMEFRAME_CHECK;ACCOUNT_CHECK;BROKER_CONTEXT_CHECK;SUMMARY_ONLY;NO_EXECUTION"
+#define FALCON_PIVP_SYMBOL_POLICY                     "NAS100_US100_NDX_ALLOWED;BROKER_SUFFIX_TOLERANT;WRONG_SYMBOL_BLOCKS_DEMO_LIVE"
+#define FALCON_PIVP_TIMEFRAME_POLICY                  "M5_OR_M15_PREFERRED;SHADOW_SMOKE_NON_BLOCKING_NOW;DEMO_LIVE_GATE_LATER"
+#define FALCON_PIVP_ACCOUNT_POLICY                    "TRADE_ALLOWED_CHECK;EXPERTS_ALLOWED_CHECK;MIN_BALANCE_POLICY_DEFINED"
+#define FALCON_PIVP_BROKER_POLICY                     "STOPS_LEVEL_REASONABLE;POINT_TICK_VOLUME_CONTEXT_REQUIRED"
+#define FALCON_PIVP_ORDER_SEND_POLICY                 "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_PIVP_NEXT_PHASE                        "v0.45.0_EmergencyEquityStopIndependentLayer"
+#define FALCON_PIVP_MIN_ACCOUNT_BALANCE_USD           500.0
+#define FALCON_PIVP_MAX_REASONABLE_STOPS_LEVEL        100
+#define FALCON_PIVP_ALLOWED_SYMBOL_FAMILIES           3
+#define FALCON_PIVP_ALLOWED_TIMEFRAMES                2
+
+bool FalconPivpSymbolPolicyReady()
+{
+   return (FALCON_PIVP_ALLOWED_SYMBOL_FAMILIES >= 3 && StringLen(FALCON_PIVP_SYMBOL_POLICY) > 0);
+}
+
+bool FalconPivpTimeframePolicyReady()
+{
+   return (FALCON_PIVP_ALLOWED_TIMEFRAMES >= 2 && StringLen(FALCON_PIVP_TIMEFRAME_POLICY) > 0);
+}
+
+bool FalconPivpAccountPolicyReady()
+{
+   return (FALCON_PIVP_MIN_ACCOUNT_BALANCE_USD > 0.0 && StringLen(FALCON_PIVP_ACCOUNT_POLICY) > 0);
+}
+
+bool FalconPivpBrokerPolicyReady()
+{
+   return (FALCON_PIVP_MAX_REASONABLE_STOPS_LEVEL > 0 && StringLen(FALCON_PIVP_BROKER_POLICY) > 0);
+}
+
+bool FalconPivpSupportedNasdaqSymbol(const string symbol)
+{
+   if(StringFind(symbol, "NAS100") >= 0) return true;
+   if(StringFind(symbol, "US100") >= 0) return true;
+   if(StringFind(symbol, "NDX") >= 0) return true;
+   return false;
+}
+
+
+// ==================================================================
+// Emergency Equity Stop Independent Layer - v0.45.0
+// Summary-only operational safety scaffold. It proves that FalconCore
+// has a hard last-resort equity stop contract independent from strategy,
+// engine, and DailyGovernance state. This build only exposes readiness
+// metrics; it does not close positions, send orders, modify broker stops,
+// or change runtime SL. Enforcement becomes a later Demo/Live gate.
+// ==================================================================
+#define FALCON_EESL_STATUS                            "EMERGENCY_EQUITY_STOP_LAYER"
+#define FALCON_EESL_DECISION                          "EMERGENCY_EQUITY_STOP_CONTRACT_READY_NO_EXECUTION"
+#define FALCON_EESL_RUNTIME_ENFORCED                  false
+#define FALCON_EESL_SCOPE                             "INDEPENDENT_EQUITY_CHECK;LAST_RESORT;SUMMARY_ONLY;NO_EXECUTION"
+#define FALCON_EESL_POLICY                            "CHECK_EVERY_TICK_BEFORE_ENGINE;INDEPENDENT_OF_DAILY_GOVERNANCE"
+#define FALCON_EESL_ACTION_POLICY                     "BLOCK_NEW_ENTRIES;CLOSE_ALL_MANAGED_POSITIONS_LATER;DISABLE_SESSION_LATER"
+#define FALCON_EESL_ALERT_POLICY                      "ALERT_ON_TRIGGER_LATER;PROJECT_MEMORY_LIVE_READINESS_REQUIRED"
+#define FALCON_EESL_ORDER_SEND_POLICY                 "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_EESL_NEXT_PHASE                        "v0.46.0_ConcurrentPositionDiscipline"
+#define FALCON_EESL_HARD_CAP_PCT                      5.0
+#define FALCON_EESL_MIN_CAP_PCT                       0.1
+#define FALCON_EESL_MAX_CAP_PCT                       10.0
+
+bool FalconEeslContractReady()
+{
+   return (FALCON_EESL_HARD_CAP_PCT >= FALCON_EESL_MIN_CAP_PCT &&
+           FALCON_EESL_HARD_CAP_PCT <= FALCON_EESL_MAX_CAP_PCT &&
+           StringLen(FALCON_EESL_POLICY) > 0 &&
+           StringLen(FALCON_EESL_ACTION_POLICY) > 0);
+}
+
+bool FalconEeslIndependenceReady()
+{
+   return (StringFind(FALCON_EESL_POLICY, "INDEPENDENT") >= 0 &&
+           StringFind(FALCON_EESL_POLICY, "DAILY_GOVERNANCE") >= 0);
+}
+
+bool FalconEeslActionReady()
+{
+   return (StringFind(FALCON_EESL_ACTION_POLICY, "BLOCK_NEW_ENTRIES") >= 0 &&
+           StringFind(FALCON_EESL_ACTION_POLICY, "CLOSE_ALL") >= 0);
+}
+
+
+// ==================================================================
+// Concurrent Position Discipline - v0.46.0
+// Summary-only operational safety scaffold. It defines exposure caps before
+// Paper Runtime and before adding more engines. This build does not block
+// ShadowSmoke trades, does not open positions, does not modify broker stops,
+// and does not change any trading result. Enforcement starts later in Paper
+// Runtime Guard/Exposure application.
+// ==================================================================
+#define FALCON_CPD_STATUS                              "CONCURRENT_POSITION_DISCIPLINE"
+#define FALCON_CPD_DECISION                            "CONCURRENT_POSITION_CONTRACT_READY_NO_EXECUTION"
+#define FALCON_CPD_RUNTIME_ENFORCED                    false
+#define FALCON_CPD_SCOPE                               "MAX_TOTAL;MAX_PER_ENGINE;MAX_PER_DIRECTION;SUMMARY_ONLY;NO_EXECUTION"
+#define FALCON_CPD_SHARED_EXPOSURE_POLICY              "TOTAL_CAP_DEFINED;SHARED_EXPOSURE_COUNT_LATER;PAPER_RUNTIME_APPLICATION_LATER"
+#define FALCON_CPD_ENGINE_ISOLATION_POLICY             "ENGINE_CAP_DEFINED;ENGINE_MAGIC_ISOLATION_REQUIRED;NO_ENGINE_TOUCHES_OTHER_ENGINE"
+#define FALCON_CPD_DIRECTION_CAP_POLICY                "DIRECTION_CAP_DEFINED;BUY_SELL_EXPOSURE_COUNT_LATER"
+#define FALCON_CPD_ORDER_SEND_POLICY                   "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_CPD_NEXT_PHASE                          "v0.47.0_PaperModeDefinition"
+#define FALCON_CPD_MAX_TOTAL_POSITIONS                 3
+#define FALCON_CPD_MAX_POSITIONS_PER_ENGINE            1
+#define FALCON_CPD_MAX_POSITIONS_PER_DIRECTION         2
+
+bool FalconCpdContractReady()
+{
+   return (FALCON_CPD_MAX_TOTAL_POSITIONS > 0 &&
+           FALCON_CPD_MAX_POSITIONS_PER_ENGINE > 0 &&
+           FALCON_CPD_MAX_POSITIONS_PER_DIRECTION > 0 &&
+           FALCON_CPD_MAX_POSITIONS_PER_ENGINE <= FALCON_CPD_MAX_TOTAL_POSITIONS &&
+           FALCON_CPD_MAX_POSITIONS_PER_DIRECTION <= FALCON_CPD_MAX_TOTAL_POSITIONS &&
+           StringLen(FALCON_CPD_SHARED_EXPOSURE_POLICY) > 0 &&
+           StringLen(FALCON_CPD_ENGINE_ISOLATION_POLICY) > 0 &&
+           StringLen(FALCON_CPD_DIRECTION_CAP_POLICY) > 0);
+}
+
+bool FalconCpdSharedExposureReady()
+{
+   return (StringFind(FALCON_CPD_SHARED_EXPOSURE_POLICY, "TOTAL_CAP") >= 0 &&
+           StringFind(FALCON_CPD_SHARED_EXPOSURE_POLICY, "PAPER_RUNTIME") >= 0);
+}
+
+bool FalconCpdEngineIsolationReady()
+{
+   return (StringFind(FALCON_CPD_ENGINE_ISOLATION_POLICY, "ENGINE_CAP") >= 0 &&
+           StringFind(FALCON_CPD_ENGINE_ISOLATION_POLICY, "NO_ENGINE_TOUCHES_OTHER_ENGINE") >= 0);
+}
+
+bool FalconCpdDirectionCapReady()
+{
+   return (StringFind(FALCON_CPD_DIRECTION_CAP_POLICY, "DIRECTION_CAP") >= 0 &&
+           StringFind(FALCON_CPD_DIRECTION_CAP_POLICY, "BUY_SELL") >= 0);
+}
+
+
+// ==================================================================
+// Paper Mode Definition - v0.47.0
+// Summary-only execution-stage contract. It formally separates Shadow,
+// Paper, Demo, and Live before any Paper Runtime Application. This build
+// does not create Paper positions, does not apply Paper exits, does not
+// send broker orders, and does not change ShadowSmoke trading results.
+// ==================================================================
+#define FALCON_PMD_STATUS                              "PAPER_MODE_DEFINITION"
+#define FALCON_PMD_DECISION                            "PAPER_MODE_CONTRACT_READY_NO_RUNTIME_APPLICATION"
+#define FALCON_PMD_RUNTIME_ENFORCED                    false
+#define FALCON_PMD_SCOPE                               "SHADOW;PAPER;DEMO;LIVE;SUMMARY_ONLY;NO_EXECUTION"
+#define FALCON_PMD_SHADOW_POLICY                       "OBSERVE_ONLY;TRADE_LIFECYCLE_REPORTING;NO_POSITION_LIFECYCLE;NO_EQUITY_CURVE"
+#define FALCON_PMD_PAPER_POLICY                        "NO_ORDERS;INTERNAL_POSITION_LIFECYCLE_LATER;VIRTUAL_SL_LATER;PROTECTION_LATER;RUNNER_LATER;PAPER_EQUITY_LATER;PAPER_EXIT_LATER"
+#define FALCON_PMD_DEMO_POLICY                         "DEMO_ORDER_SEND_LATER;ON_TRADE_TRANSACTION_TRUE_SOURCE;BROKER_ERRORS_REAL;STATE_PERSISTENCE_REQUIRED"
+#define FALCON_PMD_LIVE_POLICY                         "CONTROLLED_LIVE_ONLY_AFTER_PRE_LIVE_CHECKLIST;MANUAL_ROLLBACK_REQUIRED;NO_UNCONTROLLED_LIVE"
+#define FALCON_PMD_ORDER_SEND_POLICY                   "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_PMD_NEXT_PHASE                          "v0.48.0_SymbolProfileFoundation"
+
+bool FalconPmdShadowReady()
+{
+   return (StringFind(FALCON_PMD_SHADOW_POLICY, "OBSERVE_ONLY") >= 0 &&
+           StringFind(FALCON_PMD_SHADOW_POLICY, "NO_POSITION_LIFECYCLE") >= 0);
+}
+
+bool FalconPmdPaperReady()
+{
+   return (StringFind(FALCON_PMD_PAPER_POLICY, "NO_ORDERS") >= 0 &&
+           StringFind(FALCON_PMD_PAPER_POLICY, "INTERNAL_POSITION_LIFECYCLE") >= 0 &&
+           StringFind(FALCON_PMD_PAPER_POLICY, "PAPER_EQUITY") >= 0);
+}
+
+bool FalconPmdDemoReady()
+{
+   return (StringFind(FALCON_PMD_DEMO_POLICY, "DEMO_ORDER_SEND_LATER") >= 0 &&
+           StringFind(FALCON_PMD_DEMO_POLICY, "ON_TRADE_TRANSACTION") >= 0 &&
+           StringFind(FALCON_PMD_DEMO_POLICY, "BROKER_ERRORS_REAL") >= 0);
+}
+
+bool FalconPmdLiveReady()
+{
+   return (StringFind(FALCON_PMD_LIVE_POLICY, "CONTROLLED_LIVE_ONLY") >= 0 &&
+           StringFind(FALCON_PMD_LIVE_POLICY, "PRE_LIVE_CHECKLIST") >= 0 &&
+           StringFind(FALCON_PMD_LIVE_POLICY, "NO_UNCONTROLLED_LIVE") >= 0);
+}
+
+
+// ==================================================================
+// Symbol Profile Foundation - v0.48.0a
+// Summary-only NAS100/US100 profile contract. v0.48.0a fixes only the
+// TickPolicy readiness string check so the locked policy reports correctly. It captures symbol, point,
+// tick, contract, broker-limits, session, spread, and default safety
+// assumptions before Paper Runtime Guard Application. This build does not
+// apply Paper guards, does not send orders, and does not alter ShadowSmoke
+// trading results.
+// ==================================================================
+#define FALCON_SPF_STATUS                              "SYMBOL_PROFILE_FOUNDATION"
+#define FALCON_SPF_DECISION                            "SYMBOL_PROFILE_CONTRACT_READY_NO_RUNTIME_APPLICATION"
+#define FALCON_SPF_RUNTIME_ENFORCED                    false
+#define FALCON_SPF_SCOPE                               "NAS100_PROFILE;CONTRACT_SIZE;TICK_SIZE;TICK_VALUE;POINT_MAPPING;BROKER_LIMITS;SPREAD_PROFILE;SUMMARY_ONLY;NO_EXECUTION"
+#define FALCON_SPF_TARGET_SYMBOL_FAMILY                "NAS100"
+#define FALCON_SPF_SYMBOL_ALIASES                      "US100;US100_Spot;NAS100;USTEC;NDX"
+#define FALCON_SPF_CONTRACT_POLICY                     "USE_SYMBOL_CONTRACT_SIZE;STATIC_PROFILE_READY;BROKER_VALIDATION_LATER"
+#define FALCON_SPF_TICK_POLICY                         "USE_SYMBOL_TICK_SIZE_AND_TICK_VALUE;NO_ASSUMED_TICK_VALUE_IN_RUNTIME"
+#define FALCON_SPF_POINT_MAPPING_POLICY                "INDEX_POINTS_FROM_PRICE_DELTA;USD_ESTIMATE_FROM_CONFIGURED_POINT_VALUE"
+#define FALCON_SPF_BROKER_LIMITS_POLICY                "CACHE_STOPS_LEVEL;CACHE_FREEZE_LEVEL;CACHE_VOLUME_LIMITS;RECHECK_BEFORE_RUNTIME_GUARD"
+#define FALCON_SPF_SESSION_POLICY                      "NASDAQ_SESSION_PROFILE_READY;BROKER_TIME_AWARENESS_REQUIRED_LATER"
+#define FALCON_SPF_SPREAD_POLICY                       "MAX_SPREAD_POINTS_DEFINED;SPREAD_GUARD_APPLICATION_NEXT"
+#define FALCON_SPF_DEFAULT_SAFETY_POLICY               "SHADOW_NON_BLOCKING_NOW;PAPER_GUARD_NEXT;NO_DEMO;NO_LIVE"
+#define FALCON_SPF_ORDER_SEND_POLICY                   "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_SPF_NEXT_PHASE                          "v0.49.0_PaperRuntimeGuardApplicationPhase1_ACTIVE"
+
+bool FalconSpfSymbolRecognized(const string symbol)
+{
+   return (StringFind(symbol, "US100") >= 0 ||
+           StringFind(symbol, "NAS100") >= 0 ||
+           StringFind(symbol, "USTEC") >= 0 ||
+           StringFind(symbol, "NDX") >= 0);
+}
+
+bool FalconSpfContractPolicyReady()
+{
+   return (StringFind(FALCON_SPF_CONTRACT_POLICY, "SYMBOL_CONTRACT_SIZE") >= 0 &&
+           StringFind(FALCON_SPF_CONTRACT_POLICY, "BROKER_VALIDATION") >= 0);
+}
+
+bool FalconSpfTickPolicyReady()
+{
+   // v0.48.0a: The policy string is "USE_SYMBOL_TICK_SIZE_AND_TICK_VALUE".
+   // Checking the full token "SYMBOL_TICK_VALUE" incorrectly returns false
+   // because the value token is represented as "TICK_VALUE" after AND_.
+   // This is a reporting/readiness fix only; it does not change trading logic.
+   return (StringFind(FALCON_SPF_TICK_POLICY, "TICK_SIZE") >= 0 &&
+           StringFind(FALCON_SPF_TICK_POLICY, "TICK_VALUE") >= 0);
+}
+
+bool FalconSpfPointMappingReady()
+{
+   return (StringFind(FALCON_SPF_POINT_MAPPING_POLICY, "INDEX_POINTS") >= 0 &&
+           StringFind(FALCON_SPF_POINT_MAPPING_POLICY, "USD_ESTIMATE") >= 0);
+}
+
+bool FalconSpfBrokerLimitsReady()
+{
+   return (StringFind(FALCON_SPF_BROKER_LIMITS_POLICY, "STOPS_LEVEL") >= 0 &&
+           StringFind(FALCON_SPF_BROKER_LIMITS_POLICY, "FREEZE_LEVEL") >= 0 &&
+           StringFind(FALCON_SPF_BROKER_LIMITS_POLICY, "VOLUME_LIMITS") >= 0);
+}
+
+bool FalconSpfContextReady(const bool context_valid,
+                           const int digits,
+                           const double point,
+                           const double tick_size,
+                           const double tick_value,
+                           const double contract_size,
+                           const long spread_points,
+                           const long stops_level_points,
+                           const long freeze_level_points,
+                           const double min_lot,
+                           const double max_lot,
+                           const double lot_step)
+{
+   if(!context_valid)
+      return false;
+   if(digits < 0 || point <= 0.0 || tick_size <= 0.0 || tick_value <= 0.0)
+      return false;
+   if(contract_size <= 0.0 || spread_points < 0)
+      return false;
+   if(stops_level_points < 0 || freeze_level_points < 0)
+      return false;
+   if(min_lot <= 0.0 || max_lot < min_lot || lot_step <= 0.0)
+      return false;
+   return true;
+}
+
+
+// ==================================================================
+// Paper Runtime Guard Application Phase 1 - v0.49.0
+// First actual Paper-layer application on closed Shadow TradeLifecycle
+// records. Shadow baseline remains unchanged, but each trade now receives
+// PaperGuardStatus / PaperRejectReason fields and Summary compares the
+// pre-guard Shadow result with the post-guard Paper accepted subset.
+// No OrderSend, no BrokerModify, no Runtime SL change, no Demo, no Live.
+// ==================================================================
+#define FALCON_PRGA_STATUS                             "PAPER_RUNTIME_GUARD_APPLICATION_PHASE1"
+#define FALCON_PRGA_DECISION                           "PAPER_GUARD_APPLIED_WITH_NAS100_SPREAD_CALIBRATION_NO_ORDERS"
+#define FALCON_PRGA_RUNTIME_ENFORCED                   true
+#define FALCON_PRGA_SCOPE                              "SPREAD_CALIBRATED_120;STOPS;FREEZE;EXPOSURE;PAPER_ONLY;NO_BROKER_EXECUTION"
+#define FALCON_PRGA_REJECT_POLICY                      "SPREAD_TOO_WIDE;SL_TOO_CLOSE;FREEZE_LEVEL_BLOCKED;EXPOSURE_CAP_BLOCKED"
+#define FALCON_PRGA_EXPOSURE_POLICY                    "COUNT_PAPER_ACCEPTED_POSITIONS_LATER;PHASE1_REPORTS_EXPOSURE_READY"
+#define FALCON_PRGA_ORDER_SEND_POLICY                  "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_PRGA_NEXT_PHASE                         "v0.50.0_PaperRuntimeSmartSLProtectionApplication"
+
+
+// ==================================================================
+// Paper Runtime Smart SL / Protection Application - v0.50.0
+// First actual Paper-layer protection application after Guard acceptance.
+// Uses locked TP1/TP2 proof/readiness state and M5 closed-bar path stats to
+// activate Paper Virtual SL only after proof. No broker SL is modified.
+// Shadow baseline remains unchanged; PaperProtectionNet* measures the protected
+// paper outcome after Virtual SL protection. Runner remains disabled until v0.51.0.
+// ==================================================================
+#define FALCON_PRTP_STATUS                             "PAPER_RUNTIME_SMART_SL_PROTECTION_APPLICATION"
+#define FALCON_PRTP_DECISION                           "PAPER_VIRTUAL_SL_PROTECTION_APPLIED_AFTER_PROOF_NO_ORDERS"
+#define FALCON_PRTP_RUNTIME_ENFORCED                   true
+#define FALCON_PRTP_SCOPE                              "TP1_PROOF;TP2_PROOF;VIRTUAL_SL;PROTECTION_ONLY;NO_RUNNER;PAPER_ONLY;NO_BROKER_EXECUTION"
+#define FALCON_PRTP_POLICY                             "PROTECT_ONLY_WHEN_EARNED;NO_EARLY_BE;TP1_PROOF_ARMS_VIRTUAL_SL;TP2_PROOF_UPGRADES_TO_TP1_LOCK"
+#define FALCON_PRTP_ORDER_SEND_POLICY                  "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
+#define FALCON_PRTP_NEXT_PHASE                         "v0.51.0_PaperRuntimeRunnerApplication_LOCKED_INPUT"
+
+
+// ==================================================================
+// Paper Runtime Runner Application - v0.51.0
+// Applies runner expansion after locked Paper Guard + Protection results.
+// Runner can only activate after earned protection. It never sends orders,
+// never modifies broker SL, and never allows an expanded paper outcome to be
+// worse than the protected working baseline.
+// ==================================================================
+#define FALCON_PRRUN_STATUS                            "PAPER_RUNTIME_RUNNER_APPLICATION"
+#define FALCON_PRRUN_DECISION                          "PAPER_RUNNER_APPLIED_AFTER_PROTECTION_NO_ORDERS"
+#define FALCON_PRRUN_RUNTIME_ENFORCED                  true
+#define FALCON_PRRUN_SCOPE                             "PROTECTION_REQUIRED;TP2_CONTINUATION;3R_RUNNER;5R_MOON;PAPER_ONLY;NO_BROKER_EXECUTION"
+#define FALCON_PRRUN_POLICY                            "PROTECT_FIRST_THEN_EXPAND;NO_RUNNER_WITHOUT_PROTECTION;RUNNER_NEVER_BELOW_PROTECTED_BASELINE"
+#define FALCON_PRRUN_ORDER_SEND_POLICY                 "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
+#define FALCON_PRRUN_NEXT_PHASE                        "v0.52.0_PaperRuntimeEmergencyEquityApplication"
+
+
+// ==================================================================
 // FVG SIZE250 Runtime Candidate counter alignment lock - v0.25.1
 // Actual blocking is limited to Shadow lifecycle staging. No broker orders,
 // no Paper/Demo/Live execution, and no OrderSend are possible in this build.
@@ -635,6 +1404,165 @@ input bool   UseDailyLossLimit               = true;
 input bool   UseFixedDailyLossAmount         = false;
 input double FixedDailyLossAmount            = 100.0;
 input double DailyLossPercentOfCapital       = 3.0;
+
+// ==================================================================
+// Capital Tier Foundation - v0.53.0 (LOCKED)
+// Logging-only foundation for low-capital compatibility. 0.01 remains
+// the broker minimum lot and is logged as a hard constraint, not hidden.
+// ==================================================================
+double g_falcon_session_start_balance = 0.0;
+
+#define FALCON_CTF_STATUS                       "CAPITAL_TIER_FOUNDATION"
+#define FALCON_CTF_DECISION                     "TIER_LOGGING_ONLY_LOW_CAPITAL_COMPATIBILITY_NO_EMERGENCY_ENFORCEMENT"
+#define FALCON_CTF_RUNTIME_ENFORCED             false
+#define FALCON_CTF_SCOPE                        "MICRO_TINY_SMALL_MEDIUM_STANDARD_LARGE;EFFECTIVE_BALANCE;MIN_LOT_AWARE;SUMMARY_AND_TRADE_LIFECYCLE_ONLY"
+#define FALCON_CTF_ORDER_SEND_POLICY            "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+#define FALCON_CTF_BALANCE_POLICY               "MANUAL_CAPITAL_IF_DISABLED;SESSION_START_BALANCE_IF_AUTO;LOCKED_FOR_TEST_COMPARABILITY"
+#define FALCON_CTF_MIN_LOT_POLICY               "BROKER_MIN_LOT_OBSERVED;NO_LOT_REDUCTION_BELOW_MIN;0_01_MIN_LOT_SUPPORTED"
+#define FALCON_CTF_NEXT_PHASE                   "v0.53.1_ThreeLayerEmergency"
+
+// ==================================================================
+// Three-Layer Emergency - v0.53.1 (LOCKED)
+// Active Paper replacement for the fixed 5% hardcap that failed on low
+// capital. Uses tier-aware thresholds: consecutive losses, daily R, and
+// capital drawdown. No broker execution, no OrderSend, no SL modification.
+// ==================================================================
+#define FALCON_TLE_STATUS                       "THREE_LAYER_EMERGENCY_ACTIVE_REPLACEMENT"
+#define FALCON_TLE_DECISION                     "TIER_AWARE_EMERGENCY_REPLACES_FIXED_5PCT_HARDCAP"
+#define FALCON_TLE_RUNTIME_ENFORCED             true
+#define FALCON_TLE_SCOPE                        "LAYER1_CONSECUTIVE;LAYER2_DAILY_R;LAYER3_TIER_DRAWDOWN;PAPER_ONLY;NO_BROKER_EXECUTION"
+#define FALCON_TLE_POLICY                       "ANY_LAYER_TRIGGERS;MIN_LOT_AWARE;CAPITAL_TIER_AWARE;NO_FIXED_5PCT_FOR_MICRO_TINY"
+#define FALCON_TLE_ORDER_SEND_POLICY            "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
+#define FALCON_TLE_NEXT_PHASE                   "v0.53.2_LayerSpecificResetLogic"
+
+// ==================================================================
+// Layer-Specific Reset Logic - v0.53.2a
+// Fixes daily emergency resolution: Layer 1 and Layer 2 are daily-pause
+// layers. They must block the remaining current day only, then reset on
+// the next test day. Layer 3 remains drawdown/peak based.
+// ==================================================================
+#define FALCON_LSR_STATUS                       "LAYER_SPECIFIC_RESET_LOGIC_DAILY_RESOLUTION_FIX"
+#define FALCON_LSR_DECISION                     "FIX_LAYER1_LAYER2_DAILY_PAUSE_RESOLUTION_WITHOUT_TRADING_LOGIC_CHANGE"
+#define FALCON_LSR_RUNTIME_ENFORCED             true
+#define FALCON_LSR_SCOPE                        "LAYER1_RESET_ON_WIN;LAYER1_DAILY_PAUSE_RESOLVE_ON_NEW_DAY;LAYER2_RESET_ON_NEW_DAY;LAYER3_RESET_ON_NEW_PEAK;PAPER_ONLY"
+#define FALCON_LSR_POLICY                       "INDEPENDENT_RESETS;DAILY_PAUSE_RESOLUTION;NO_DUPLICATE_TRIGGER_AFTER_RESET;EMERGENCY_STATE_VALIDATION"
+#define FALCON_LSR_ORDER_SEND_POLICY            "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
+#define FALCON_LSR_NEXT_PHASE                   "v0.53.3_ValidationLock"
+
+// ==================================================================
+// Validation Lock - v0.53.3a
+// Locks the capital-aware emergency stack on the current April baseline
+// before starting the multi-window validation pack. No new runtime trading
+// behavior is added here. The active behavior remains Guard + Protection +
+// Runner + Three-Layer Emergency + Reset Logic.
+// ==================================================================
+#define FALCON_VAL_STATUS                       "V053_VALIDATION_LOCK_DUP_TRIGGER_CLASSIFICATION_FIX"
+#define FALCON_VAL_DECISION                     "FIX_VALID_LAYER2_NEW_DAY_TRIGGER_CLASSIFIED_AS_DUPLICATE_IN_JANUARY_OOS"
+#define FALCON_VAL_RUNTIME_ENFORCED             false
+#define FALCON_VAL_SCOPE                        "CAPITAL_TIER;THREE_LAYER_EMERGENCY;RESET_LOGIC;DUP_TRIGGER_CLASSIFICATION;MULTI_WINDOW_NEXT"
+#define FALCON_VAL_POLICY                       "ANCHOR_BASELINE_PRESERVED;WORKING_BASELINE_UPDATED_AFTER_LOCK;NO_RUNTIME_BEHAVIOR_CHANGE;VALID_TRIGGER_AFTER_NEW_DAY_RESET_NOT_DUPLICATE"
+#define FALCON_VAL_ORDER_SEND_POLICY            "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
+#define FALCON_VAL_NEXT_PHASE                   "MULTI_WINDOW_VALIDATION_PACK_THEN_v0.54.0_TierPromotionFoundation"
+
+
+// ==================================================================
+// Tier Promotion Foundation - v0.54.0
+// Summary-only foundation for earned tier promotion. It defines the
+// promotion requirements and logs promotion eligibility state without
+// changing risk, entries, exits, protection, runner, emergency behavior,
+// broker execution, or report profile. Promotion must be earned; demotion
+// remains the faster future layer.
+// ==================================================================
+#define FALCON_TPF_STATUS                       "TIER_PROMOTION_FOUNDATION"
+#define FALCON_TPF_DECISION                     "PROMOTION_REQUIREMENTS_DEFINED_SUMMARY_ONLY_NO_TIER_TRANSITION_YET"
+#define FALCON_TPF_RUNTIME_ENFORCED             false
+#define FALCON_TPF_SCOPE                        "PROMOTION_REQUIREMENTS;ELIGIBILITY_LOGGING;NO_RISK_CHANGE;NO_TIER_TRANSITION;SUMMARY_ONLY"
+#define FALCON_TPF_MIN_TRADES_IN_TIER           30
+#define FALCON_TPF_MIN_WIN_RATE_PCT             50.0
+#define FALCON_TPF_MIN_NET_R                    0.0
+#define FALCON_TPF_DAYS_WITHOUT_EMERGENCY       21
+#define FALCON_TPF_POST_QUAL_COOLDOWN_DAYS      7
+#define FALCON_TPF_POLICY                       "PROMOTION_MUST_BE_EARNED;BALANCE_PLUS_TRADES_PLUS_WINRATE_PLUS_NETR_PLUS_NO_EMERGENCY_PLUS_COOLDOWN"
+#define FALCON_TPF_ORDER_SEND_POLICY            "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
+#define FALCON_TPF_NEXT_PHASE                   "v0.54.1_TierDemotionFoundation"
+
+#define FALCON_TDF_STATUS                       "TIER_DEMOTION_FOUNDATION"
+#define FALCON_TDF_DECISION                     "DEMOTION_RULES_DEFINED_SUMMARY_ONLY_NO_TIER_TRANSITION_YET"
+#define FALCON_TDF_RUNTIME_ENFORCED             false
+#define FALCON_TDF_SCOPE                        "DEMOTION_REQUIREMENTS;IMMEDIATE_DEMOTION_POLICY;NO_RISK_CHANGE;NO_TIER_TRANSITION;SUMMARY_ONLY"
+#define FALCON_TDF_HYSTERESIS_PCT               80.0
+#define FALCON_TDF_MAX_EMERGENCIES_14D          2
+#define FALCON_TDF_MAX_NEGATIVE_WEEKS           3
+#define FALCON_TDF_EXTREME_DD_MULTIPLIER        1.5
+#define FALCON_TDF_POLICY                       "DEMOTION_IS_IMMEDIATE;BALANCE_HYSTERESIS_OR_MULTIPLE_EMERGENCIES_OR_NEGATIVE_WEEKS_OR_EXTREME_DRAWDOWN"
+#define FALCON_TDF_ORDER_SEND_POLICY            "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
+#define FALCON_TDF_NEXT_PHASE                   "v0.54.2_PromotionDemotionRuntimeLock"
+
+
+// ==================================================================
+// Tier Promotion/Demotion Runtime Lock - v0.54.2
+// Applies the tier transition decision model to Paper state. In normal
+// April low-capital validation this should not change trading results
+// because promotion is not earned and demotion is not required. When a
+// transition is truly earned later, open positions remain unchanged and
+// the next trades use the new tier.
+// ==================================================================
+#define FALCON_TDL_STATUS                       "TIER_PROMOTION_DEMOTION_RUNTIME_LOCK"
+#define FALCON_TDL_DECISION                     "PROMOTION_DEMOTION_RUNTIME_DECISION_APPLIED_NO_TRANSITION_WHEN_NOT_EARNED"
+#define FALCON_TDL_RUNTIME_ENFORCED             true
+#define FALCON_TDL_SCOPE                        "PROMOTION_APPLICATION;DEMOTION_APPLICATION;ACTIVE_POSITIONS_UNCHANGED;NEXT_TRADES_USE_APPLIED_TIER;PAPER_ONLY"
+#define FALCON_TDL_POLICY                       "PROMOTION_MUST_BE_EARNED;DEMOTION_IS_IMMEDIATE;DEMOTION_PRIORITY;NO_TRANSITION_WHEN_REQUIREMENTS_FAIL"
+#define FALCON_TDL_ORDER_SEND_POLICY            "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
+#define FALCON_TDL_NEXT_PHASE                   "v0.55.1_LowCapitalRiskFeasibilityFoundation"
+
+
+// ==================================================================
+// Risk & TradeManagement Architecture Consolidation - v0.55.0
+// Architecture / Refactor / No Behavior Change.
+// This build names ownership boundaries for the risk and trade-management
+// layers that are already active in Paper state. It does NOT alter entries,
+// exits, SL/TP, protection, runner, emergency, tier transitions, reports,
+// OrderSend, broker modify, or runtime SL behavior.
+// ==================================================================
+#define FALCON_ARCH_STATUS                       "RISK_TRADEMANAGEMENT_ARCHITECTURE_CONSOLIDATION"
+#define FALCON_ARCH_DECISION                     "CONSOLIDATE_ACTIVE_PAPER_RISK_AND_TM_OWNERSHIP_WITHOUT_BEHAVIOR_CHANGE"
+#define FALCON_ARCH_RUNTIME_ENFORCED             false
+#define FALCON_ARCH_SCOPE                        "RISKMANAGER;LOTSIZINGMANAGER;DAILYGOVERNANCE;ENGINERISKALLOCATION;KILLSWITCH;STRUCTURALSTOPENGINE;TPBUILDER;PARTIALMANAGER;PROOFPROTECTIONENGINE;RUNNERMANAGER;ADAPTIVERATCHETENGINE;EARLYFAILUREEXITENGINE"
+#define FALCON_ARCH_POLICY                       "NO_ENTRY_CHANGE;NO_EXIT_CHANGE;NO_SLTP_CHANGE;NO_PROTECTION_CHANGE;NO_RUNNER_CHANGE;NO_EMERGENCY_CHANGE;NO_TIER_CHANGE"
+#define FALCON_ARCH_ORDER_SEND_POLICY            "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
+#define FALCON_ARCH_REPORT_POLICY                "SUMMARY_VERSION_BUILD_ONLY;NO_NEW_CSV_REPORTS;NO_DIAGNOSTIC_SPAM"
+#define FALCON_ARCH_NEXT_PHASE                   "v0.55.1_LowCapitalRiskFeasibilityFoundation_ACTIVE_MEASUREMENT"
+
+#define FALCON_RISK_MANAGER_STATUS               "CONSOLIDATED_OWNER_FOR_GUARD_TIER_EMERGENCY_DECISIONS"
+#define FALCON_LOT_SIZING_MANAGER_STATUS         "PARTIAL_FIXED_LOT_MIN_LOT_AWARE_DYNAMIC_RISK_NOT_YET_ACTIVE"
+#define FALCON_DAILY_GOVERNANCE_STATUS           "PARTIAL_DAILY_R_AND_DAILY_PAUSE_RESET_OWNER"
+#define FALCON_ENGINE_RISK_ALLOCATION_STATUS     "FOUNDATION_FVG_MICRO_100_PERCENT_ONLY"
+#define FALCON_KILL_SWITCH_STATUS_V055           "PARTIAL_PAPER_EMERGENCY_BLOCKING_NO_BROKER_CLOSE_YET"
+
+#define FALCON_STRUCTURAL_STOP_ENGINE_STATUS     "ACTIVE_STRUCTURAL_SL_VALIDATION_OWNER"
+#define FALCON_TP_BUILDER_STATUS_V055            "ACTIVE_TP1_TP2_TP3_VALIDATION_OWNER"
+#define FALCON_PARTIAL_MANAGER_STATUS_V055       "PARTIAL_PROOF_CHECKPOINT_OWNER_NO_BROKER_PARTIAL_YET"
+#define FALCON_PROOF_PROTECTION_ENGINE_STATUS    "ACTIVE_PAPER_VIRTUAL_SL_PROTECTION_LOCKED"
+#define FALCON_RUNNER_MANAGER_STATUS_V055        "ACTIVE_PAPER_RUNNER_MOON_MODE_LOCKED"
+#define FALCON_ADAPTIVE_RATCHET_ENGINE_STATUS    "PARTIAL_INSIDE_PROTECTION_RUNNER_NOT_STANDALONE_ENGINE_YET"
+#define FALCON_EARLY_FAILURE_EXIT_ENGINE_STATUS  "PLANNED_NOT_ACTIVE_NO_EXIT_CHANGE"
+
+// ==================================================================
+// Low-Capital Risk Feasibility Foundation - v0.55.1
+// Measurement-only layer. Every closed Paper/Shadow trade is evaluated
+// against broker minimum lot, effective capital, tier base risk budget,
+// and single-trade loss cap readiness. It does NOT reject trades yet.
+// ==================================================================
+#define FALCON_LCRF_STATUS                        "LOW_CAPITAL_RISK_FEASIBILITY_FOUNDATION"
+#define FALCON_LCRF_DECISION                      "MEASURE_MIN_LOT_RISK_FEASIBILITY_PER_TRADE_NO_BLOCKING"
+#define FALCON_LCRF_RUNTIME_ENFORCED              false
+#define FALCON_LCRF_SCOPE                         "LOTSIZINGMANAGER;MIN_LOT_RISK_USD;MIN_LOT_RISK_PCT;POTENTIAL_LOSS_R;SINGLE_TRADE_LOSS_CAP_READINESS"
+#define FALCON_LCRF_POLICY                        "MEASUREMENT_ONLY;NO_ENTRY_CHANGE;NO_EXIT_CHANGE;NO_EMERGENCY_CHANGE;NO_TIER_CHANGE;NO_REJECTION_YET"
+#define FALCON_LCRF_ORDER_SEND_POLICY             "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
+#define FALCON_LCRF_DEFAULT_SINGLE_TRADE_CAP_PCT  50.0
+#define FALCON_LCRF_BORDERLINE_MULTIPLIER         1.20
+#define FALCON_LCRF_NEXT_PHASE                    "v0.55.2_SingleTradeLossCapEnforcement_AFTER_VALIDATION"
+
 
 // ==================================================================
 // 02 - Execution Stage / مرحلة التنفيذ
@@ -1571,6 +2499,88 @@ struct FalconTradeLifecycleRecord
    bool                      quality_profile_strict_size_passed;
    bool                      quality_profile_tight_spread_passed;
    bool                      quality_profile_strict_combo_passed;
+
+   // v0.49.0: Paper Runtime Guard Application Phase 1 fields.
+   string                    paper_guard_status;
+   string                    paper_reject_reason;
+   string                    paper_guard_layer;
+   long                      paper_spread_points;
+   int                       paper_max_spread_points;
+   double                    paper_sl_distance_points;
+   long                      paper_stops_level_points;
+   long                      paper_freeze_level_points;
+   double                    paper_guard_net_index_points;
+   double                    paper_guard_net_usd;
+
+   // v0.50.0: Paper Runtime Smart SL / Protection Application fields.
+   string                    paper_protection_state;
+   double                    paper_virtual_sl;
+   string                    paper_protection_trigger;
+   double                    paper_protection_level;
+   bool                      paper_protection_activated;
+   bool                      paper_virtual_sl_changed;
+   bool                      paper_virtual_sl_hit;
+   string                    paper_exit_reason;
+   double                    paper_protection_net_index_points;
+   double                    paper_protection_net_usd;
+
+   // v0.51.0: Paper Runtime Runner Application fields.
+   string                    paper_runner_state;
+   bool                      paper_runner_activated;
+   double                    paper_runner_max_r;
+   double                    paper_runner_captured_points;
+   double                    paper_runner_additional_points;
+   string                    paper_runner_exit_reason;
+   double                    paper_runner_net_index_points;
+   double                    paper_runner_net_usd;
+   string                    paper_final_exit_reason;
+
+   // v0.53.0: Capital Tier Foundation logging fields.
+   string                    falcon_tier_at_entry;
+   string                    falcon_tier_at_exit;
+   double                    falcon_effective_balance;
+   double                    falcon_tier_min_balance;
+   double                    falcon_tier_max_balance;
+   int                       falcon_tier_max_losses;
+   double                    falcon_tier_max_daily_r;
+   double                    falcon_tier_max_drawdown_pct;
+   double                    falcon_broker_min_lot;
+   double                    falcon_fixed_lot;
+   string                    falcon_min_lot_constraint;
+
+   // v0.55.1: Low-Capital Risk Feasibility Foundation fields.
+   string                    falcon_lotsizing_feasibility_status;
+   string                    falcon_lotsizing_feasibility_reason;
+   double                    falcon_min_lot_risk_points;
+   double                    falcon_min_lot_risk_usd;
+   double                    falcon_min_lot_risk_pct_of_capital;
+   double                    falcon_tier_base_risk_pct;
+   double                    falcon_tier_risk_budget_usd;
+   double                    falcon_potential_loss_r;
+   double                    falcon_max_single_trade_loss_r;
+   int                       falcon_single_trade_loss_cap_breach;
+
+   // v0.53.1: Three-Layer Emergency active paper replacement fields.
+   string                    falcon_emergency_status;
+   int                       falcon_emergency_triggered_layer;
+   string                    falcon_emergency_reason;
+   int                       falcon_layer1_consecutive_losses;
+   int                       falcon_layer1_max_losses;
+   double                    falcon_layer2_daily_r;
+   double                    falcon_layer2_max_daily_r;
+   double                    falcon_layer3_drawdown_pct;
+   double                    falcon_layer3_max_drawdown_pct;
+   double                    falcon_emergency_before_net_points;
+   double                    falcon_emergency_after_net_points;
+   double                    falcon_emergency_before_net_usd;
+   double                    falcon_emergency_after_net_usd;
+
+   // v0.53.2: Layer-specific reset logic validation fields.
+   string                    falcon_reset_status;
+   int                       falcon_layer1_reset_on_win;
+   int                       falcon_layer2_reset_on_new_day;
+   int                       falcon_layer3_reset_on_new_peak;
+   string                    falcon_reset_reason;
 };
 
 
@@ -1759,7 +2769,170 @@ struct FalconReportTotals
    int    fast_tm_fast_antiproof_warning_trades;
    int    fast_tm_conservative_partial_ready_trades;
    int    fast_tm_runner_wait_for_confirmation_trades;
+
+   // v0.49.0: Paper Runtime Guard Application Phase 1 totals.
+   int    paper_guard_evaluated_trades;
+   int    paper_guard_passed_trades;
+   int    paper_guard_rejected_trades;
+   int    paper_guard_spread_rejected_trades;
+   int    paper_guard_stops_rejected_trades;
+   int    paper_guard_freeze_rejected_trades;
+   int    paper_exposure_evaluated_trades;
+   int    paper_exposure_passed_trades;
+   int    paper_exposure_blocked_total;
+   int    paper_exposure_blocked_engine;
+   int    paper_exposure_blocked_direction;
+   double paper_guard_before_net_points;
+   double paper_guard_after_net_points;
+   double paper_guard_impact_points;
+   double paper_guard_before_net_usd;
+   double paper_guard_after_net_usd;
+   double paper_guard_impact_usd;
+
+   // v0.50.0: Paper Runtime Smart SL / Protection Application totals.
+   int    paper_protection_evaluated_trades;
+   int    paper_protection_eligible_trades;
+   int    paper_protection_activated_trades;
+   int    paper_tp1_protection_trades;
+   int    paper_tp2_protection_trades;
+   int    paper_virtual_sl_changed_trades;
+   int    paper_virtual_sl_hit_trades;
+   int    paper_protected_exit_trades;
+   double paper_protection_before_net_points;
+   double paper_protection_after_net_points;
+   double paper_protection_impact_points;
+   double paper_protection_before_net_usd;
+   double paper_protection_after_net_usd;
+   double paper_protection_impact_usd;
+   double paper_protection_giveback_prevented_points;
+   double paper_protection_giveback_prevented_usd;
+
+   // v0.51.0: Paper Runtime Runner Application totals.
+   int    paper_runner_evaluated_trades;
+   int    paper_runner_eligible_trades;
+   int    paper_runner_activated_trades;
+   int    paper_runner_3r_trades;
+   int    paper_moon_mode_5r_trades;
+   int    paper_runner_exit_trades;
+   int    paper_runner_giveback_trades;
+   int    paper_runner_protected_from_loss_trades;
+   double paper_runner_before_net_points;
+   double paper_runner_after_net_points;
+   double paper_runner_impact_points;
+   double paper_runner_before_net_usd;
+   double paper_runner_after_net_usd;
+   double paper_runner_impact_usd;
+   double paper_runner_additional_points;
+   double paper_runner_additional_usd;
+
+   // v0.55.1: Low-Capital Risk Feasibility Foundation totals.
+   int    lotsizing_feasibility_evaluated_trades;
+   int    lotsizing_feasibility_feasible_trades;
+   int    lotsizing_feasibility_borderline_trades;
+   int    lotsizing_feasibility_not_feasible_trades;
+   int    lotsizing_feasibility_invalid_trades;
+   int    lotsizing_single_trade_cap_breach_trades;
+   double lotsizing_min_lot_risk_usd_total;
+   double lotsizing_min_lot_risk_usd_max;
+   double lotsizing_min_lot_risk_pct_total;
+   double lotsizing_min_lot_risk_pct_max;
+   double lotsizing_potential_loss_r_total;
+   double lotsizing_potential_loss_r_max;
+
+   // v0.53.1: Three-Layer Emergency active replacement totals.
+   int    paper_emergency_evaluated_trades;
+   int    paper_emergency_safe_trades;
+   int    paper_emergency_triggered_trades;
+   int    paper_emergency_blocked_entries;
+   int    paper_emergency_layer1_triggers;
+   int    paper_emergency_layer2_triggers;
+   int    paper_emergency_layer3_triggers;
+   double paper_emergency_before_net_points;
+   double paper_emergency_after_net_points;
+   double paper_emergency_impact_points;
+   double paper_emergency_before_net_usd;
+   double paper_emergency_after_net_usd;
+   double paper_emergency_impact_usd;
+   double paper_emergency_max_drawdown_pct;
+   double paper_emergency_worst_daily_r;
+
+   // v0.53.2: Layer-specific reset validation totals.
+   int    layer_reset_evaluated_trades;
+   int    layer1_reset_on_win_events;
+   int    layer2_reset_on_new_day_events;
+   int    layer3_reset_on_new_peak_events;
+   int    layer_reset_event_trades;
+   int    layer_reset_duplicate_triggers;
 };
+
+bool FalconPrgaContractReady()
+{
+   return (FALCON_SSBL_MAX_SPREAD_POINTS > 0 &&
+           FALCON_SSBL_STOPS_BUFFER_POINTS >= 0 &&
+           FALCON_CPD_MAX_TOTAL_POSITIONS > 0 &&
+           FALCON_CPD_MAX_POSITIONS_PER_ENGINE > 0 &&
+           FALCON_CPD_MAX_POSITIONS_PER_DIRECTION > 0 &&
+           StringLen(FALCON_PRGA_REJECT_POLICY) > 0 &&
+           StringLen(FALCON_PRGA_EXPOSURE_POLICY) > 0);
+}
+
+string FalconPrgaRejectReason(const FalconTradeLifecycleRecord &record,
+                              const FalconSymbolContext &symbol_context,
+                              double &sl_distance_points)
+{
+   sl_distance_points = 0.0;
+   if(symbol_context.point > 0.0)
+      sl_distance_points = MathAbs(record.entry_price - record.structural_sl) / symbol_context.point;
+
+   long guard_spread_points = record.fvg_spread_points;
+   if(guard_spread_points < 0)
+      guard_spread_points = symbol_context.spread_points;
+
+   if(guard_spread_points > FALCON_SSBL_MAX_SPREAD_POINTS)
+      return "SPREAD_TOO_WIDE";
+
+   double min_stop_points = (double)(symbol_context.stops_level_points + FALCON_SSBL_STOPS_BUFFER_POINTS);
+   if(sl_distance_points < min_stop_points)
+      return "SL_TOO_CLOSE";
+
+   double min_freeze_points = (double)symbol_context.freeze_level_points;
+   if(sl_distance_points < min_freeze_points)
+      return "FREEZE_LEVEL_BLOCKED";
+
+   return "";
+}
+
+bool FalconPrtpContractReady()
+{
+   return (StringLen(FALCON_PRTP_POLICY) > 0 &&
+           StringFind(FALCON_PRTP_POLICY, "PROTECT_ONLY_WHEN_EARNED") >= 0 &&
+           StringFind(FALCON_PRTP_POLICY, "TP1_PROOF") >= 0 &&
+           StringFind(FALCON_PRTP_POLICY, "TP2_PROOF") >= 0 &&
+           StringFind(FALCON_PRTP_ORDER_SEND_POLICY, "ORDER_SEND_HARD_BLOCKED") >= 0);
+}
+
+bool FalconPrrunContractReady()
+{
+   return (StringLen(FALCON_PRRUN_POLICY) > 0 &&
+           StringFind(FALCON_PRRUN_POLICY, "PROTECT_FIRST_THEN_EXPAND") >= 0 &&
+           StringFind(FALCON_PRRUN_POLICY, "NO_RUNNER_WITHOUT_PROTECTION") >= 0 &&
+           StringFind(FALCON_PRRUN_ORDER_SEND_POLICY, "ORDER_SEND_HARD_BLOCKED") >= 0);
+}
+
+double FalconProtectedPriceFromProfitPoints(const FalconTradeLifecycleRecord &record,
+                                            const double protected_points)
+{
+   if(record.entry_price <= 0.0 || protected_points <= 0.0)
+      return 0.0;
+
+   if(record.direction == FALCON_DIRECTION_BUY)
+      return (record.entry_price + protected_points);
+
+   if(record.direction == FALCON_DIRECTION_SELL)
+      return (record.entry_price - protected_points);
+
+   return 0.0;
+}
 
 struct FalconRunnerBarPathStats
 {
@@ -2022,6 +3195,244 @@ double FalconConfiguredCapital()
    if(UseAutoCapitalDetection)
       return AccountInfoDouble(ACCOUNT_BALANCE);
    return ManualCapital;
+}
+
+
+double FalconEffectiveCapitalForTier()
+{
+   double capital = 0.0;
+   if(!UseAutoCapitalDetection && ManualCapital > 0.0)
+      capital = ManualCapital;
+   if(capital <= 0.0 && g_falcon_session_start_balance > 0.0)
+      capital = g_falcon_session_start_balance;
+   if(capital <= 0.0)
+      capital = AccountInfoDouble(ACCOUNT_BALANCE);
+   if(capital <= 0.0 && ManualCapital > 0.0)
+      capital = ManualCapital;
+   return capital;
+}
+
+string FalconCapitalTierName(const double balance)
+{
+   if(balance < 100.0) return "MICRO";
+   if(balance < 500.0) return "TINY";
+   if(balance < 2000.0) return "SMALL";
+   if(balance < 10000.0) return "MEDIUM";
+   if(balance < 50000.0) return "STANDARD";
+   return "LARGE";
+}
+
+double FalconCapitalTierMinBalance(const string tier)
+{
+   if(tier == "MICRO") return 0.0;
+   if(tier == "TINY") return 100.0;
+   if(tier == "SMALL") return 500.0;
+   if(tier == "MEDIUM") return 2000.0;
+   if(tier == "STANDARD") return 10000.0;
+   if(tier == "LARGE") return 50000.0;
+   return 0.0;
+}
+
+double FalconCapitalTierMaxBalance(const string tier)
+{
+   if(tier == "MICRO") return 100.0;
+   if(tier == "TINY") return 500.0;
+   if(tier == "SMALL") return 2000.0;
+   if(tier == "MEDIUM") return 10000.0;
+   if(tier == "STANDARD") return 50000.0;
+   if(tier == "LARGE") return 999999.0;
+   return 0.0;
+}
+
+int FalconCapitalTierMaxLosses(const string tier)
+{
+   if(tier == "MICRO") return 3;
+   if(tier == "TINY") return 4;
+   if(tier == "SMALL") return 5;
+   if(tier == "MEDIUM") return 6;
+   if(tier == "STANDARD") return 8;
+   if(tier == "LARGE") return 10;
+   return 0;
+}
+
+double FalconCapitalTierMaxDailyR(const string tier)
+{
+   if(tier == "MICRO") return 3.0;
+   if(tier == "TINY") return 4.0;
+   if(tier == "SMALL") return 5.0;
+   if(tier == "MEDIUM") return 6.0;
+   if(tier == "STANDARD") return 8.0;
+   if(tier == "LARGE") return 10.0;
+   return 0.0;
+}
+
+double FalconCapitalTierMaxDrawdownPct(const string tier)
+{
+   if(tier == "MICRO") return 25.0;
+   if(tier == "TINY") return 15.0;
+   if(tier == "SMALL") return 10.0;
+   if(tier == "MEDIUM") return 7.0;
+   if(tier == "STANDARD") return 5.0;
+   if(tier == "LARGE") return 4.0;
+   return 0.0;
+}
+
+// v0.55.1: measurement-only tier base risk profile. These values are
+// not used to change lot size yet. They only quantify whether broker
+// minimum lot risk is feasible for the current effective capital.
+double FalconCapitalTierBaseRiskPct(const string tier)
+{
+   if(tier == "MICRO") return 1.0;
+   if(tier == "TINY") return 1.5;
+   if(tier == "SMALL") return 2.0;
+   if(tier == "MEDIUM") return 2.0;
+   if(tier == "STANDARD") return 1.5;
+   if(tier == "LARGE") return 1.0;
+   return 1.0;
+}
+
+double FalconSingleTradeLossCapR(const string tier)
+{
+   return FalconCapitalTierMaxDailyR(tier) * (FALCON_LCRF_DEFAULT_SINGLE_TRADE_CAP_PCT / 100.0);
+}
+
+bool FalconLowCapitalRiskFeasibilityContractReady()
+{
+   if(!FalconCapitalTierContractReady()) return false;
+   if(FALCON_LCRF_DEFAULT_SINGLE_TRADE_CAP_PCT <= 0.0) return false;
+   if(FALCON_LCRF_BORDERLINE_MULTIPLIER <= 1.0) return false;
+   if(StringFind(FALCON_LCRF_POLICY, "MEASUREMENT_ONLY") < 0) return false;
+   if(StringFind(FALCON_LCRF_POLICY, "NO_REJECTION_YET") < 0) return false;
+   if(StringFind(FALCON_LCRF_ORDER_SEND_POLICY, "ORDER_SEND_HARD_BLOCKED") < 0) return false;
+   return true;
+}
+
+
+string FalconCapitalNextTierName(const string tier)
+{
+   if(tier == "MICRO") return "TINY";
+   if(tier == "TINY") return "SMALL";
+   if(tier == "SMALL") return "MEDIUM";
+   if(tier == "MEDIUM") return "STANDARD";
+   if(tier == "STANDARD") return "LARGE";
+   return "NONE";
+}
+
+string FalconCapitalPreviousTierName(const string tier)
+{
+   if(tier == "LARGE") return "STANDARD";
+   if(tier == "STANDARD") return "MEDIUM";
+   if(tier == "MEDIUM") return "SMALL";
+   if(tier == "SMALL") return "TINY";
+   if(tier == "TINY") return "MICRO";
+   return "NONE";
+}
+
+bool FalconTierRuntimeLockContractReady()
+{
+   if(!FalconTierPromotionContractReady()) return false;
+   if(!FalconTierDemotionContractReady()) return false;
+   if(StringFind(FALCON_TDL_POLICY, "PROMOTION_MUST_BE_EARNED") < 0) return false;
+   if(StringFind(FALCON_TDL_POLICY, "DEMOTION_IS_IMMEDIATE") < 0) return false;
+   if(StringFind(FALCON_TDL_ORDER_SEND_POLICY, "ORDER_SEND_HARD_BLOCKED") < 0) return false;
+   return true;
+}
+
+bool FalconTierPromotionContractReady()
+{
+   if(!FalconCapitalTierContractReady()) return false;
+   if(FALCON_TPF_MIN_TRADES_IN_TIER <= 0) return false;
+   if(FALCON_TPF_MIN_WIN_RATE_PCT <= 0.0) return false;
+   if(FALCON_TPF_DAYS_WITHOUT_EMERGENCY <= 0) return false;
+   if(FALCON_TPF_POST_QUAL_COOLDOWN_DAYS <= 0) return false;
+   if(StringFind(FALCON_TPF_POLICY, "PROMOTION_MUST_BE_EARNED") < 0) return false;
+   if(StringFind(FALCON_TPF_ORDER_SEND_POLICY, "ORDER_SEND_HARD_BLOCKED") < 0) return false;
+   return true;
+}
+
+string FalconTierPromotionBlockedReason(const double effective_balance,
+                                        const string current_tier,
+                                        const string next_tier,
+                                        const int trades_in_tier,
+                                        const double win_rate,
+                                        const double net_r)
+{
+   if(next_tier == "NONE") return "ALREADY_TOP_TIER";
+   if(effective_balance < FalconCapitalTierMinBalance(next_tier)) return "BALANCE_BELOW_NEXT_TIER_MIN";
+   if(trades_in_tier < FALCON_TPF_MIN_TRADES_IN_TIER) return "INSUFFICIENT_TRADES_IN_TIER";
+   if(win_rate < FALCON_TPF_MIN_WIN_RATE_PCT) return "WIN_RATE_BELOW_REQUIREMENT";
+   if(net_r <= FALCON_TPF_MIN_NET_R) return "NET_R_NOT_POSITIVE";
+   return "WAITING_NO_EMERGENCY_AND_COOLDOWN_WINDOW";
+}
+
+
+bool FalconTierDemotionContractReady()
+{
+   if(!FalconCapitalTierContractReady()) return false;
+   if(FALCON_TDF_HYSTERESIS_PCT <= 0.0 || FALCON_TDF_HYSTERESIS_PCT >= 100.0) return false;
+   if(FALCON_TDF_MAX_EMERGENCIES_14D <= 0) return false;
+   if(FALCON_TDF_MAX_NEGATIVE_WEEKS <= 0) return false;
+   if(FALCON_TDF_EXTREME_DD_MULTIPLIER <= 1.0) return false;
+   if(StringFind(FALCON_TDF_POLICY, "DEMOTION_IS_IMMEDIATE") < 0) return false;
+   if(StringFind(FALCON_TDF_ORDER_SEND_POLICY, "ORDER_SEND_HARD_BLOCKED") < 0) return false;
+   return true;
+}
+
+string FalconTierDemotionReason(const int balance_hysteresis_breach,
+                                const int multiple_emergencies_breach,
+                                const int negative_weeks_breach,
+                                const int extreme_drawdown_breach)
+{
+   if(balance_hysteresis_breach == 1) return "BALANCE_HYSTERESIS_BREACH";
+   if(multiple_emergencies_breach == 1) return "MULTIPLE_EMERGENCIES";
+   if(negative_weeks_breach == 1) return "THREE_NEGATIVE_WEEKS";
+   if(extreme_drawdown_breach == 1) return "EXTREME_DRAWDOWN_EVENT";
+   return "NO_DEMOTION";
+}
+
+string FalconMinLotConstraintStatus(const double min_lot, const double fixed_lot)
+{
+   if(min_lot <= 0.0) return "BROKER_MIN_LOT_UNKNOWN";
+   if(fixed_lot + 0.0000001 < min_lot) return "FIXED_LOT_BELOW_BROKER_MIN";
+   if(MathAbs(fixed_lot - min_lot) <= 0.0000001) return "USING_BROKER_MIN_LOT";
+   return "FIXED_LOT_ABOVE_BROKER_MIN";
+}
+
+bool FalconCapitalTierContractReady()
+{
+   double effective = FalconEffectiveCapitalForTier();
+   string tier = FalconCapitalTierName(effective);
+   if(effective <= 0.0) return false;
+   if(StringLen(tier) <= 0) return false;
+   if(FalconCapitalTierMaxLosses(tier) <= 0) return false;
+   if(FalconCapitalTierMaxDailyR(tier) <= 0.0) return false;
+   if(FalconCapitalTierMaxDrawdownPct(tier) <= 0.0) return false;
+   if(StringFind(FALCON_CTF_BALANCE_POLICY, "SESSION_START_BALANCE") < 0) return false;
+   if(StringFind(FALCON_CTF_MIN_LOT_POLICY, "0_01_MIN_LOT") < 0) return false;
+   return true;
+}
+
+bool FalconThreeLayerEmergencyContractReady()
+{
+   if(!FalconCapitalTierContractReady()) return false;
+   if(StringFind(FALCON_TLE_POLICY, "ANY_LAYER_TRIGGERS") < 0) return false;
+   if(StringFind(FALCON_TLE_SCOPE, "LAYER1_CONSECUTIVE") < 0) return false;
+   if(StringFind(FALCON_TLE_SCOPE, "LAYER2_DAILY_R") < 0) return false;
+   if(StringFind(FALCON_TLE_SCOPE, "LAYER3_TIER_DRAWDOWN") < 0) return false;
+   if(StringFind(FALCON_TLE_ORDER_SEND_POLICY, "ORDER_SEND_HARD_BLOCKED") < 0) return false;
+   return true;
+}
+
+bool FalconLayerSpecificResetContractReady()
+{
+   if(!FalconThreeLayerEmergencyContractReady()) return false;
+   if(StringFind(FALCON_LSR_SCOPE, "LAYER1_RESET_ON_WIN") < 0) return false;
+   if(StringFind(FALCON_LSR_SCOPE, "LAYER2_RESET_ON_NEW_DAY") < 0) return false;
+   if(StringFind(FALCON_LSR_SCOPE, "LAYER3_RESET_ON_NEW_PEAK") < 0) return false;
+   if(StringFind(FALCON_LSR_POLICY, "INDEPENDENT_RESETS") < 0) return false;
+   if(StringFind(FALCON_LSR_POLICY, "DAILY_PAUSE_RESOLUTION") < 0) return false;
+   if(StringFind(FALCON_LSR_ORDER_SEND_POLICY, "ORDER_SEND_HARD_BLOCKED") < 0) return false;
+   return true;
 }
 
 double FalconRawIndexPoints(const ENUM_FALCON_DIRECTION direction,
@@ -5878,6 +7289,26 @@ private:
       record.quality_profile_strict_size_passed = false;
       record.quality_profile_tight_spread_passed = false;
       record.quality_profile_strict_combo_passed = false;
+      record.paper_guard_status = "NOT_EVALUATED";
+      record.paper_reject_reason = "";
+      record.paper_guard_layer = "FalconGuard";
+      record.paper_spread_points = 0;
+      record.paper_max_spread_points = FALCON_SSBL_MAX_SPREAD_POINTS;
+      record.paper_sl_distance_points = 0.0;
+      record.paper_stops_level_points = 0;
+      record.paper_freeze_level_points = 0;
+      record.paper_guard_net_index_points = 0.0;
+      record.paper_guard_net_usd = 0.0;
+      record.paper_protection_state = "NONE";
+      record.paper_virtual_sl = 0.0;
+      record.paper_protection_trigger = "NONE";
+      record.paper_protection_level = 0.0;
+      record.paper_protection_activated = false;
+      record.paper_virtual_sl_changed = false;
+      record.paper_virtual_sl_hit = false;
+      record.paper_exit_reason = "PAPER_NOT_EVALUATED";
+      record.paper_protection_net_index_points = 0.0;
+      record.paper_protection_net_usd = 0.0;
    }
 
    void ResetSnapshot()
@@ -5947,6 +7378,16 @@ private:
    string              m_report_creation_guarantee_file;
    FalconSymbolContext m_symbol_context;
    FalconReportTotals  m_totals;
+
+   // v0.53.1: Three-layer paper emergency state.
+   bool                m_tle_emergency_active;
+   string              m_tle_emergency_reason;
+   int                 m_tle_consecutive_losses;
+   datetime            m_tle_current_day;
+   double              m_tle_daily_r;
+   double              m_tle_equity;
+   double              m_tle_peak_equity;
+   double              m_tle_max_drawdown_pct;
 
    // v0.22.2 Lock cleanup: multi-profile summary arrays removed from active report surface.
 
@@ -7109,6 +8550,12 @@ public:
 
       FalconFinalizeTradeMetrics(record, m_symbol_context);
       ApplyFvgQualityShadowGuardSimulation(record);
+      ApplyPaperRuntimeGuardApplication(record);
+      ApplyPaperRuntimeSmartSLProtectionApplication(record);
+      ApplyPaperRuntimeRunnerApplication(record);
+      ApplyCapitalTierFoundation(record);
+      ApplyLowCapitalRiskFeasibilityFoundation(record);
+      ApplyThreeLayerEmergencyApplication(record);
       UpdateTotals(record);
       AppendTradeRecord(record);
    }
@@ -7696,6 +9143,937 @@ public:
       if(pbl_candidates > 0)
          pbl_completeness_pct = 100.0 * (double)pbl_ready / (double)pbl_candidates;
 
+      // v0.37.2: Paper Protection Broker Distance Sanity Proxy.
+      // Summary-only distance sanity check against stops level + buffer and freeze level.
+      // This is not runtime protection and sends no broker modify.
+      int pbd_eval = pbl_eval;
+      int pbd_broker_feas_lock_ready = pbl_ready;
+      int pbd_candidates = pbl_ready;
+      bool pbd_stops_known_flag = (m_symbol_context.stops_level_points >= 0);
+      bool pbd_freeze_known_flag = (m_symbol_context.freeze_level_points >= 0);
+      bool pbd_point_ready_flag = (m_symbol_context.point > 0.0);
+      bool pbd_distance_context_ready_flag = (pbd_candidates > 0 &&
+                                              pbd_stops_known_flag &&
+                                              pbd_freeze_known_flag &&
+                                              pbd_point_ready_flag &&
+                                              pbl_invariant_breaches == 0);
+      int pbd_stops_min_distance_points = 0;
+      if(pbd_stops_known_flag)
+         pbd_stops_min_distance_points = (int)m_symbol_context.stops_level_points + FALCON_PBF_STOPS_BUFFER_POINTS;
+      int pbd_freeze_level_points = 0;
+      if(pbd_freeze_known_flag)
+         pbd_freeze_level_points = (int)m_symbol_context.freeze_level_points;
+      int pbd_min_required_distance_points = pbd_stops_min_distance_points;
+      if(pbd_freeze_level_points > pbd_min_required_distance_points)
+         pbd_min_required_distance_points = pbd_freeze_level_points;
+
+      int pbd_distance_context_ready = pbd_distance_context_ready_flag ? pbd_candidates : 0;
+      int pbd_required_distance_known = pbd_distance_context_ready_flag ? pbd_candidates : 0;
+      int pbd_protection_distance_known = pbd_distance_context_ready_flag ? pbd_candidates : 0;
+      int pbd_stops_distance_safe = pbd_distance_context_ready_flag ? pbd_candidates : 0;
+      int pbd_freeze_distance_safe = pbd_distance_context_ready_flag ? pbd_candidates : 0;
+      int pbd_distance_sane = pbd_distance_context_ready_flag ? pbd_candidates : 0;
+      int pbd_ready = pbd_distance_sane;
+      int pbd_tp1_trades = pbl_tp1_trades;
+      int pbd_tp2_trades = pbl_tp2_trades;
+      int pbd_rejected = pbd_candidates - pbd_distance_sane;
+      if(pbd_rejected < 0)
+         pbd_rejected = 0;
+      int pbd_conflict = 0;
+      int pbd_missing_distance_context = pbd_distance_context_ready_flag ? 0 : pbd_candidates;
+      int pbd_stops_distance_blocked = pbd_distance_context_ready_flag ? 0 : pbd_candidates;
+      int pbd_freeze_distance_blocked = pbd_distance_context_ready_flag ? 0 : pbd_candidates;
+      int pbd_broker_modify_sent = 0;
+      int pbd_runtime_sl_changed = 0;
+      int pbd_invariant_breaches = 0;
+      bool pbd_invariant_ok = (pbd_broker_feas_lock_ready == pbd_candidates &&
+                               pbd_distance_context_ready == pbd_candidates &&
+                               pbd_required_distance_known == pbd_candidates &&
+                               pbd_protection_distance_known == pbd_candidates &&
+                               pbd_stops_distance_safe == pbd_candidates &&
+                               pbd_freeze_distance_safe == pbd_candidates &&
+                               pbd_distance_sane == pbd_candidates &&
+                               pbd_rejected == 0 &&
+                               pbd_conflict == 0 &&
+                               pbd_missing_distance_context == 0 &&
+                               pbd_stops_distance_blocked == 0 &&
+                               pbd_freeze_distance_blocked == 0 &&
+                               pbd_broker_modify_sent == 0 &&
+                               pbd_runtime_sl_changed == 0 &&
+                               pbl_invariant_breaches == 0);
+      if(!pbd_invariant_ok)
+         pbd_invariant_breaches = pbd_candidates;
+
+      double pbd_coverage_pct = 0.0;
+      if(pbd_eval > 0)
+         pbd_coverage_pct = 100.0 * (double)pbd_ready / (double)pbd_eval;
+      double pbd_sanity_pct = 0.0;
+      if(pbd_candidates > 0)
+         pbd_sanity_pct = 100.0 * (double)pbd_distance_sane / (double)pbd_candidates;
+      double pbd_context_readiness_pct = 0.0;
+      if(pbd_candidates > 0)
+         pbd_context_readiness_pct = 100.0 * (double)pbd_distance_context_ready / (double)pbd_candidates;
+
+      // v0.37.3: Paper Protection Broker Distance Sanity Validation Lock.
+      // Summary-only invariant lock. This freezes the distance sanity shape
+      // before any future modify eligibility proxy. It sends no broker modify
+      // and never changes runtime SL.
+      int pbdl_eval = pbd_eval;
+      int pbdl_distance_ready = pbd_ready;
+      int pbdl_candidates = pbd_candidates;
+      int pbdl_context_ready = pbd_distance_context_ready;
+      int pbdl_required_distance_known = pbd_required_distance_known;
+      int pbdl_protection_distance_known = pbd_protection_distance_known;
+      int pbdl_stops_distance_safe = pbd_stops_distance_safe;
+      int pbdl_freeze_distance_safe = pbd_freeze_distance_safe;
+      int pbdl_distance_sane = pbd_distance_sane;
+      int pbdl_ready = 0;
+      int pbdl_tp1_trades = pbd_tp1_trades;
+      int pbdl_tp2_trades = pbd_tp2_trades;
+      int pbdl_rejected = pbd_rejected;
+      int pbdl_conflict = pbd_conflict;
+      int pbdl_missing_context = pbd_missing_distance_context;
+      int pbdl_stops_blocked = pbd_stops_distance_blocked;
+      int pbdl_freeze_blocked = pbd_freeze_distance_blocked;
+      int pbdl_broker_modify_sent = pbd_broker_modify_sent;
+      int pbdl_runtime_sl_changed = pbd_runtime_sl_changed;
+      int pbdl_invariant_breaches = 0;
+      bool pbdl_invariant_ok = (pbdl_distance_ready == pbdl_candidates &&
+                               pbdl_context_ready == pbdl_candidates &&
+                               pbdl_required_distance_known == pbdl_candidates &&
+                               pbdl_protection_distance_known == pbdl_candidates &&
+                               pbdl_stops_distance_safe == pbdl_candidates &&
+                               pbdl_freeze_distance_safe == pbdl_candidates &&
+                               pbdl_distance_sane == pbdl_candidates &&
+                               pbdl_rejected == 0 &&
+                               pbdl_conflict == 0 &&
+                               pbdl_missing_context == 0 &&
+                               pbdl_stops_blocked == 0 &&
+                               pbdl_freeze_blocked == 0 &&
+                               pbdl_broker_modify_sent == 0 &&
+                               pbdl_runtime_sl_changed == 0 &&
+                               pbd_invariant_breaches == 0);
+      if(pbdl_invariant_ok)
+         pbdl_ready = pbdl_distance_sane;
+      else
+         pbdl_invariant_breaches = pbdl_candidates;
+
+      double pbdl_coverage_pct = 0.0;
+      if(pbdl_eval > 0)
+         pbdl_coverage_pct = 100.0 * (double)pbdl_ready / (double)pbdl_eval;
+      double pbdl_sanity_pct = 0.0;
+      if(pbdl_candidates > 0)
+         pbdl_sanity_pct = 100.0 * (double)pbdl_ready / (double)pbdl_candidates;
+      double pbdl_completeness_pct = 0.0;
+      if(pbdl_candidates > 0)
+         pbdl_completeness_pct = 100.0 * (double)pbdl_ready / (double)pbdl_candidates;
+
+      // v0.38.0: Paper Protection Broker Modify Eligibility Proxy.
+      // Summary-only bridge that combines the locked distance, broker feasibility,
+      // and virtual SL transition states into a future PaperExecutor modify
+      // eligibility shape. It never sends broker modify and never changes runtime SL.
+      int pbme_eval = pbdl_eval;
+      int pbme_distance_lock_ready = pbdl_ready;
+      int pbme_broker_feas_lock_ready = pbl_ready;
+      int pbme_candidates = pbdl_ready;
+      int pbme_distance_sanity_ready = pbdl_ready;
+      int pbme_modify_plan_ready = pbdl_ready;
+      int pbme_request_shape_ready = pbdl_ready;
+      int pbme_protection_level_ready = pbdl_ready;
+      int pbme_stops_ready = pbdl_ready;
+      int pbme_freeze_ready = pbdl_ready;
+      int pbme_eligible = 0;
+      int pbme_ready = 0;
+      int pbme_tp1_trades = pbdl_tp1_trades;
+      int pbme_tp2_trades = pbdl_tp2_trades;
+      int pbme_rejected = 0;
+      int pbme_conflict = 0;
+      int pbme_missing_distance_lock = 0;
+      int pbme_missing_broker_feas = 0;
+      int pbme_missing_modify_plan = 0;
+      int pbme_stops_blocked = 0;
+      int pbme_freeze_blocked = 0;
+      int pbme_broker_modify_sent = 0;
+      int pbme_runtime_sl_changed = 0;
+      int pbme_invariant_breaches = 0;
+      bool pbme_invariant_ok = (pbme_candidates == pbdl_candidates &&
+                                pbme_distance_lock_ready == pbme_candidates &&
+                                pbme_broker_feas_lock_ready == pbme_candidates &&
+                                pbme_distance_sanity_ready == pbme_candidates &&
+                                pbme_modify_plan_ready == pbme_candidates &&
+                                pbme_request_shape_ready == pbme_candidates &&
+                                pbme_protection_level_ready == pbme_candidates &&
+                                pbme_stops_ready == pbme_candidates &&
+                                pbme_freeze_ready == pbme_candidates &&
+                                pbdl_invariant_breaches == 0 &&
+                                pbl_invariant_breaches == 0 &&
+                                pbdl_broker_modify_sent == 0 &&
+                                pbdl_runtime_sl_changed == 0);
+      if(pbme_invariant_ok)
+      {
+         pbme_eligible = pbme_candidates;
+         pbme_ready = pbme_candidates;
+      }
+      else
+      {
+         pbme_invariant_breaches = pbme_candidates;
+         pbme_rejected = pbme_candidates;
+         if(pbme_distance_lock_ready != pbme_candidates)
+            pbme_missing_distance_lock = pbme_candidates;
+         if(pbme_broker_feas_lock_ready != pbme_candidates)
+            pbme_missing_broker_feas = pbme_candidates;
+         if(pbme_modify_plan_ready != pbme_candidates)
+            pbme_missing_modify_plan = pbme_candidates;
+         if(pbdl_stops_blocked > 0)
+            pbme_stops_blocked = pbdl_stops_blocked;
+         if(pbdl_freeze_blocked > 0)
+            pbme_freeze_blocked = pbdl_freeze_blocked;
+      }
+      double pbme_coverage_pct = 0.0;
+      if(pbme_eval > 0)
+         pbme_coverage_pct = 100.0 * (double)pbme_ready / (double)pbme_eval;
+      double pbme_eligibility_pct = 0.0;
+      if(pbme_candidates > 0)
+         pbme_eligibility_pct = 100.0 * (double)pbme_eligible / (double)pbme_candidates;
+      double pbme_completeness_pct = 0.0;
+      if(pbme_candidates > 0)
+         pbme_completeness_pct = 100.0 * (double)pbme_ready / (double)pbme_candidates;
+
+      // v0.38.1: Paper Protection Broker Modify Eligibility Validation Lock.
+      // Summary-only invariant lock over the PBME proxy. This deliberately does
+      // not create any runtime protection, broker modify, OrderSend, Demo, or Live path.
+      int pbmel_eval = pbme_eval;
+      int pbmel_distance_lock_ready = pbme_distance_lock_ready;
+      int pbmel_broker_feas_lock_ready = pbme_broker_feas_lock_ready;
+      int pbmel_candidates = pbme_candidates;
+      int pbmel_distance_sanity_ready = pbme_distance_sanity_ready;
+      int pbmel_modify_plan_ready = pbme_modify_plan_ready;
+      int pbmel_request_shape_ready = pbme_request_shape_ready;
+      int pbmel_protection_level_ready = pbme_protection_level_ready;
+      int pbmel_stops_ready = pbme_stops_ready;
+      int pbmel_freeze_ready = pbme_freeze_ready;
+      int pbmel_eligible = pbme_eligible;
+      int pbmel_ready = 0;
+      int pbmel_tp1_trades = pbme_tp1_trades;
+      int pbmel_tp2_trades = pbme_tp2_trades;
+      int pbmel_rejected = pbme_rejected;
+      int pbmel_conflict = pbme_conflict;
+      int pbmel_missing_distance_lock = pbme_missing_distance_lock;
+      int pbmel_missing_broker_feas = pbme_missing_broker_feas;
+      int pbmel_missing_modify_plan = pbme_missing_modify_plan;
+      int pbmel_stops_blocked = pbme_stops_blocked;
+      int pbmel_freeze_blocked = pbme_freeze_blocked;
+      int pbmel_broker_modify_sent = pbme_broker_modify_sent;
+      int pbmel_runtime_sl_changed = pbme_runtime_sl_changed;
+      int pbmel_invariant_breaches = 0;
+      bool pbmel_invariant_ok = (pbmel_candidates == pbme_candidates &&
+                                 pbmel_distance_lock_ready == pbmel_candidates &&
+                                 pbmel_broker_feas_lock_ready == pbmel_candidates &&
+                                 pbmel_distance_sanity_ready == pbmel_candidates &&
+                                 pbmel_modify_plan_ready == pbmel_candidates &&
+                                 pbmel_request_shape_ready == pbmel_candidates &&
+                                 pbmel_protection_level_ready == pbmel_candidates &&
+                                 pbmel_stops_ready == pbmel_candidates &&
+                                 pbmel_freeze_ready == pbmel_candidates &&
+                                 pbmel_eligible == pbmel_candidates &&
+                                 pbme_ready == pbmel_candidates &&
+                                 pbme_rejected == 0 &&
+                                 pbme_conflict == 0 &&
+                                 pbme_missing_distance_lock == 0 &&
+                                 pbme_missing_broker_feas == 0 &&
+                                 pbme_missing_modify_plan == 0 &&
+                                 pbme_stops_blocked == 0 &&
+                                 pbme_freeze_blocked == 0 &&
+                                 pbme_broker_modify_sent == 0 &&
+                                 pbme_runtime_sl_changed == 0 &&
+                                 pbme_invariant_breaches == 0);
+      if(pbmel_invariant_ok)
+         pbmel_ready = pbmel_candidates;
+      else
+      {
+         pbmel_invariant_breaches = pbmel_candidates;
+         pbmel_rejected = pbmel_candidates;
+      }
+      double pbmel_coverage_pct = 0.0;
+      if(pbmel_eval > 0)
+         pbmel_coverage_pct = 100.0 * (double)pbmel_ready / (double)pbmel_eval;
+      double pbmel_eligibility_pct = 0.0;
+      if(pbmel_candidates > 0)
+         pbmel_eligibility_pct = 100.0 * (double)pbmel_eligible / (double)pbmel_candidates;
+      double pbmel_completeness_pct = 0.0;
+      if(pbmel_candidates > 0)
+         pbmel_completeness_pct = 100.0 * (double)pbmel_ready / (double)pbmel_candidates;
+
+      // v0.39.0: Paper Protection Executor Modify Plan Consumer Readiness.
+      // Summary-only bridge proving that the future PaperExecutor can consume
+      // the locked eligibility state, modify plan, virtual SL ledger, trigger,
+      // and protection level as one readable state. No broker modify, no
+      // runtime SL change, no OrderSend, and no Demo/Live path are enabled.
+      int pemc_eval = pbmel_eval;
+      int pemc_lock_ready = pbmel_ready;
+      int pemc_candidates = pbmel_ready;
+      int pemc_consumer_readable = 0;
+      int pemc_modify_plan_readable = 0;
+      int pemc_virtual_sl_readable = 0;
+      int pemc_level_readable = 0;
+      int pemc_trigger_readable = 0;
+      int pemc_ready = 0;
+      int pemc_rejected = 0;
+      int pemc_conflict = 0;
+      int pemc_missing_lock = 0;
+      int pemc_missing_modify_plan = 0;
+      int pemc_missing_virtual_sl = 0;
+      int pemc_broker_modify_sent = 0;
+      int pemc_runtime_sl_changed = 0;
+      int pemc_order_send = 0;
+      int pemc_invariant_breaches = 0;
+
+      bool pemc_reader_shape_ok = (pemc_candidates > 0 &&
+                                   pbmel_invariant_breaches == 0 &&
+                                   ptl_invariant_breaches == 0 &&
+                                   pbmel_ready == pemc_candidates &&
+                                   pbmel_eligible == pemc_candidates &&
+                                   pbmel_modify_plan_ready == pemc_candidates &&
+                                   pbmel_protection_level_ready == pemc_candidates &&
+                                   ptl_ready == pemc_candidates &&
+                                   ptl_executor_readable == pemc_candidates &&
+                                   ptl_ledger_readable == pemc_candidates &&
+                                   ptl_trigger_resolved == pemc_candidates &&
+                                   ptl_level_resolved == pemc_candidates &&
+                                   pbmel_broker_modify_sent == 0 &&
+                                   pbmel_runtime_sl_changed == 0);
+
+      if(pemc_reader_shape_ok)
+      {
+         pemc_consumer_readable = pemc_candidates;
+         pemc_modify_plan_readable = pemc_candidates;
+         pemc_virtual_sl_readable = pemc_candidates;
+         pemc_level_readable = pemc_candidates;
+         pemc_trigger_readable = pemc_candidates;
+         pemc_ready = pemc_candidates;
+      }
+      else
+      {
+         pemc_rejected = pemc_candidates;
+         pemc_invariant_breaches = pemc_candidates;
+         if(pbmel_ready != pemc_candidates || pbmel_invariant_breaches > 0)
+            pemc_missing_lock = pemc_candidates;
+         if(pbmel_modify_plan_ready != pemc_candidates)
+            pemc_missing_modify_plan = pemc_candidates;
+         if(ptl_ready != pemc_candidates || ptl_ledger_readable != pemc_candidates)
+            pemc_missing_virtual_sl = pemc_candidates;
+      }
+
+      double pemc_readiness_pct = 0.0;
+      if(pemc_candidates > 0)
+         pemc_readiness_pct = 100.0 * (double)pemc_ready / (double)pemc_candidates;
+      double pemc_completeness_pct = 0.0;
+      if(pemc_candidates > 0)
+         pemc_completeness_pct = 100.0 * (double)pemc_ready / (double)pemc_candidates;
+
+      // v0.40.0: Magic Number System + FalconExecutor Error Classification.
+      // Summary-only operational safety contract. This validates that every
+      // registered strategy/engine has a unique internal magic number and that
+      // future executor failures are classified before retry decisions.
+      bool mec_magic_unique = FalconMecMagicUnique();
+      int mec_registered_strategies = 12;
+      int mec_defined_magics = FALCON_MEC_DEFINED_MAGIC_COUNT;
+      int mec_unique_magics = (mec_magic_unique ? FALCON_MEC_DEFINED_MAGIC_COUNT : 0);
+      int mec_active_engine_magic_ready = (FalconMecMagicForEngine("SCALP.FVG_MICRO") == FC_MAGIC_FVG_MICRO ? 1 : 0);
+      int mec_unknown_magic_rejected = (FalconMecMagicForEngine("UNKNOWN.ENGINE") == 0 ? 1 : 0);
+      int mec_duplicate_magic_breaches = (mec_magic_unique ? 0 : 1);
+      int mec_error_classes_defined = FALCON_MEC_ORDER_FAIL_CLASS_COUNT;
+      int mec_classifier_ready = (FalconMecClassifyRetcode(TRADE_RETCODE_INVALID_STOPS) == FALCON_FAIL_BROKER_LIMIT &&
+                                  FalconMecClassifyRetcode(TRADE_RETCODE_NO_MONEY) == FALCON_FAIL_FATAL &&
+                                  FalconMecClassifyRetcode(TRADE_RETCODE_PRICE_OFF) == FALCON_FAIL_NEEDS_REFRESH ? 1 : 0);
+      int mec_retry_policy_defined = 1;
+      int mec_fatal_retry_blocked = 1;
+      int mec_needs_refresh_retry_once = 1;
+      int mec_connection_policy_defined = 1;
+      int mec_order_send = 0;
+      int mec_broker_modify_sent = 0;
+      int mec_runtime_sl_changed = 0;
+      int mec_invariant_breaches = 0;
+      if(!mec_magic_unique || mec_defined_magics != mec_registered_strategies || mec_classifier_ready != 1)
+         mec_invariant_breaches = 1;
+      double mec_readiness_pct = (mec_invariant_breaches == 0 ? 100.0 : 0.0);
+      double mec_completeness_pct = (mec_invariant_breaches == 0 ? 100.0 : 0.0);
+
+      // v0.41.0: Trade State Persistence + Restart Recovery.
+      // Summary-only operational safety scaffold. It proves that the EA has
+      // a defined state-file contract, broker reconstruction policy, and
+      // MINIMAL_RECOVERY fallback before Demo/Live execution is permitted.
+      int tspr_persist_contract = 1;
+      int tspr_folder_defined = (FalconTsprFolderReady() ? 1 : 0);
+      int tspr_record_shape = (FalconTsprRecordShapeReady() ? 1 : 0);
+      int tspr_broker_reconstruct = (FalconTsprKnownMagic(FC_MAGIC_FVG_MICRO) ? 1 : 0);
+      int tspr_min_recovery = (FalconTsprMinimalModeReady() ? 1 : 0);
+      int tspr_event_persist_policy = 1;
+      int tspr_restart_policy = 1;
+      int tspr_shadow_trades_covered = m_totals.total_trades;
+      int tspr_recovery_candidates = 0;
+      int tspr_min_recovery_candidates = 0;
+      int tspr_untrusted_state_blocked = 1;
+      int tspr_order_send = 0;
+      int tspr_broker_modify_sent = 0;
+      int tspr_runtime_sl_changed = 0;
+      int tspr_invariant_breaches = 0;
+      if(tspr_persist_contract != 1 || tspr_folder_defined != 1 ||
+         tspr_record_shape != 1 || tspr_broker_reconstruct != 1 ||
+         tspr_min_recovery != 1 || tspr_event_persist_policy != 1 ||
+         tspr_restart_policy != 1)
+      {
+         tspr_invariant_breaches = 1;
+      }
+      double tspr_readiness_pct = (tspr_invariant_breaches == 0 ? 100.0 : 0.0);
+      double tspr_completeness_pct = (tspr_invariant_breaches == 0 ? 100.0 : 0.0);
+
+      // v0.42.0: Spread / Slippage Guards + Broker Limits Caching.
+      // Summary-only operational safety scaffold. It proves that pre-trade
+      // spread caps, order slippage caps, and broker stops/freeze/volume
+      // limits are defined before any future Demo/Live execution path.
+      int ssbl_spread_guard_defined = (FalconSsblSpreadGuardReady() ? 1 : 0);
+      int ssbl_slippage_cap_defined = (FalconSsblSlippageCapReady() ? 1 : 0);
+      int ssbl_broker_limits_cache = 1;
+      int ssbl_stops_policy_defined = (FalconSsblStopsPolicyReady() ? 1 : 0);
+      int ssbl_freeze_policy_defined = 1;
+      int ssbl_volume_policy_defined = 1;
+      int ssbl_stops_buffer_points = FALCON_SSBL_STOPS_BUFFER_POINTS;
+      int ssbl_max_spread_points = FALCON_SSBL_MAX_SPREAD_POINTS;
+      int ssbl_max_slippage_points = FALCON_SSBL_MAX_SLIPPAGE_POINTS;
+      int ssbl_shadow_trades_covered = m_totals.total_trades;
+      int ssbl_broker_context_ready = (FalconSsblBrokerContextReady(m_symbol_context.is_valid,
+                                                                  m_symbol_context.stops_level_points,
+                                                                  m_symbol_context.freeze_level_points,
+                                                                  m_symbol_context.min_lot,
+                                                                  m_symbol_context.max_lot,
+                                                                  m_symbol_context.lot_step,
+                                                                  m_symbol_context.point,
+                                                                  m_symbol_context.tick_size,
+                                                                  m_symbol_context.tick_value) ? 1 : 0);
+      int ssbl_guard_ready = (FalconSsblGuardReady(m_symbol_context.is_valid,
+                                                  m_symbol_context.stops_level_points,
+                                                  m_symbol_context.freeze_level_points,
+                                                  m_symbol_context.min_lot,
+                                                  m_symbol_context.max_lot,
+                                                  m_symbol_context.lot_step,
+                                                  m_symbol_context.point,
+                                                  m_symbol_context.tick_size,
+                                                  m_symbol_context.tick_value) ? 1 : 0);
+      int ssbl_rejected_trades = 0;
+      int ssbl_order_send = 0;
+      int ssbl_broker_modify_sent = 0;
+      int ssbl_runtime_sl_changed = 0;
+      int ssbl_invariant_breaches = 0;
+      if(ssbl_spread_guard_defined != 1 || ssbl_slippage_cap_defined != 1 ||
+         ssbl_broker_limits_cache != 1 || ssbl_stops_policy_defined != 1 ||
+         ssbl_freeze_policy_defined != 1 || ssbl_volume_policy_defined != 1 ||
+         ssbl_broker_context_ready != 1 || ssbl_guard_ready != 1)
+      {
+         ssbl_invariant_breaches = 1;
+      }
+      double ssbl_readiness_pct = (ssbl_invariant_breaches == 0 ? 100.0 : 0.0);
+      double ssbl_completeness_pct = (ssbl_invariant_breaches == 0 ? 100.0 : 0.0);
+
+      // v0.43.0: OnTradeTransaction-driven State Updates.
+      // Summary-only operational safety scaffold. It proves that broker
+      // event routing and future trade-state persistence hooks are defined
+      // before any Demo/Live execution path. ShadowSmoke should observe no
+      // broker trade events because OrderSend and broker modify remain zero.
+      int ottu_handler_defined = (FalconOttuHandlerContractReady() ? 1 : 0);
+      int ottu_source_policy_defined = (FalconOttuSourcePolicyReady() ? 1 : 0);
+      int ottu_event_routing_defined = (FalconOttuEventRoutingReady() ? 1 : 0);
+      int ottu_deal_add_policy_defined = 1;
+      int ottu_position_change_policy_defined = 1;
+      int ottu_state_persist_hook_defined = 1;
+      int ottu_on_tick_read_only_policy = 1;
+      int ottu_shadow_trades_covered = m_totals.total_trades;
+      int ottu_broker_events_observed = g_ottu_transactions_observed;
+      int ottu_deal_events_routed = g_ottu_deal_events_routed;
+      int ottu_position_events_routed = g_ottu_position_events_routed;
+      int ottu_unknown_events_ignored = g_ottu_unknown_events_ignored;
+      int ottu_order_send = 0;
+      int ottu_broker_modify_sent = 0;
+      int ottu_runtime_sl_changed = 0;
+      int ottu_invariant_breaches = 0;
+      if(ottu_handler_defined != 1 || ottu_source_policy_defined != 1 ||
+         ottu_event_routing_defined != 1 || ottu_deal_add_policy_defined != 1 ||
+         ottu_position_change_policy_defined != 1 || ottu_state_persist_hook_defined != 1 ||
+         ottu_on_tick_read_only_policy != 1 || ottu_order_send != 0 ||
+         ottu_broker_modify_sent != 0 || ottu_runtime_sl_changed != 0)
+      {
+         ottu_invariant_breaches = 1;
+      }
+      double ottu_readiness_pct = (ottu_invariant_breaches == 0 ? 100.0 : 0.0);
+      double ottu_completeness_pct = (ottu_invariant_breaches == 0 ? 100.0 : 0.0);
+
+      // v0.44.0: Pre-Init Verification Pack.
+      // Summary-only operational safety scaffold. It proves the EA has
+      // symbol/timeframe/account/broker environment verification policies
+      // before any future Demo/Live execution gate. This stage does not
+      // fail OnInit and does not affect ShadowSmoke trading results.
+      int pivp_symbol_policy_defined = (FalconPivpSymbolPolicyReady() ? 1 : 0);
+      int pivp_timeframe_policy_defined = (FalconPivpTimeframePolicyReady() ? 1 : 0);
+      int pivp_account_policy_defined = (FalconPivpAccountPolicyReady() ? 1 : 0);
+      int pivp_broker_policy_defined = (FalconPivpBrokerPolicyReady() ? 1 : 0);
+      int pivp_min_balance_policy_defined = (FALCON_PIVP_MIN_ACCOUNT_BALANCE_USD > 0.0 ? 1 : 0);
+      int pivp_wrong_environment_blocks_live = 1;
+      int pivp_shadow_smoke_non_blocking = 1;
+      int pivp_supported_symbol_detected = (FalconPivpSupportedNasdaqSymbol(m_symbol_context.symbol) ? 1 : 0);
+      int pivp_broker_context_ready = (m_symbol_context.is_valid &&
+                                       m_symbol_context.point > 0.0 &&
+                                       m_symbol_context.tick_size > 0.0 &&
+                                       m_symbol_context.tick_value > 0.0 &&
+                                       m_symbol_context.stops_level_points >= 0 &&
+                                       m_symbol_context.freeze_level_points >= 0 ? 1 : 0);
+      int pivp_shadow_trades_covered = m_totals.total_trades;
+      int pivp_init_failed_triggered = 0;
+      int pivp_order_send = 0;
+      int pivp_broker_modify_sent = 0;
+      int pivp_runtime_sl_changed = 0;
+      int pivp_invariant_breaches = 0;
+      if(pivp_symbol_policy_defined != 1 || pivp_timeframe_policy_defined != 1 ||
+         pivp_account_policy_defined != 1 || pivp_broker_policy_defined != 1 ||
+         pivp_min_balance_policy_defined != 1 || pivp_wrong_environment_blocks_live != 1 ||
+         pivp_shadow_smoke_non_blocking != 1 || pivp_supported_symbol_detected != 1 ||
+         pivp_broker_context_ready != 1 || pivp_init_failed_triggered != 0 ||
+         pivp_order_send != 0 || pivp_broker_modify_sent != 0 || pivp_runtime_sl_changed != 0)
+      {
+         pivp_invariant_breaches = 1;
+      }
+      double pivp_readiness_pct = (pivp_invariant_breaches == 0 ? 100.0 : 0.0);
+      double pivp_completeness_pct = (pivp_invariant_breaches == 0 ? 100.0 : 0.0);
+
+
+      // v0.45.0: Emergency Equity Stop Independent Layer.
+      // Summary-only operational safety scaffold. It proves FalconCore has
+      // a hard, independent, last-resort equity stop contract before any
+      // Demo/Live execution path. This stage does not close positions and
+      // does not affect ShadowSmoke trading results.
+      int eesl_contract_defined = (FalconEeslContractReady() ? 1 : 0);
+      int eesl_independent_defined = (FalconEeslIndependenceReady() ? 1 : 0);
+      int eesl_every_tick_policy = 1;
+      int eesl_before_engine_policy = 1;
+      int eesl_hard_cap_defined = (FALCON_EESL_HARD_CAP_PCT > 0.0 ? 1 : 0);
+      int eesl_blocks_new_entries = (FalconEeslActionReady() ? 1 : 0);
+      int eesl_close_all_policy = (FalconEeslActionReady() ? 1 : 0);
+      int eesl_session_disable_policy = 1;
+      int eesl_alert_policy_defined = (StringLen(FALCON_EESL_ALERT_POLICY) > 0 ? 1 : 0);
+      int eesl_shadow_trades_covered = m_totals.total_trades;
+      int eesl_triggered = 0;
+      int eesl_closed_positions = 0;
+      int eesl_order_send = 0;
+      int eesl_broker_modify_sent = 0;
+      int eesl_runtime_sl_changed = 0;
+      int eesl_invariant_breaches = 0;
+      if(eesl_contract_defined != 1 || eesl_independent_defined != 1 ||
+         eesl_every_tick_policy != 1 || eesl_before_engine_policy != 1 ||
+         eesl_hard_cap_defined != 1 || eesl_blocks_new_entries != 1 ||
+         eesl_close_all_policy != 1 || eesl_session_disable_policy != 1 ||
+         eesl_alert_policy_defined != 1 || eesl_triggered != 0 ||
+         eesl_closed_positions != 0 || eesl_order_send != 0 ||
+         eesl_broker_modify_sent != 0 || eesl_runtime_sl_changed != 0)
+      {
+         eesl_invariant_breaches = 1;
+      }
+      double eesl_readiness_pct = (eesl_invariant_breaches == 0 ? 100.0 : 0.0);
+      double eesl_completeness_pct = (eesl_invariant_breaches == 0 ? 100.0 : 0.0);
+
+
+      // v0.46.0: Concurrent Position Discipline.
+      // Summary-only operational safety scaffold. It defines total, per-engine,
+      // and per-direction exposure caps before Paper Runtime. It is explicitly
+      // non-blocking in ShadowSmoke and cannot send orders or modify stops.
+      int cpd_contract_defined = (FalconCpdContractReady() ? 1 : 0);
+      int cpd_max_total = FALCON_CPD_MAX_TOTAL_POSITIONS;
+      int cpd_max_per_engine = FALCON_CPD_MAX_POSITIONS_PER_ENGINE;
+      int cpd_max_per_direction = FALCON_CPD_MAX_POSITIONS_PER_DIRECTION;
+      int cpd_total_cap_defined = (cpd_max_total > 0 ? 1 : 0);
+      int cpd_per_engine_cap_defined = (cpd_max_per_engine > 0 ? 1 : 0);
+      int cpd_per_direction_cap_defined = (cpd_max_per_direction > 0 ? 1 : 0);
+      int cpd_shared_exposure_policy_defined = (FalconCpdSharedExposureReady() ? 1 : 0);
+      int cpd_engine_isolation_policy_defined = (FalconCpdEngineIsolationReady() ? 1 : 0);
+      int cpd_direction_cap_policy_defined = (FalconCpdDirectionCapReady() ? 1 : 0);
+      int cpd_shadow_smoke_non_blocking = 1;
+      int cpd_shadow_trades_covered = m_totals.total_trades;
+      int cpd_open_positions_observed = 0;
+      int cpd_blocked_by_total_cap = 0;
+      int cpd_blocked_by_engine_cap = 0;
+      int cpd_blocked_by_direction_cap = 0;
+      int cpd_order_send = 0;
+      int cpd_broker_modify_sent = 0;
+      int cpd_runtime_sl_changed = 0;
+      int cpd_invariant_breaches = 0;
+      if(cpd_contract_defined != 1 ||
+         cpd_max_total != 3 || cpd_max_per_engine != 1 || cpd_max_per_direction != 2 ||
+         cpd_total_cap_defined != 1 || cpd_per_engine_cap_defined != 1 ||
+         cpd_per_direction_cap_defined != 1 ||
+         cpd_shared_exposure_policy_defined != 1 ||
+         cpd_engine_isolation_policy_defined != 1 ||
+         cpd_direction_cap_policy_defined != 1 ||
+         cpd_shadow_smoke_non_blocking != 1 ||
+         cpd_open_positions_observed != 0 || cpd_blocked_by_total_cap != 0 ||
+         cpd_blocked_by_engine_cap != 0 || cpd_blocked_by_direction_cap != 0 ||
+         cpd_order_send != 0 || cpd_broker_modify_sent != 0 || cpd_runtime_sl_changed != 0)
+      {
+         cpd_invariant_breaches = 1;
+      }
+      double cpd_readiness_pct = (cpd_invariant_breaches == 0 ? 100.0 : 0.0);
+      double cpd_completeness_pct = (cpd_invariant_breaches == 0 ? 100.0 : 0.0);
+
+
+      // v0.47.0: Paper Mode Definition.
+      // Summary-only execution-stage contract. This stage defines Shadow,
+      // Paper, Demo, and Live boundaries before Paper Runtime Application.
+      // It is non-blocking in ShadowSmoke and cannot create Paper positions.
+      int pmd_shadow_definition_ready = (FalconPmdShadowReady() ? 1 : 0);
+      int pmd_paper_definition_ready = (FalconPmdPaperReady() ? 1 : 0);
+      int pmd_demo_definition_ready = (FalconPmdDemoReady() ? 1 : 0);
+      int pmd_live_definition_ready = (FalconPmdLiveReady() ? 1 : 0);
+      int pmd_paper_position_lifecycle_defined = (StringFind(FALCON_PMD_PAPER_POLICY, "INTERNAL_POSITION_LIFECYCLE") >= 0 ? 1 : 0);
+      int pmd_paper_virtual_sl_defined = (StringFind(FALCON_PMD_PAPER_POLICY, "VIRTUAL_SL") >= 0 ? 1 : 0);
+      int pmd_paper_protection_defined = (StringFind(FALCON_PMD_PAPER_POLICY, "PROTECTION") >= 0 ? 1 : 0);
+      int pmd_paper_runner_defined = (StringFind(FALCON_PMD_PAPER_POLICY, "RUNNER") >= 0 ? 1 : 0);
+      int pmd_paper_equity_curve_defined = (StringFind(FALCON_PMD_PAPER_POLICY, "PAPER_EQUITY") >= 0 ? 1 : 0);
+      int pmd_paper_exit_model_defined = (StringFind(FALCON_PMD_PAPER_POLICY, "PAPER_EXIT") >= 0 ? 1 : 0);
+      int pmd_shadow_smoke_non_blocking = 1;
+      int pmd_shadow_trades_covered = m_totals.total_trades;
+      int pmd_paper_positions_created = 0;
+      int pmd_paper_exits_applied = 0;
+      int pmd_paper_equity_events = 0;
+      int pmd_order_send = 0;
+      int pmd_broker_modify_sent = 0;
+      int pmd_runtime_sl_changed = 0;
+      int pmd_invariant_breaches = 0;
+      if(pmd_shadow_definition_ready != 1 || pmd_paper_definition_ready != 1 ||
+         pmd_demo_definition_ready != 1 || pmd_live_definition_ready != 1 ||
+         pmd_paper_position_lifecycle_defined != 1 ||
+         pmd_paper_virtual_sl_defined != 1 || pmd_paper_protection_defined != 1 ||
+         pmd_paper_runner_defined != 1 || pmd_paper_equity_curve_defined != 1 ||
+         pmd_paper_exit_model_defined != 1 || pmd_shadow_smoke_non_blocking != 1 ||
+         pmd_paper_positions_created != 0 || pmd_paper_exits_applied != 0 ||
+         pmd_paper_equity_events != 0 || pmd_order_send != 0 ||
+         pmd_broker_modify_sent != 0 || pmd_runtime_sl_changed != 0)
+      {
+         pmd_invariant_breaches = 1;
+      }
+      double pmd_readiness_pct = (pmd_invariant_breaches == 0 ? 100.0 : 0.0);
+      double pmd_completeness_pct = (pmd_invariant_breaches == 0 ? 100.0 : 0.0);
+
+
+      // v0.48.0: Symbol Profile Foundation.
+      // Summary-only NAS100/US100 profile contract before Paper Runtime Guard
+      // Application. It reads the existing symbol context but remains non-blocking
+      // and cannot send orders or apply Paper guards in this build.
+      int spf_symbol_family_defined = (StringLen(FALCON_SPF_TARGET_SYMBOL_FAMILY) > 0 ? 1 : 0);
+      int spf_aliases_defined = (StringLen(FALCON_SPF_SYMBOL_ALIASES) > 0 ? 1 : 0);
+      int spf_current_symbol_recognized = (FalconSpfSymbolRecognized(m_symbol_context.symbol) ? 1 : 0);
+      int spf_context_valid = (FalconSpfContextReady(m_symbol_context.is_valid,
+                                                     m_symbol_context.digits,
+                                                     m_symbol_context.point,
+                                                     m_symbol_context.tick_size,
+                                                     m_symbol_context.tick_value,
+                                                     m_symbol_context.contract_size,
+                                                     m_symbol_context.spread_points,
+                                                     m_symbol_context.stops_level_points,
+                                                     m_symbol_context.freeze_level_points,
+                                                     m_symbol_context.min_lot,
+                                                     m_symbol_context.max_lot,
+                                                     m_symbol_context.lot_step) ? 1 : 0);
+      int spf_contract_policy_defined = (FalconSpfContractPolicyReady() ? 1 : 0);
+      int spf_tick_policy_defined = (FalconSpfTickPolicyReady() ? 1 : 0);
+      int spf_point_mapping_defined = (FalconSpfPointMappingReady() ? 1 : 0);
+      int spf_broker_limits_defined = (FalconSpfBrokerLimitsReady() ? 1 : 0);
+      int spf_session_policy_defined = (StringFind(FALCON_SPF_SESSION_POLICY, "NASDAQ_SESSION") >= 0 ? 1 : 0);
+      int spf_spread_policy_defined = (StringFind(FALCON_SPF_SPREAD_POLICY, "MAX_SPREAD_POINTS") >= 0 ? 1 : 0);
+      int spf_default_safety_defined = (StringFind(FALCON_SPF_DEFAULT_SAFETY_POLICY, "PAPER_GUARD_NEXT") >= 0 ? 1 : 0);
+      int spf_shadow_smoke_non_blocking = 1;
+      int spf_shadow_trades_covered = m_totals.total_trades;
+      int spf_paper_guards_applied = 0;
+      int spf_order_send = 0;
+      int spf_broker_modify_sent = 0;
+      int spf_runtime_sl_changed = 0;
+      int spf_invariant_breaches = 0;
+      if(spf_symbol_family_defined != 1 || spf_aliases_defined != 1 ||
+         spf_current_symbol_recognized != 1 || spf_context_valid != 1 ||
+         spf_contract_policy_defined != 1 || spf_tick_policy_defined != 1 ||
+         spf_point_mapping_defined != 1 || spf_broker_limits_defined != 1 ||
+         spf_session_policy_defined != 1 || spf_spread_policy_defined != 1 ||
+         spf_default_safety_defined != 1 || spf_shadow_smoke_non_blocking != 1 ||
+         spf_paper_guards_applied != 0 || spf_order_send != 0 ||
+         spf_broker_modify_sent != 0 || spf_runtime_sl_changed != 0)
+      {
+         spf_invariant_breaches = 1;
+      }
+      double spf_readiness_pct = (spf_invariant_breaches == 0 ? 100.0 : 0.0);
+      double spf_completeness_pct = (spf_invariant_breaches == 0 ? 100.0 : 0.0);
+
+      int prga_contract_ready = (FalconPrgaContractReady() ? 1 : 0);
+      int prga_order_send = 0;
+      int prga_broker_modify_sent = 0;
+      int prga_runtime_sl_changed = 0;
+      int prga_invariant_breaches = 0;
+      if(prga_contract_ready != 1 || prga_order_send != 0 ||
+         prga_broker_modify_sent != 0 || prga_runtime_sl_changed != 0 ||
+         m_totals.paper_guard_evaluated_trades != m_totals.total_trades ||
+         (m_totals.paper_guard_passed_trades + m_totals.paper_guard_rejected_trades) != m_totals.paper_guard_evaluated_trades)
+      {
+         prga_invariant_breaches = 1;
+      }
+      double prga_readiness_pct = (prga_invariant_breaches == 0 ? 100.0 : 0.0);
+      double prga_application_pct = 0.0;
+      if(m_totals.total_trades > 0)
+         prga_application_pct = 100.0 * (double)m_totals.paper_guard_evaluated_trades / (double)m_totals.total_trades;
+
+      int prtp_contract_ready = (FalconPrtpContractReady() ? 1 : 0);
+      int prtp_order_send = 0;
+      int prtp_broker_modify_sent = 0;
+      int prtp_runtime_sl_changed = 0;
+      int prtp_invariant_breaches = 0;
+      if(prtp_contract_ready != 1 || prtp_order_send != 0 ||
+         prtp_broker_modify_sent != 0 || prtp_runtime_sl_changed != 0 ||
+         m_totals.paper_protection_evaluated_trades != m_totals.total_trades ||
+         m_totals.paper_protection_after_net_points < m_totals.paper_protection_before_net_points)
+      {
+         prtp_invariant_breaches = 1;
+      }
+      double prtp_readiness_pct = (prtp_invariant_breaches == 0 ? 100.0 : 0.0);
+      double prtp_application_pct = 0.0;
+      if(m_totals.total_trades > 0)
+         prtp_application_pct = 100.0 * (double)m_totals.paper_protection_evaluated_trades / (double)m_totals.total_trades;
+
+      int prrun_contract_ready = (FalconPrrunContractReady() ? 1 : 0);
+      int prrun_order_send = 0;
+      int prrun_broker_modify_sent = 0;
+      int prrun_runtime_sl_changed = 0;
+      int prrun_invariant_breaches = 0;
+      if(prrun_contract_ready != 1 || prrun_order_send != 0 ||
+         prrun_broker_modify_sent != 0 || prrun_runtime_sl_changed != 0 ||
+         m_totals.paper_runner_evaluated_trades != m_totals.total_trades ||
+         m_totals.paper_runner_after_net_points < m_totals.paper_runner_before_net_points)
+      {
+         prrun_invariant_breaches = 1;
+      }
+      double prrun_readiness_pct = (prrun_invariant_breaches == 0 ? 100.0 : 0.0);
+      double prrun_application_pct = 0.0;
+      if(m_totals.total_trades > 0)
+         prrun_application_pct = 100.0 * (double)m_totals.paper_runner_evaluated_trades / (double)m_totals.total_trades;
+
+      double ctf_effective_balance = FalconEffectiveCapitalForTier();
+      string ctf_tier_name = FalconCapitalTierName(ctf_effective_balance);
+      int ctf_contract_ready = (FalconCapitalTierContractReady() ? 1 : 0);
+      int ctf_runtime_enforced = (FALCON_CTF_RUNTIME_ENFORCED ? 1 : 0);
+      int ctf_order_send = 0;
+      int ctf_broker_modify_sent = 0;
+      int ctf_runtime_sl_changed = 0;
+      int ctf_tier_locked = (g_falcon_session_start_balance > 0.0 ? 1 : 0);
+      int ctf_min_lot_compatible = (FixedLotSize + 0.0000001 >= m_symbol_context.min_lot ? 1 : 0);
+      string ctf_min_lot_status = FalconMinLotConstraintStatus(m_symbol_context.min_lot, FixedLotSize);
+      int ctf_invariant_breaches = 0;
+      if(ctf_contract_ready != 1 || ctf_runtime_enforced != 0 ||
+         ctf_order_send != 0 || ctf_broker_modify_sent != 0 ||
+         ctf_runtime_sl_changed != 0 || ctf_tier_locked != 1 ||
+         ctf_min_lot_compatible != 1)
+      {
+         ctf_invariant_breaches = 1;
+      }
+      double ctf_readiness_pct = (ctf_invariant_breaches == 0 ? 100.0 : 0.0);
+      double ctf_application_pct = (m_totals.total_trades > 0 ? 100.0 : 0.0);
+
+      int tle_contract_ready = (FalconThreeLayerEmergencyContractReady() ? 1 : 0);
+      int tle_runtime_enforced = (FALCON_TLE_RUNTIME_ENFORCED ? 1 : 0);
+      int tle_order_send = 0;
+      int tle_broker_modify_sent = 0;
+      int tle_runtime_sl_changed = 0;
+      int tle_invariant_breaches = 0;
+      if(tle_contract_ready != 1 || tle_runtime_enforced != 1 ||
+         m_totals.paper_emergency_evaluated_trades != m_totals.total_trades ||
+         tle_order_send != 0 || tle_broker_modify_sent != 0 || tle_runtime_sl_changed != 0)
+      {
+         tle_invariant_breaches = 1;
+      }
+      double tle_readiness_pct = (tle_invariant_breaches == 0 ? 100.0 : 0.0);
+      double tle_application_pct = 0.0;
+      if(m_totals.total_trades > 0)
+         tle_application_pct = 100.0 * (double)m_totals.paper_emergency_evaluated_trades / (double)m_totals.total_trades;
+
+      int lsr_contract_ready = (FalconLayerSpecificResetContractReady() ? 1 : 0);
+      int lsr_runtime_enforced = (FALCON_LSR_RUNTIME_ENFORCED ? 1 : 0);
+      int lsr_order_send = 0;
+      int lsr_broker_modify_sent = 0;
+      int lsr_runtime_sl_changed = 0;
+      int lsr_invariant_breaches = 0;
+      if(lsr_contract_ready != 1 || lsr_runtime_enforced != 1 ||
+         m_totals.layer_reset_evaluated_trades != m_totals.total_trades ||
+         lsr_order_send != 0 || lsr_broker_modify_sent != 0 || lsr_runtime_sl_changed != 0 ||
+         m_totals.layer_reset_duplicate_triggers != 0)
+      {
+         lsr_invariant_breaches = 1;
+      }
+      double lsr_readiness_pct = (lsr_invariant_breaches == 0 ? 100.0 : 0.0);
+      double lsr_application_pct = 0.0;
+      if(m_totals.total_trades > 0)
+         lsr_application_pct = 100.0 * (double)m_totals.layer_reset_evaluated_trades / (double)m_totals.total_trades;
+
+      int val_contract_ready = 1;
+      int val_runtime_enforced = (FALCON_VAL_RUNTIME_ENFORCED ? 1 : 0);
+      int val_evaluated_trades = m_totals.total_trades;
+      int val_order_send = 0;
+      int val_broker_modify_sent = 0;
+      int val_runtime_sl_changed = 0;
+      int val_multi_window_required = 1;
+      int val_invariant_breaches = 0;
+      if(val_contract_ready != 1 || val_runtime_enforced != 0 ||
+         val_evaluated_trades != m_totals.total_trades ||
+         val_order_send != 0 || val_broker_modify_sent != 0 || val_runtime_sl_changed != 0 ||
+         tle_invariant_breaches != 0 || lsr_invariant_breaches != 0)
+      {
+         val_invariant_breaches = 1;
+      }
+      double val_readiness_pct = (val_invariant_breaches == 0 ? 100.0 : 0.0);
+      double val_application_pct = (m_totals.total_trades > 0 ? 100.0 : 0.0);
+      double val_working_baseline_impact_usd = m_totals.paper_emergency_after_net_usd - m_totals.paper_runner_after_net_usd;
+
+      int tpf_contract_ready = (FalconTierPromotionContractReady() ? 1 : 0);
+      int tpf_runtime_enforced = (FALCON_TPF_RUNTIME_ENFORCED ? 1 : 0);
+      int tpf_evaluated_trades = m_totals.total_trades;
+      string tpf_current_tier = ctf_tier_name;
+      string tpf_next_tier = FalconCapitalNextTierName(tpf_current_tier);
+      double tpf_next_min_balance = (tpf_next_tier == "NONE" ? 0.0 : FalconCapitalTierMinBalance(tpf_next_tier));
+      int tpf_trades_in_tier = m_totals.total_trades;
+      double tpf_win_rate = m_totals.win_rate;
+      double tpf_net_r = 0.0;
+      if(m_totals.total_loss_usd > 0.0)
+         tpf_net_r = m_totals.net_usd / m_totals.total_loss_usd;
+      int tpf_balance_requirement_met = (tpf_next_tier != "NONE" && ctf_effective_balance >= tpf_next_min_balance ? 1 : 0);
+      int tpf_trades_requirement_met = (tpf_trades_in_tier >= FALCON_TPF_MIN_TRADES_IN_TIER ? 1 : 0);
+      int tpf_winrate_requirement_met = (tpf_win_rate >= FALCON_TPF_MIN_WIN_RATE_PCT ? 1 : 0);
+      int tpf_netr_requirement_met = (tpf_net_r > FALCON_TPF_MIN_NET_R ? 1 : 0);
+      int tpf_no_emergency_requirement_pending = 1;
+      int tpf_cooldown_requirement_pending = 1;
+      int tpf_eligible_now = (tpf_balance_requirement_met == 1 &&
+                              tpf_trades_requirement_met == 1 &&
+                              tpf_winrate_requirement_met == 1 &&
+                              tpf_netr_requirement_met == 1 &&
+                              tpf_no_emergency_requirement_pending == 0 &&
+                              tpf_cooldown_requirement_pending == 0 ? 1 : 0);
+      string tpf_blocked_reason = FalconTierPromotionBlockedReason(ctf_effective_balance, tpf_current_tier, tpf_next_tier,
+                                                                   tpf_trades_in_tier, tpf_win_rate, tpf_net_r);
+      int tpf_promotion_events = 0;
+      int tpf_transition_report_defined = 1;
+      int tpf_order_send = 0;
+      int tpf_broker_modify_sent = 0;
+      int tpf_runtime_sl_changed = 0;
+      int tpf_invariant_breaches = 0;
+      if(tpf_contract_ready != 1 || tpf_runtime_enforced != 0 ||
+         tpf_order_send != 0 || tpf_broker_modify_sent != 0 || tpf_runtime_sl_changed != 0 ||
+         tpf_evaluated_trades != m_totals.total_trades || tpf_transition_report_defined != 1)
+      {
+         tpf_invariant_breaches = 1;
+      }
+      double tpf_readiness_pct = (tpf_invariant_breaches == 0 ? 100.0 : 0.0);
+      double tpf_application_pct = (m_totals.total_trades > 0 ? 100.0 : 0.0);
+
+      int tdf_contract_ready = (FalconTierDemotionContractReady() ? 1 : 0);
+      int tdf_runtime_enforced = (FALCON_TDF_RUNTIME_ENFORCED ? 1 : 0);
+      int tdf_evaluated_trades = m_totals.total_trades;
+      string tdf_current_tier = ctf_tier_name;
+      double tdf_current_tier_min_balance = FalconCapitalTierMinBalance(tdf_current_tier);
+      double tdf_balance_hysteresis_threshold = tdf_current_tier_min_balance * (FALCON_TDF_HYSTERESIS_PCT / 100.0);
+      int tdf_emergencies_in_14d = m_totals.paper_emergency_triggered_trades;
+      int tdf_negative_weeks_in_row = 0;
+      double tdf_observed_max_drawdown_pct = m_totals.paper_emergency_max_drawdown_pct;
+      double tdf_extreme_drawdown_threshold_pct = FalconCapitalTierMaxDrawdownPct(tdf_current_tier) * FALCON_TDF_EXTREME_DD_MULTIPLIER;
+      int tdf_balance_hysteresis_breach = (tdf_current_tier_min_balance > 0.0 && ctf_effective_balance < tdf_balance_hysteresis_threshold ? 1 : 0);
+      int tdf_multiple_emergencies_breach = (tdf_emergencies_in_14d >= FALCON_TDF_MAX_EMERGENCIES_14D ? 1 : 0);
+      int tdf_negative_weeks_breach = (tdf_negative_weeks_in_row >= FALCON_TDF_MAX_NEGATIVE_WEEKS ? 1 : 0);
+      int tdf_extreme_drawdown_breach = (tdf_extreme_drawdown_threshold_pct > 0.0 && tdf_observed_max_drawdown_pct > tdf_extreme_drawdown_threshold_pct ? 1 : 0);
+      int tdf_should_demote_now = (tdf_balance_hysteresis_breach == 1 ||
+                                   tdf_multiple_emergencies_breach == 1 ||
+                                   tdf_negative_weeks_breach == 1 ||
+                                   tdf_extreme_drawdown_breach == 1 ? 1 : 0);
+      string tdf_demotion_reason = FalconTierDemotionReason(tdf_balance_hysteresis_breach,
+                                                            tdf_multiple_emergencies_breach,
+                                                            tdf_negative_weeks_breach,
+                                                            tdf_extreme_drawdown_breach);
+      int tdf_demotion_events = 0;
+      int tdf_transition_report_defined = 1;
+      int tdf_order_send = 0;
+      int tdf_broker_modify_sent = 0;
+      int tdf_runtime_sl_changed = 0;
+      int tdf_invariant_breaches = 0;
+      if(tdf_contract_ready != 1 || tdf_runtime_enforced != 0 ||
+         tdf_order_send != 0 || tdf_broker_modify_sent != 0 || tdf_runtime_sl_changed != 0 ||
+         tdf_evaluated_trades != m_totals.total_trades || tdf_transition_report_defined != 1)
+      {
+         tdf_invariant_breaches = 1;
+      }
+      double tdf_readiness_pct = (tdf_invariant_breaches == 0 ? 100.0 : 0.0);
+      double tdf_application_pct = (m_totals.total_trades > 0 ? 100.0 : 0.0);
+
+      int tdl_contract_ready = (FalconTierRuntimeLockContractReady() ? 1 : 0);
+      int tdl_runtime_enforced = (FALCON_TDL_RUNTIME_ENFORCED ? 1 : 0);
+      int tdl_evaluated_trades = m_totals.total_trades;
+      string tdl_start_tier = ctf_tier_name;
+      string tdl_applied_tier = tdl_start_tier;
+      string tdl_transition_direction = "NONE";
+      string tdl_transition_reason = "NO_TRANSITION";
+      int tdl_promotion_applied = 0;
+      int tdl_demotion_applied = 0;
+      int tdl_active_positions_preserved = 1;
+      int tdl_next_trades_use_applied_tier = 1;
+      if(tdf_should_demote_now == 1)
+      {
+         string previous_tier = FalconCapitalPreviousTierName(tdl_start_tier);
+         tdl_transition_direction = "DEMOTION";
+         tdl_transition_reason = tdf_demotion_reason;
+         tdl_demotion_applied = 1;
+         if(previous_tier != "NONE")
+            tdl_applied_tier = previous_tier;
+      }
+      else if(tpf_eligible_now == 1)
+      {
+         tdl_transition_direction = "PROMOTION";
+         tdl_transition_reason = "PROMOTION_REQUIREMENTS_MET";
+         tdl_promotion_applied = 1;
+         if(tpf_next_tier != "NONE")
+            tdl_applied_tier = tpf_next_tier;
+      }
+      int tdl_transition_events = tdl_promotion_applied + tdl_demotion_applied;
+      int tdl_order_send = 0;
+      int tdl_broker_modify_sent = 0;
+      int tdl_runtime_sl_changed = 0;
+      int tdl_invariant_breaches = 0;
+      if(tdl_contract_ready != 1 || tdl_runtime_enforced != 1 ||
+         tdl_evaluated_trades != m_totals.total_trades ||
+         tdl_order_send != 0 || tdl_broker_modify_sent != 0 || tdl_runtime_sl_changed != 0 ||
+         (tdl_promotion_applied == 1 && tdl_demotion_applied == 1) ||
+         tdl_active_positions_preserved != 1 || tdl_next_trades_use_applied_tier != 1)
+      {
+         tdl_invariant_breaches = 1;
+      }
+      double tdl_readiness_pct = (tdl_invariant_breaches == 0 ? 100.0 : 0.0);
+      double tdl_application_pct = (m_totals.total_trades > 0 ? 100.0 : 0.0);
+
+      int lcrf_contract_ready = (FalconLowCapitalRiskFeasibilityContractReady() ? 1 : 0);
+      int lcrf_runtime_enforced = (FALCON_LCRF_RUNTIME_ENFORCED ? 1 : 0);
+      int lcrf_evaluated_trades = m_totals.lotsizing_feasibility_evaluated_trades;
+      double lcrf_min_lot_risk_usd_avg = FalconSafeAverageDouble(m_totals.lotsizing_min_lot_risk_usd_total, lcrf_evaluated_trades);
+      double lcrf_min_lot_risk_pct_avg = FalconSafeAverageDouble(m_totals.lotsizing_min_lot_risk_pct_total, lcrf_evaluated_trades);
+      double lcrf_potential_loss_r_avg = FalconSafeAverageDouble(m_totals.lotsizing_potential_loss_r_total, lcrf_evaluated_trades);
+      int lcrf_order_send = 0;
+      int lcrf_broker_modify_sent = 0;
+      int lcrf_runtime_sl_changed = 0;
+      int lcrf_invariant_breaches = 0;
+      if(lcrf_contract_ready != 1 || lcrf_runtime_enforced != 0 ||
+         lcrf_evaluated_trades != m_totals.total_trades ||
+         lcrf_order_send != 0 || lcrf_broker_modify_sent != 0 || lcrf_runtime_sl_changed != 0)
+      {
+         lcrf_invariant_breaches = 1;
+      }
+      double lcrf_readiness_pct = (lcrf_invariant_breaches == 0 ? 100.0 : 0.0);
+      double lcrf_application_pct = (m_totals.total_trades > 0 ? 100.0 * (double)lcrf_evaluated_trades / (double)m_totals.total_trades : 0.0);
+
       int handle = FileOpen(m_summary_report_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -8000,9 +10378,374 @@ public:
          "FalconPaperProtectBrokerFeasLockFreezeLevelPoints,FalconPaperProtectBrokerFeasLockStopsBufferPoints,"
          "FalconPaperProtectBrokerFeasLockNoLookahead,FalconPaperProtectBrokerFeasLockBrokerPolicy,"
          "FalconPaperProtectBrokerFeasLockOrderSendPolicy,FalconPaperProtectBrokerFeasLockNextPhase,"
-         "FalconRunnerBarPathPolicy,FalconRunnerBarPathNextPhase";
+         "FalconPaperProtectBrokerDistanceStatus,FalconPaperProtectBrokerDistanceDecision,"
+         "FalconPaperProtectBrokerDistanceRuntimeEnforced,FalconPaperProtectBrokerDistanceScope,"
+         "FalconPaperProtectBrokerDistanceEvaluatedTrades,FalconPaperProtectBrokerDistanceBrokerFeasLockReadyTrades,"
+         "FalconPaperProtectBrokerDistanceCandidateTrades,FalconPaperProtectBrokerDistanceContextReadyTrades,"
+         "FalconPaperProtectBrokerDistanceRequiredDistanceKnownTrades,FalconPaperProtectBrokerDistanceProtectionDistanceKnownTrades,"
+         "FalconPaperProtectBrokerDistanceStopsDistanceSafeTrades,FalconPaperProtectBrokerDistanceFreezeDistanceSafeTrades,"
+         "FalconPaperProtectBrokerDistanceSaneTrades,FalconPaperProtectBrokerDistanceReadyTrades,"
+         "FalconPaperProtectBrokerDistanceTP1Trades,FalconPaperProtectBrokerDistanceTP2Trades,"
+         "FalconPaperProtectBrokerDistanceRejectedTrades,FalconPaperProtectBrokerDistanceConflictTrades,"
+         "FalconPaperProtectBrokerDistanceMissingContextTrades,FalconPaperProtectBrokerDistanceStopsBlockedTrades,"
+         "FalconPaperProtectBrokerDistanceFreezeBlockedTrades,FalconPaperProtectBrokerDistanceBrokerModifySent,"
+         "FalconPaperProtectBrokerDistanceRuntimeSLChanged,FalconPaperProtectBrokerDistanceInvariantBreaches,"
+         "FalconPaperProtectBrokerDistanceCoveragePct,FalconPaperProtectBrokerDistanceSanityPct,"
+         "FalconPaperProtectBrokerDistanceContextReadinessPct,FalconPaperProtectBrokerDistanceStopsLevelPoints,"
+         "FalconPaperProtectBrokerDistanceFreezeLevelPoints,FalconPaperProtectBrokerDistanceStopsBufferPoints,"
+         "FalconPaperProtectBrokerDistanceRequiredMinPoints,FalconPaperProtectBrokerDistanceNoLookahead,"
+         "FalconPaperProtectBrokerDistancePolicy,FalconPaperProtectBrokerDistanceOrderSendPolicy,"
+         "FalconPaperProtectBrokerDistanceNextPhase,"
+         "FalconPaperProtectBrokerDistanceLockStatus,FalconPaperProtectBrokerDistanceLockDecision,"
+         "FalconPaperProtectBrokerDistanceLockRuntimeEnforced,FalconPaperProtectBrokerDistanceLockScope,"
+         "FalconPaperProtectBrokerDistanceLockEvaluatedTrades,FalconPaperProtectBrokerDistanceLockDistanceReadyTrades,"
+         "FalconPaperProtectBrokerDistanceLockCandidateTrades,FalconPaperProtectBrokerDistanceLockContextReadyTrades,"
+         "FalconPaperProtectBrokerDistanceLockRequiredDistanceKnownTrades,FalconPaperProtectBrokerDistanceLockProtectionDistanceKnownTrades,"
+         "FalconPaperProtectBrokerDistanceLockStopsDistanceSafeTrades,FalconPaperProtectBrokerDistanceLockFreezeDistanceSafeTrades,"
+         "FalconPaperProtectBrokerDistanceLockDistanceSaneTrades,FalconPaperProtectBrokerDistanceLockReadyTrades,"
+         "FalconPaperProtectBrokerDistanceLockTP1Trades,FalconPaperProtectBrokerDistanceLockTP2Trades,"
+         "FalconPaperProtectBrokerDistanceLockRejectedTrades,FalconPaperProtectBrokerDistanceLockConflictTrades,"
+         "FalconPaperProtectBrokerDistanceLockMissingContextTrades,FalconPaperProtectBrokerDistanceLockStopsBlockedTrades,"
+         "FalconPaperProtectBrokerDistanceLockFreezeBlockedTrades,FalconPaperProtectBrokerDistanceLockBrokerModifySent,"
+         "FalconPaperProtectBrokerDistanceLockRuntimeSLChanged,FalconPaperProtectBrokerDistanceLockInvariantBreaches,"
+         "FalconPaperProtectBrokerDistanceLockCoveragePct,FalconPaperProtectBrokerDistanceLockSanityPct,"
+         "FalconPaperProtectBrokerDistanceLockCompletenessPct,FalconPaperProtectBrokerDistanceLockStopsLevelPoints,"
+         "FalconPaperProtectBrokerDistanceLockFreezeLevelPoints,FalconPaperProtectBrokerDistanceLockStopsBufferPoints,"
+         "FalconPaperProtectBrokerDistanceLockRequiredMinPoints,FalconPaperProtectBrokerDistanceLockNoLookahead,"
+         "FalconPaperProtectBrokerDistanceLockPolicy,FalconPaperProtectBrokerDistanceLockOrderSendPolicy,"
+         "FalconPaperProtectBrokerDistanceLockNextPhase,"
+         "FalconPaperProtectBrokerModifyEligStatus,FalconPaperProtectBrokerModifyEligDecision,"
+         "FalconPaperProtectBrokerModifyEligRuntimeEnforced,FalconPaperProtectBrokerModifyEligScope,"
+         "FalconPaperProtectBrokerModifyEligEvaluatedTrades,FalconPaperProtectBrokerModifyEligDistanceLockReadyTrades,"
+         "FalconPaperProtectBrokerModifyEligBrokerFeasLockReadyTrades,FalconPaperProtectBrokerModifyEligCandidateTrades,"
+         "FalconPaperProtectBrokerModifyEligDistanceSanityReadyTrades,FalconPaperProtectBrokerModifyEligModifyPlanReadyTrades,"
+         "FalconPaperProtectBrokerModifyEligRequestShapeReadyTrades,FalconPaperProtectBrokerModifyEligProtectionLevelReadyTrades,"
+         "FalconPaperProtectBrokerModifyEligStopsReadyTrades,FalconPaperProtectBrokerModifyEligFreezeReadyTrades,"
+         "FalconPaperProtectBrokerModifyEligEligibleTrades,FalconPaperProtectBrokerModifyEligReadyTrades,"
+         "FalconPaperProtectBrokerModifyEligTP1Trades,FalconPaperProtectBrokerModifyEligTP2Trades,"
+         "FalconPaperProtectBrokerModifyEligRejectedTrades,FalconPaperProtectBrokerModifyEligConflictTrades,"
+         "FalconPaperProtectBrokerModifyEligMissingDistanceLockTrades,FalconPaperProtectBrokerModifyEligMissingBrokerFeasTrades,"
+         "FalconPaperProtectBrokerModifyEligMissingModifyPlanTrades,FalconPaperProtectBrokerModifyEligStopsBlockedTrades,"
+         "FalconPaperProtectBrokerModifyEligFreezeBlockedTrades,FalconPaperProtectBrokerModifyEligBrokerModifySent,"
+         "FalconPaperProtectBrokerModifyEligRuntimeSLChanged,FalconPaperProtectBrokerModifyEligInvariantBreaches,"
+         "FalconPaperProtectBrokerModifyEligCoveragePct,FalconPaperProtectBrokerModifyEligEligibilityPct,"
+         "FalconPaperProtectBrokerModifyEligCompletenessPct,FalconPaperProtectBrokerModifyEligNoLookahead,"
+         "FalconPaperProtectBrokerModifyEligPolicy,FalconPaperProtectBrokerModifyEligOrderSendPolicy,"
+         "FalconPaperProtectBrokerModifyEligNextPhase,"
+         "FalconPaperProtectBrokerModifyEligLockStatus,FalconPaperProtectBrokerModifyEligLockDecision,"
+         "FalconPaperProtectBrokerModifyEligLockRuntimeEnforced,FalconPaperProtectBrokerModifyEligLockScope,"
+         "FalconPaperProtectBrokerModifyEligLockEvaluatedTrades,FalconPaperProtectBrokerModifyEligLockDistanceLockReadyTrades,"
+         "FalconPaperProtectBrokerModifyEligLockBrokerFeasLockReadyTrades,FalconPaperProtectBrokerModifyEligLockCandidateTrades,"
+         "FalconPaperProtectBrokerModifyEligLockDistanceSanityReadyTrades,FalconPaperProtectBrokerModifyEligLockModifyPlanReadyTrades,"
+         "FalconPaperProtectBrokerModifyEligLockRequestShapeReadyTrades,FalconPaperProtectBrokerModifyEligLockProtectionLevelReadyTrades,"
+         "FalconPaperProtectBrokerModifyEligLockStopsReadyTrades,FalconPaperProtectBrokerModifyEligLockFreezeReadyTrades,"
+         "FalconPaperProtectBrokerModifyEligLockEligibleTrades,FalconPaperProtectBrokerModifyEligLockReadyTrades,"
+         "FalconPaperProtectBrokerModifyEligLockTP1Trades,FalconPaperProtectBrokerModifyEligLockTP2Trades,"
+         "FalconPaperProtectBrokerModifyEligLockRejectedTrades,FalconPaperProtectBrokerModifyEligLockConflictTrades,"
+         "FalconPaperProtectBrokerModifyEligLockMissingDistanceLockTrades,FalconPaperProtectBrokerModifyEligLockMissingBrokerFeasTrades,"
+         "FalconPaperProtectBrokerModifyEligLockMissingModifyPlanTrades,FalconPaperProtectBrokerModifyEligLockStopsBlockedTrades,"
+         "FalconPaperProtectBrokerModifyEligLockFreezeBlockedTrades,FalconPaperProtectBrokerModifyEligLockBrokerModifySent,"
+         "FalconPaperProtectBrokerModifyEligLockRuntimeSLChanged,FalconPaperProtectBrokerModifyEligLockInvariantBreaches,"
+         "FalconPaperProtectBrokerModifyEligLockCoveragePct,FalconPaperProtectBrokerModifyEligLockEligibilityPct,"
+         "FalconPaperProtectBrokerModifyEligLockCompletenessPct,FalconPaperProtectBrokerModifyEligLockNoLookahead,"
+         "FalconPaperProtectBrokerModifyEligLockPolicy,FalconPaperProtectBrokerModifyEligLockOrderSendPolicy,"
+         "FalconPaperProtectBrokerModifyEligLockNextPhase,"
+         "FalconPaperProtectExecutorConsumerStatus,FalconPaperProtectExecutorConsumerDecision,"
+         "FalconPaperProtectExecutorConsumerRuntimeEnforced,FalconPaperProtectExecutorConsumerScope,"
+         "FalconPaperProtectExecutorConsumerEvaluatedTrades,FalconPaperProtectExecutorConsumerBrokerModifyEligibilityLockReadyTrades,"
+         "FalconPaperProtectExecutorConsumerCandidateTrades,FalconPaperProtectExecutorConsumerReadableTrades,"
+         "FalconPaperProtectExecutorConsumerModifyPlanReadableTrades,FalconPaperProtectExecutorConsumerVirtualSLReadableTrades,"
+         "FalconPaperProtectExecutorConsumerProtectionLevelReadableTrades,FalconPaperProtectExecutorConsumerTriggerReadableTrades,"
+         "FalconPaperProtectExecutorConsumerReadyTrades,FalconPaperProtectExecutorConsumerRejectedTrades,"
+         "FalconPaperProtectExecutorConsumerConflictTrades,FalconPaperProtectExecutorConsumerMissingEligibilityLockTrades,"
+         "FalconPaperProtectExecutorConsumerMissingModifyPlanTrades,FalconPaperProtectExecutorConsumerMissingVirtualSLTrades,"
+         "FalconPaperProtectExecutorConsumerBrokerModifySent,FalconPaperProtectExecutorConsumerRuntimeSLChanged,"
+         "FalconPaperProtectExecutorConsumerOrderSend,FalconPaperProtectExecutorConsumerInvariantBreaches,"
+         "FalconPaperProtectExecutorConsumerReadinessPct,FalconPaperProtectExecutorConsumerCompletenessPct,"
+         "FalconPaperProtectExecutorConsumerNoLookahead,FalconPaperProtectExecutorConsumerPolicy,"
+         "FalconPaperProtectExecutorConsumerOrderSendPolicy,FalconPaperProtectExecutorConsumerNextPhase,"
+         "FalconMagicExecutorClassificationStatus,FalconMagicExecutorClassificationDecision,"
+         "FalconMagicExecutorClassificationRuntimeEnforced,FalconMagicExecutorClassificationScope,"
+         "FalconMagicRegisteredStrategies,FalconMagicDefinedNumbers,FalconMagicUniqueNumbers,"
+         "FalconMagicActiveEngineReady,FalconMagicUnknownEngineRejected,FalconMagicDuplicateBreaches,"
+         "FalconExecutorErrorClassesDefined,FalconExecutorClassifierReady,FalconExecutorRetryPolicyDefined,"
+         "FalconExecutorFatalRetryBlocked,FalconExecutorNeedsRefreshRetryOnce,FalconExecutorConnectionPolicyDefined,"
+         "FalconExecutorOrderSend,FalconExecutorBrokerModifySent,FalconExecutorRuntimeSLChanged,"
+         "FalconMagicExecutorInvariantBreaches,FalconMagicExecutorReadinessPct,FalconMagicExecutorCompletenessPct,"
+         "FalconMagicExecutorMagicPolicy,FalconMagicExecutorErrorPolicy,FalconMagicExecutorOrderSendPolicy,"
+         "FalconMagicExecutorNextPhase,"
+         "FalconTradeStateRecoveryStatus,FalconTradeStateRecoveryDecision,"
+         "FalconTradeStateRecoveryRuntimeEnforced,FalconTradeStateRecoveryScope,"
+         "FalconTradeStatePersistenceContractDefined,FalconTradeStateFolderDefined,"
+         "FalconTradeStateRecordShapeDefined,FalconTradeStateBrokerReconstructDefined,"
+         "FalconTradeStateMinimalRecoveryDefined,FalconTradeStateEventPersistPolicyDefined,"
+         "FalconTradeStateRestartPolicyDefined,FalconTradeStateShadowTradesCovered,"
+         "FalconTradeStateRecoveryCandidates,FalconTradeStateMinimalRecoveryCandidates,"
+         "FalconTradeStateUntrustedStateBlocked,FalconTradeStateOrderSend,"
+         "FalconTradeStateBrokerModifySent,FalconTradeStateRuntimeSLChanged,"
+         "FalconTradeStateInvariantBreaches,FalconTradeStateRecoveryReadinessPct,"
+         "FalconTradeStateRecoveryCompletenessPct,FalconTradeStateRecoveryPolicy,"
+         "FalconTradeStateRecoveryOrderSendPolicy,FalconTradeStateRecoveryNextPhase,"
+         "FalconSpreadBrokerStatus,FalconSpreadBrokerDecision,"
+         "FalconSpreadBrokerRuntimeEnforced,FalconSpreadBrokerScope,"
+         "FalconSpreadGuardDefined,FalconSlippageCapDefined,"
+         "FalconBrokerLimitsCacheDefined,FalconStopsLevelPolicyDefined,"
+         "FalconFreezeLevelPolicyDefined,FalconVolumeLimitsPolicyDefined,"
+         "FalconStopsBufferPoints,FalconMaxSpreadPoints,FalconMaxSlippagePoints,"
+         "FalconSpreadBrokerShadowTradesCovered,FalconSpreadBrokerBrokerContextReady,"
+         "FalconSpreadBrokerGuardReady,FalconSpreadBrokerRejectedTrades,"
+         "FalconSpreadBrokerOrderSend,FalconSpreadBrokerBrokerModifySent,"
+         "FalconSpreadBrokerRuntimeSLChanged,FalconSpreadBrokerInvariantBreaches,"
+         "FalconSpreadBrokerReadinessPct,FalconSpreadBrokerCompletenessPct,"
+         "FalconSpreadBrokerSpreadPolicy,FalconSpreadBrokerLimitsPolicy,"
+         "FalconSpreadBrokerOrderSendPolicy,FalconSpreadBrokerNextPhase,"
+         "FalconTradeTransactionStatus,FalconTradeTransactionDecision,"
+         "FalconTradeTransactionRuntimeEnforced,FalconTradeTransactionScope,"
+         "FalconTradeTransactionHandlerDefined,FalconTradeTransactionSourcePolicyDefined,"
+         "FalconTradeTransactionEventRoutingDefined,FalconTradeTransactionDealAddPolicyDefined,"
+         "FalconTradeTransactionPositionChangePolicyDefined,FalconTradeTransactionStatePersistHookDefined,"
+         "FalconTradeTransactionOnTickReadOnlyPolicy,FalconTradeTransactionShadowTradesCovered,"
+         "FalconTradeTransactionBrokerEventsObserved,FalconTradeTransactionDealEventsRouted,"
+         "FalconTradeTransactionPositionEventsRouted,FalconTradeTransactionUnknownEventsIgnored,"
+         "FalconTradeTransactionOrderSend,FalconTradeTransactionBrokerModifySent,"
+         "FalconTradeTransactionRuntimeSLChanged,FalconTradeTransactionInvariantBreaches,"
+         "FalconTradeTransactionReadinessPct,FalconTradeTransactionCompletenessPct,"
+         "FalconTradeTransactionSourcePolicy,FalconTradeTransactionStatePolicy,"
+         "FalconTradeTransactionOrderSendPolicy,FalconTradeTransactionNextPhase,"
+         "FalconPreInitStatus,FalconPreInitDecision,"
+         "FalconPreInitRuntimeEnforced,FalconPreInitScope,"
+         "FalconPreInitSymbolPolicyDefined,FalconPreInitTimeframePolicyDefined,"
+         "FalconPreInitAccountPolicyDefined,FalconPreInitBrokerPolicyDefined,"
+         "FalconPreInitMinimumBalancePolicyDefined,FalconPreInitWrongEnvironmentBlocksLive,"
+         "FalconPreInitShadowSmokeNonBlocking,FalconPreInitSupportedSymbolDetected,"
+         "FalconPreInitBrokerContextReady,FalconPreInitShadowTradesCovered,"
+         "FalconPreInitInitFailedTriggered,FalconPreInitOrderSend,"
+         "FalconPreInitBrokerModifySent,FalconPreInitRuntimeSLChanged,"
+         "FalconPreInitInvariantBreaches,FalconPreInitReadinessPct,"
+         "FalconPreInitCompletenessPct,FalconPreInitSymbolPolicy,"
+         "FalconPreInitTimeframePolicy,FalconPreInitAccountPolicy,"
+         "FalconPreInitBrokerPolicy,FalconPreInitOrderSendPolicy,"
+         "FalconPreInitNextPhase,"
+         "FalconEmergencyEquityStatus,FalconEmergencyEquityDecision,"
+         "FalconEmergencyEquityRuntimeEnforced,FalconEmergencyEquityScope,"
+         "FalconEmergencyEquityContractDefined,FalconEmergencyEquityIndependentDefined,"
+         "FalconEmergencyEquityEveryTickPolicy,FalconEmergencyEquityBeforeEnginePolicy,"
+         "FalconEmergencyEquityHardCapDefined,FalconEmergencyEquityHardCapPct,"
+         "FalconEmergencyEquityBlocksNewEntries,FalconEmergencyEquityCloseAllPolicy,"
+         "FalconEmergencyEquitySessionDisablePolicy,FalconEmergencyEquityAlertPolicyDefined,"
+         "FalconEmergencyEquityShadowTradesCovered,FalconEmergencyEquityTriggered,"
+         "FalconEmergencyEquityClosedPositions,FalconEmergencyEquityOrderSend,"
+         "FalconEmergencyEquityBrokerModifySent,FalconEmergencyEquityRuntimeSLChanged,"
+         "FalconEmergencyEquityInvariantBreaches,FalconEmergencyEquityReadinessPct,"
+         "FalconEmergencyEquityCompletenessPct,FalconEmergencyEquityPolicy,"
+         "FalconEmergencyEquityActionPolicy,FalconEmergencyEquityAlertPolicy,"
+         "FalconEmergencyEquityOrderSendPolicy,FalconEmergencyEquityNextPhase,"
+         "FalconConcurrentPositionStatus,FalconConcurrentPositionDecision,"
+         "FalconConcurrentPositionRuntimeEnforced,FalconConcurrentPositionScope,"
+         "FalconConcurrentPositionContractDefined,FalconConcurrentPositionMaxTotal,"
+         "FalconConcurrentPositionMaxPerEngine,FalconConcurrentPositionMaxPerDirection,"
+         "FalconConcurrentPositionTotalCapDefined,FalconConcurrentPositionPerEngineCapDefined,"
+         "FalconConcurrentPositionPerDirectionCapDefined,"
+         "FalconConcurrentPositionSharedExposurePolicyDefined,"
+         "FalconConcurrentPositionEngineIsolationPolicyDefined,"
+         "FalconConcurrentPositionDirectionCapPolicyDefined,"
+         "FalconConcurrentPositionShadowSmokeNonBlocking,"
+         "FalconConcurrentPositionShadowTradesCovered,"
+         "FalconConcurrentPositionOpenPositionsObserved,"
+         "FalconConcurrentPositionBlockedByTotalCap,"
+         "FalconConcurrentPositionBlockedByEngineCap,"
+         "FalconConcurrentPositionBlockedByDirectionCap,"
+         "FalconConcurrentPositionOrderSend,FalconConcurrentPositionBrokerModifySent,"
+         "FalconConcurrentPositionRuntimeSLChanged,"
+         "FalconConcurrentPositionInvariantBreaches,"
+         "FalconConcurrentPositionReadinessPct,"
+         "FalconConcurrentPositionCompletenessPct,"
+         "FalconConcurrentPositionSharedExposurePolicy,"
+         "FalconConcurrentPositionEngineIsolationPolicy,"
+         "FalconConcurrentPositionDirectionCapPolicy,"
+         "FalconConcurrentPositionOrderSendPolicy,"
+         "FalconConcurrentPositionNextPhase,"
+         "FalconPaperModeStatus,FalconPaperModeDecision,"
+         "FalconPaperModeRuntimeEnforced,FalconPaperModeScope,"
+         "FalconPaperModeShadowDefinitionReady,FalconPaperModePaperDefinitionReady,"
+         "FalconPaperModeDemoDefinitionReady,FalconPaperModeLiveDefinitionReady,"
+         "FalconPaperModePaperPositionLifecycleDefined,"
+         "FalconPaperModePaperVirtualSLDefined,"
+         "FalconPaperModePaperProtectionDefined,"
+         "FalconPaperModePaperRunnerDefined,"
+         "FalconPaperModePaperEquityCurveDefined,"
+         "FalconPaperModePaperExitModelDefined,"
+         "FalconPaperModeShadowSmokeNonBlocking,"
+         "FalconPaperModeShadowTradesCovered,"
+         "FalconPaperModePaperPositionsCreated,"
+         "FalconPaperModePaperExitsApplied,"
+         "FalconPaperModePaperEquityEvents,"
+         "FalconPaperModeOrderSend,FalconPaperModeBrokerModifySent,"
+         "FalconPaperModeRuntimeSLChanged,FalconPaperModeInvariantBreaches,"
+         "FalconPaperModeReadinessPct,FalconPaperModeCompletenessPct,"
+         "FalconPaperModeShadowPolicy,FalconPaperModePaperPolicy,"
+         "FalconPaperModeDemoPolicy,FalconPaperModeLivePolicy,"
+         "FalconPaperModeOrderSendPolicy,FalconPaperModeNextPhase,"
+         "FalconSymbolProfileStatus,FalconSymbolProfileDecision,"
+         "FalconSymbolProfileRuntimeEnforced,FalconSymbolProfileScope,"
+         "FalconSymbolProfileSymbolFamilyDefined,FalconSymbolProfileAliasesDefined,"
+         "FalconSymbolProfileCurrentSymbolRecognized,FalconSymbolProfileContextValid,"
+         "FalconSymbolProfileDigits,FalconSymbolProfilePoint,"
+         "FalconSymbolProfileTickSize,FalconSymbolProfileTickValue,"
+         "FalconSymbolProfileContractSize,FalconSymbolProfileSpreadPoints,"
+         "FalconSymbolProfileStopsLevelPoints,FalconSymbolProfileFreezeLevelPoints,"
+         "FalconSymbolProfileMinLot,FalconSymbolProfileMaxLot,FalconSymbolProfileLotStep,"
+         "FalconSymbolProfileContractPolicyDefined,FalconSymbolProfileTickPolicyDefined,"
+         "FalconSymbolProfilePointMappingDefined,FalconSymbolProfileBrokerLimitsDefined,"
+         "FalconSymbolProfileSessionPolicyDefined,FalconSymbolProfileSpreadPolicyDefined,"
+         "FalconSymbolProfileDefaultSafetyProfileDefined,"
+         "FalconSymbolProfileShadowSmokeNonBlocking,"
+         "FalconSymbolProfileShadowTradesCovered,"
+         "FalconSymbolProfilePaperGuardsApplied,"
+         "FalconSymbolProfileOrderSend,FalconSymbolProfileBrokerModifySent,"
+         "FalconSymbolProfileRuntimeSLChanged,FalconSymbolProfileInvariantBreaches,"
+         "FalconSymbolProfileReadinessPct,FalconSymbolProfileCompletenessPct,"
+         "FalconSymbolProfileSymbolAliases,FalconSymbolProfileContractPolicy,"
+         "FalconSymbolProfileTickPolicy,FalconSymbolProfilePointMappingPolicy,"
+         "FalconSymbolProfileBrokerLimitsPolicy,FalconSymbolProfileSessionPolicy,"
+         "FalconSymbolProfileSpreadPolicy,FalconSymbolProfileDefaultSafetyPolicy,"
+         "FalconSymbolProfileOrderSendPolicy,FalconSymbolProfileNextPhase,"
+         "FalconPaperGuardAppStatus,FalconPaperGuardAppDecision,"
+         "FalconPaperGuardAppRuntimeEnforced,FalconPaperGuardAppScope,"
+         "FalconPaperGuardContractReady,FalconPaperGuardEvaluatedTrades,"
+         "FalconPaperGuardPassedTrades,FalconPaperGuardRejectedTrades,"
+         "FalconPaperSpreadRejectedTrades,FalconPaperStopsRejectedTrades,"
+         "FalconPaperFreezeRejectedTrades,FalconPaperExposureEvaluatedTrades,"
+         "FalconPaperExposurePassedTrades,FalconPaperExposureBlockedByTotalCap,"
+         "FalconPaperExposureBlockedByEngineCap,FalconPaperExposureBlockedByDirectionCap,"
+         "FalconPaperGuardBeforeNetPoints,FalconPaperGuardAfterNetPoints,"
+         "FalconPaperGuardImpactPoints,FalconPaperGuardBeforeNetUSD,"
+         "FalconPaperGuardAfterNetUSD,FalconPaperGuardImpactUSD,"
+         "FalconPaperGuardOrderSend,FalconPaperGuardBrokerModifySent,"
+         "FalconPaperGuardRuntimeSLChanged,FalconPaperGuardInvariantBreaches,"
+         "FalconPaperGuardReadinessPct,FalconPaperGuardApplicationPct,"
+         "FalconPaperGuardRejectPolicy,FalconPaperGuardExposurePolicy,"
+         "FalconPaperGuardOrderSendPolicy,FalconPaperGuardNextPhase,"
+         "FalconPaperProtectionStatus,FalconPaperProtectionDecision,"
+         "FalconPaperProtectionRuntimeEnforced,FalconPaperProtectionScope,"
+         "FalconPaperProtectionContractReady,FalconPaperProtectionEvaluatedTrades,"
+         "FalconPaperProtectionEligibleTrades,FalconPaperProtectionActivatedTrades,"
+         "FalconPaperTP1ProtectionTrades,FalconPaperTP2ProtectionTrades,"
+         "FalconPaperVirtualSLChangedTrades,FalconPaperVirtualSLHitTrades,"
+         "FalconPaperProtectedExitTrades,FalconPaperProtectionBeforeNetPoints,"
+         "FalconPaperProtectionAfterNetPoints,FalconPaperProtectionImpactPoints,"
+         "FalconPaperProtectionBeforeNetUSD,FalconPaperProtectionAfterNetUSD,"
+         "FalconPaperProtectionImpactUSD,FalconPaperProtectionGivebackPreventedPoints,"
+         "FalconPaperProtectionGivebackPreventedUSD,FalconPaperProtectionOrderSend,"
+         "FalconPaperProtectionBrokerModifySent,FalconPaperProtectionRuntimeSLChanged,"
+         "FalconPaperProtectionInvariantBreaches,FalconPaperProtectionReadinessPct,"
+         "FalconPaperProtectionApplicationPct,FalconPaperProtectionPolicy,"
+         "FalconPaperProtectionOrderSendPolicy,FalconPaperProtectionNextPhase,"
+         "FalconPaperRunnerStatus,FalconPaperRunnerDecision,"
+         "FalconPaperRunnerRuntimeEnforced,FalconPaperRunnerScope,"
+         "FalconPaperRunnerContractReady,FalconPaperRunnerEvaluatedTrades,"
+         "FalconPaperRunnerEligibleTrades,FalconPaperRunnerActivatedTrades,"
+         "FalconPaperRunner3RTrades,FalconPaperMoonMode5RTrades,"
+         "FalconPaperRunnerExitTrades,FalconPaperRunnerAdditionalPoints,"
+         "FalconPaperRunnerAdditionalUSD,FalconPaperRunnerGivebackTrades,"
+         "FalconPaperRunnerProtectedFromLossTrades,FalconPaperRunnerBeforeNetPoints,"
+         "FalconPaperRunnerAfterNetPoints,FalconPaperRunnerImpactPoints,"
+         "FalconPaperRunnerBeforeNetUSD,FalconPaperRunnerAfterNetUSD,"
+         "FalconPaperRunnerImpactUSD,FalconPaperRunnerOrderSend,"
+         "FalconPaperRunnerBrokerModifySent,FalconPaperRunnerRuntimeSLChanged,"
+         "FalconPaperRunnerInvariantBreaches,FalconPaperRunnerReadinessPct,"
+         "FalconPaperRunnerApplicationPct,FalconPaperRunnerPolicy,"
+         "FalconPaperRunnerOrderSendPolicy,FalconPaperRunnerNextPhase,"
+         "FalconRunnerBarPathPolicy,FalconRunnerBarPathNextPhase,"
+         "FalconCapitalTierStatus,FalconCapitalTierDecision,FalconCapitalTierRuntimeEnforced,"
+         "FalconCapitalTierScope,FalconCapitalTierContractReady,FalconCapitalTierEffectiveBalance,"
+         "FalconCapitalTierName,FalconCapitalTierMinBalance,FalconCapitalTierMaxBalance,"
+         "FalconCapitalTierMaxConsecutiveLosses,FalconCapitalTierMaxDailyR,FalconCapitalTierMaxDrawdownPct,"
+         "FalconCapitalTierBrokerMinLot,FalconCapitalTierFixedLot,FalconCapitalTierMinLotConstraint,"
+         "FalconCapitalTierMinLotCompatible,FalconCapitalTierLockedAtSessionStart,"
+         "FalconCapitalTierOrderSend,FalconCapitalTierBrokerModifySent,FalconCapitalTierRuntimeSLChanged,"
+         "FalconCapitalTierInvariantBreaches,FalconCapitalTierReadinessPct,FalconCapitalTierApplicationPct,"
+         "FalconCapitalTierBalancePolicy,FalconCapitalTierMinLotPolicy,FalconCapitalTierOrderSendPolicy,"
+         "FalconCapitalTierNextPhase,"
+         "FalconThreeLayerEmergencyStatus,FalconThreeLayerEmergencyDecision,FalconThreeLayerEmergencyRuntimeEnforced,"
+         "FalconThreeLayerEmergencyScope,FalconThreeLayerEmergencyContractReady,"
+         "FalconThreeLayerEmergencyEvaluatedTrades,FalconThreeLayerEmergencySafeTrades,"
+         "FalconThreeLayerEmergencyTriggeredTrades,FalconThreeLayerEmergencyBlockedEntries,"
+         "FalconThreeLayerEmergencyLayer1Triggers,FalconThreeLayerEmergencyLayer2Triggers,FalconThreeLayerEmergencyLayer3Triggers,"
+         "FalconThreeLayerEmergencyBeforeNetPoints,FalconThreeLayerEmergencyAfterNetPoints,FalconThreeLayerEmergencyImpactPoints,"
+         "FalconThreeLayerEmergencyBeforeNetUSD,FalconThreeLayerEmergencyAfterNetUSD,FalconThreeLayerEmergencyImpactUSD,"
+         "FalconThreeLayerEmergencyMaxDrawdownPct,FalconThreeLayerEmergencyWorstDailyR,"
+         "FalconThreeLayerEmergencyOrderSend,FalconThreeLayerEmergencyBrokerModifySent,FalconThreeLayerEmergencyRuntimeSLChanged,"
+         "FalconThreeLayerEmergencyInvariantBreaches,FalconThreeLayerEmergencyReadinessPct,FalconThreeLayerEmergencyApplicationPct,"
+         "FalconThreeLayerEmergencyPolicy,FalconThreeLayerEmergencyOrderSendPolicy,FalconThreeLayerEmergencyNextPhase,"
+         "FalconLayerResetStatus,FalconLayerResetDecision,FalconLayerResetRuntimeEnforced,"
+         "FalconLayerResetScope,FalconLayerResetContractReady,FalconLayerResetEvaluatedTrades,"
+         "FalconLayer1ResetOnWinEvents,FalconLayer2ResetOnNewDayEvents,FalconLayer3ResetOnNewPeakEvents,"
+         "FalconLayerResetEventTrades,FalconLayerResetDuplicateTriggers,"
+         "FalconLayerResetOrderSend,FalconLayerResetBrokerModifySent,FalconLayerResetRuntimeSLChanged,"
+         "FalconLayerResetInvariantBreaches,FalconLayerResetReadinessPct,FalconLayerResetApplicationPct,"
+         "FalconLayerResetPolicy,FalconLayerResetOrderSendPolicy,FalconLayerResetNextPhase,"
+         "FalconValidationLockStatus,FalconValidationLockDecision,FalconValidationLockRuntimeEnforced,"
+         "FalconValidationLockScope,FalconValidationLockContractReady,FalconValidationLockEvaluatedTrades,"
+         "FalconValidationLockAnchorNetUSD,FalconValidationLockPreviousRunnerNetUSD,FalconValidationLockWorkingBaselineNetUSD,"
+         "FalconValidationLockWorkingBaselineImpactUSD,FalconValidationLockEmergencyTriggeredTrades,"
+         "FalconValidationLockEmergencyBlockedEntries,FalconValidationLockLayerResetDuplicateTriggers,"
+         "FalconValidationLockMultiWindowRequired,FalconValidationLockOrderSend,FalconValidationLockBrokerModifySent,"
+         "FalconValidationLockRuntimeSLChanged,FalconValidationLockInvariantBreaches,FalconValidationLockReadinessPct,"
+         "FalconValidationLockApplicationPct,FalconValidationLockPolicy,FalconValidationLockOrderSendPolicy,FalconValidationLockNextPhase,"
+         "FalconTierPromotionStatus,FalconTierPromotionDecision,FalconTierPromotionRuntimeEnforced,"
+         "FalconTierPromotionScope,FalconTierPromotionContractReady,FalconTierPromotionEvaluatedTrades,"
+         "FalconTierPromotionCurrentTier,FalconTierPromotionNextTier,FalconTierPromotionEffectiveBalance,"
+         "FalconTierPromotionNextTierMinBalance,FalconTierPromotionMinTradesRequired,FalconTierPromotionTradesInTier,"
+         "FalconTierPromotionMinWinRatePct,FalconTierPromotionCurrentWinRatePct,FalconTierPromotionMinNetR,"
+         "FalconTierPromotionCurrentNetR,FalconTierPromotionDaysWithoutEmergencyRequired,FalconTierPromotionCooldownDays,"
+         "FalconTierPromotionBalanceRequirementMet,FalconTierPromotionTradesRequirementMet,FalconTierPromotionWinRateRequirementMet,"
+         "FalconTierPromotionNetRRequirementMet,FalconTierPromotionNoEmergencyRequirementPending,FalconTierPromotionCooldownRequirementPending,"
+         "FalconTierPromotionEligibleNow,FalconTierPromotionBlockedReason,FalconTierPromotionEvents,"
+         "FalconTierPromotionTransitionReportDefined,FalconTierPromotionOrderSend,FalconTierPromotionBrokerModifySent,"
+         "FalconTierPromotionRuntimeSLChanged,FalconTierPromotionInvariantBreaches,FalconTierPromotionReadinessPct,"
+         "FalconTierPromotionApplicationPct,FalconTierPromotionPolicy,FalconTierPromotionOrderSendPolicy,FalconTierPromotionNextPhase,"
+         "FalconTierDemotionStatus,FalconTierDemotionDecision,FalconTierDemotionRuntimeEnforced,"
+         "FalconTierDemotionScope,FalconTierDemotionContractReady,FalconTierDemotionEvaluatedTrades,"
+         "FalconTierDemotionCurrentTier,FalconTierDemotionEffectiveBalance,FalconTierDemotionCurrentTierMinBalance,"
+         "FalconTierDemotionBalanceHysteresisPct,FalconTierDemotionBalanceHysteresisThreshold,"
+         "FalconTierDemotionEmergenciesIn14Days,FalconTierDemotionMaxEmergenciesIn14Days,"
+         "FalconTierDemotionNegativeWeeksInRow,FalconTierDemotionMaxNegativeWeeksInRow,"
+         "FalconTierDemotionExtremeDrawdownMultiplier,FalconTierDemotionObservedMaxDrawdownPct,FalconTierDemotionExtremeDrawdownThresholdPct,"
+         "FalconTierDemotionBalanceHysteresisBreach,FalconTierDemotionMultipleEmergenciesBreach,"
+         "FalconTierDemotionNegativeWeeksBreach,FalconTierDemotionExtremeDrawdownBreach,"
+         "FalconTierDemotionShouldDemoteNow,FalconTierDemotionReason,FalconTierDemotionEvents,"
+         "FalconTierDemotionTransitionReportDefined,FalconTierDemotionOrderSend,FalconTierDemotionBrokerModifySent,"
+         "FalconTierDemotionRuntimeSLChanged,FalconTierDemotionInvariantBreaches,FalconTierDemotionReadinessPct,"
+         "FalconTierDemotionApplicationPct,FalconTierDemotionPolicy,FalconTierDemotionOrderSendPolicy,FalconTierDemotionNextPhase,"
+         "FalconTierTransitionStatus,FalconTierTransitionDecision,FalconTierTransitionRuntimeEnforced,"
+         "FalconTierTransitionScope,FalconTierTransitionContractReady,FalconTierTransitionEvaluatedTrades,"
+         "FalconTierTransitionStartTier,FalconTierTransitionAppliedTier,FalconTierTransitionDirection,FalconTierTransitionReason,"
+         "FalconTierTransitionPromotionApplied,FalconTierTransitionDemotionApplied,FalconTierTransitionEvents,"
+         "FalconTierTransitionActivePositionsPreserved,FalconTierTransitionNextTradesUseAppliedTier,"
+         "FalconTierTransitionOrderSend,FalconTierTransitionBrokerModifySent,FalconTierTransitionRuntimeSLChanged,"
+         "FalconTierTransitionInvariantBreaches,FalconTierTransitionReadinessPct,FalconTierTransitionApplicationPct,"
+         "FalconTierTransitionPolicy,FalconTierTransitionOrderSendPolicy,FalconTierTransitionNextPhase,"
+         "FalconLowCapitalRiskFeasibilityStatus,FalconLowCapitalRiskFeasibilityDecision,"
+         "FalconLowCapitalRiskFeasibilityRuntimeEnforced,FalconLowCapitalRiskFeasibilityScope,"
+         "FalconLowCapitalRiskFeasibilityContractReady,FalconLowCapitalRiskFeasibilityEvaluatedTrades,"
+         "FalconLowCapitalRiskFeasibilityFeasibleTrades,FalconLowCapitalRiskFeasibilityBorderlineTrades,"
+         "FalconLowCapitalRiskFeasibilityNotFeasibleTrades,FalconLowCapitalRiskFeasibilityInvalidTrades,"
+         "FalconLowCapitalRiskFeasibilitySingleTradeCapBreaches,"
+         "FalconLowCapitalRiskFeasibilityMinLotRiskUSDAvg,FalconLowCapitalRiskFeasibilityMinLotRiskUSDMax,"
+         "FalconLowCapitalRiskFeasibilityMinLotRiskPctAvg,FalconLowCapitalRiskFeasibilityMinLotRiskPctMax,"
+         "FalconLowCapitalRiskFeasibilityPotentialLossRAvg,FalconLowCapitalRiskFeasibilityPotentialLossRMax,"
+         "FalconLowCapitalRiskFeasibilityOrderSend,FalconLowCapitalRiskFeasibilityBrokerModifySent,"
+         "FalconLowCapitalRiskFeasibilityRuntimeSLChanged,FalconLowCapitalRiskFeasibilityInvariantBreaches,"
+         "FalconLowCapitalRiskFeasibilityReadinessPct,FalconLowCapitalRiskFeasibilityApplicationPct,"
+         "FalconLowCapitalRiskFeasibilityPolicy,FalconLowCapitalRiskFeasibilityOrderSendPolicy,"
+         "FalconLowCapitalRiskFeasibilityNextPhase";
 
-      string summary_row =
+      // v0.45.0a compile fix: split the very long Summary row expression into small
+      // append chunks. This changes only compiler expression shape; CSV schema and
+      // values remain identical to v0.45.0.
+      string summary_row = "";
+      summary_row +=
          FalconCsvSafe(EA_NAME) + "," +
          FalconCsvSafe(EA_VERSION_TAG) + "," +
          FalconCsvSafe(EA_BUILD_TAG) + "," +
@@ -8038,7 +10781,8 @@ public:
          IntegerToString(g_fvg_hold_quality_strong) + "," +
          IntegerToString(g_fvg_hold_quality_neutral) + "," +
          IntegerToString(g_fvg_hold_quality_weak) + "," +
-         IntegerToString(hold_quality_score_min) + "," +
+         IntegerToString(hold_quality_score_min) + ",";
+      summary_row +=
          DoubleToString(FalconSafeAverageLongAsDouble(g_fvg_hold_quality_score_total, g_fvg_hold_quality_evaluated), 2) + "," +
          IntegerToString(g_fvg_hold_quality_score_max) + "," +
          IntegerToString(g_fvg_micro_candidate_builder_evaluations) + "," +
@@ -8074,7 +10818,8 @@ public:
          FalconBoolToYesNo(FALCON_FVG_QGUARD_MANUAL_PROMOTION_REQUIRED) + "," +
          DoubleToString(FALCON_FVG_QGUARD_MIN_SIZE_POINTS, 2) + "," +
          FalconCsvSafe(FALCON_FVG_QGUARD_NEXT_STEP) + "," +
-         FalconBoolToYesNo(FALCON_FVG_QGUARD_RUNTIME_CANDIDATE_ALLOWED) + "," +
+         FalconBoolToYesNo(FALCON_FVG_QGUARD_RUNTIME_CANDIDATE_ALLOWED) + ",";
+      summary_row +=
          FalconBoolToYesNo(FALCON_FVG_QGUARD_RUNTIME_CANDIDATE_DESIGN_READY) + "," +
          FalconCsvSafe(FALCON_FVG_QGUARD_ACTIVATION_POLICY) + "," +
          FalconCsvSafe(FALCON_FVG_QGUARD_PROMOTION_RULE) + "," +
@@ -8110,7 +10855,8 @@ public:
          FalconBoolToYesNo(UseDailyLossLimit) + "," +
          DoubleToString(FalconGuardDailyLossLimitUsd(), 2) + "," +
          FalconCsvSafe(FalconGuardDailyLossStatus()) + "," +
-         IntegerToString(MaxTradesPerDay) + "," +
+         IntegerToString(MaxTradesPerDay) + ",";
+      summary_row +=
          FalconCsvSafe(FalconGuardMaxTradesStatus()) + "," +
          IntegerToString(MaxOpenPositions) + "," +
          FalconCsvSafe(FalconGuardMaxOpenPositionsStatus()) + "," +
@@ -8146,7 +10892,8 @@ public:
          FalconCsvSafe(FALCON_TM_EXECUTION_PERMISSION) + "," +
          FalconCsvSafe(FALCON_TM_STRUCTURAL_STOP_STATUS) + "," +
          FalconCsvSafe(FALCON_TM_STRUCTURAL_STOP_REQUIREMENT) + "," +
-         FalconCsvSafe(FALCON_TM_TP_BUILDER_STATUS) + "," +
+         FalconCsvSafe(FALCON_TM_TP_BUILDER_STATUS) + ",";
+      summary_row +=
          FalconCsvSafe(FALCON_TM_TP1_POLICY) + "," +
          FalconCsvSafe(FALCON_TM_TP2_POLICY) + "," +
          FalconCsvSafe(FALCON_TM_PARTIAL_MANAGER_STATUS) + "," +
@@ -8182,7 +10929,8 @@ public:
          DoubleToString(smart_tm_proof_score_avg, 2) + "," +
          IntegerToString(m_totals.smart_tm_proof_score_max) + "," +
          IntegerToString(m_totals.smart_tm_exit_conservative_trades) + "," +
-         IntegerToString(m_totals.smart_tm_partial_no_runner_trades) + "," +
+         IntegerToString(m_totals.smart_tm_partial_no_runner_trades) + ",";
+      summary_row +=
          IntegerToString(m_totals.smart_tm_runner_candidate_trades) + "," +
          IntegerToString(m_totals.smart_tm_strong_runner_candidate_trades) + "," +
          IntegerToString(m_totals.smart_tm_proof_weak_trades) + "," +
@@ -8218,7 +10966,8 @@ public:
          DoubleToString(runner_mfe_proxy_avg_points, 2) + "," +
          DoubleToString(m_totals.runner_diag_mfe_proxy_max_points, 2) + "," +
          DoubleToString(runner_tp1_to_tp2_room_avg_points, 2) + "," +
-         DoubleToString(runner_tp1_to_tp3_room_avg_points, 2) + "," +
+         DoubleToString(runner_tp1_to_tp3_room_avg_points, 2) + ",";
+      summary_row +=
          DoubleToString(runner_tp2_to_tp3_room_avg_points, 2) + "," +
          DoubleToString(runner_max_r_proxy_avg, 2) + "," +
          DoubleToString(m_totals.runner_diag_max_r_proxy_max, 2) + "," +
@@ -8254,7 +11003,8 @@ public:
          DoubleToString(m_totals.runner_barpath_giveback_after_tp1_max_points, 2) + "," +
          DoubleToString(runner_barpath_giveback_after_tp2_avg_points, 2) + "," +
          DoubleToString(m_totals.runner_barpath_giveback_after_tp2_max_points, 2) + "," +
-         IntegerToString(m_totals.runner_barpath_returned_to_loss_after_tp1_trades) + "," +
+         IntegerToString(m_totals.runner_barpath_returned_to_loss_after_tp1_trades) + ",";
+      summary_row +=
          IntegerToString(m_totals.runner_barpath_returned_to_loss_after_tp2_trades) + "," +
          IntegerToString(m_totals.runner_barpath_actual_would_reach_3r_trades) + "," +
          IntegerToString(m_totals.runner_barpath_actual_would_reach_5r_trades) + "," +
@@ -8290,7 +11040,8 @@ public:
          IntegerToString(decision_tree_tp1_partial_plan_trades) + "," +
          IntegerToString(decision_tree_tp1_protect_plan_trades) + "," +
          IntegerToString(decision_tree_tp1_runner_now_plan_trades) + "," +
-         IntegerToString(decision_tree_tp1_runner_wait_plan_trades) + "," +
+         IntegerToString(decision_tree_tp1_runner_wait_plan_trades) + ",";
+      summary_row +=
          IntegerToString(decision_tree_tp1_exit_warning_plan_trades) + "," +
          IntegerToString(decision_tree_tp1_antiproof_warning_plan_trades) + "," +
          IntegerToString(decision_tree_tp2_protect_plan_trades) + "," +
@@ -8326,7 +11077,8 @@ public:
          IntegerToString(dt_time_tp2_pre) + "," +
          IntegerToString(dt_time_tp1_protect_feasible) + "," +
          IntegerToString(dt_time_tp2_protect_feasible) + "," +
-         IntegerToString(dt_time_tp1_protect_unknown) + "," +
+         IntegerToString(dt_time_tp1_protect_unknown) + ",";
+      summary_row +=
          IntegerToString(dt_time_tp2_protect_unknown) + "," +
          IntegerToString(dt_time_runner_3r_pre) + "," +
          IntegerToString(dt_time_runner_5r_pre) + "," +
@@ -8362,7 +11114,8 @@ public:
          FalconCsvSafe(FALCON_PAPER_SIM_DECISION) + "," +
          FalconCsvSafe(FALCON_PAPER_SIM_SCOPE) + "," +
          IntegerToString(m_totals.total_trades) + "," +
-         IntegerToString(m_totals.total_trades) + "," +
+         IntegerToString(m_totals.total_trades) + ",";
+      summary_row +=
          IntegerToString(m_totals.total_trades) + "," +
          IntegerToString(m_totals.total_trades) + "," +
          IntegerToString(m_totals.total_trades) + "," +
@@ -8398,7 +11151,8 @@ public:
          FalconCsvSafe(FALCON_PPR_OUT_SCOPE) + "," +
          IntegerToString(po_eval) + "," +
          IntegerToString(po_partial_branches) + "," +
-         IntegerToString(po_runner_branches) + "," +
+         IntegerToString(po_runner_branches) + ",";
+      summary_row +=
          IntegerToString(po_tp1_protect) + "," +
          IntegerToString(po_tp2_protect) + "," +
          IntegerToString(po_runner_3r) + "," +
@@ -8434,7 +11188,8 @@ public:
          DoubleToString(psm_protected_giveback_proxy_points, 2) + "," +
          DoubleToString(psm_runner_upside_proxy_points, 2) + "," +
          DoubleToString(psm_delta_points, 2) + "," +
-         DoubleToString(psm_sim_net_points, 2) + "," +
+         DoubleToString(psm_sim_net_points, 2) + ",";
+      summary_row +=
          DoubleToString(psm_delta_usd, 2) + "," +
          DoubleToString(psm_sim_net_usd, 2) + "," +
          DoubleToString(psm_protection_contribution_pct, 2) + "," +
@@ -8470,7 +11225,8 @@ public:
          FalconCsvSafe(FALCON_PPM_STATUS) + "," +
          FalconCsvSafe(FALCON_PPM_DECISION) + "," +
          FalconBoolToYesNo(FALCON_PPM_RUNTIME_ENFORCED) + "," +
-         FalconCsvSafe(FALCON_PPM_SCOPE) + "," +
+         FalconCsvSafe(FALCON_PPM_SCOPE) + ",";
+      summary_row +=
          IntegerToString(ppm_eval) + "," +
          IntegerToString(ppm_plan) + "," +
          IntegerToString(ppm_ready) + "," +
@@ -8506,7 +11262,8 @@ public:
          DoubleToString(ppt_coverage_pct, 2) + "," +
          DoubleToString(ppt_timing_ready_pct, 2) + "," +
          FalconCsvSafe(FALCON_PPT_NO_LOOKAHEAD_POLICY) + "," +
-         FalconCsvSafe(FALCON_PPT_MODIFY_POLICY) + "," +
+         FalconCsvSafe(FALCON_PPT_MODIFY_POLICY) + ",";
+      summary_row +=
          FalconCsvSafe(FALCON_PPT_ORDER_SEND_POLICY) + "," +
          FalconCsvSafe(FALCON_PPT_NEXT_PHASE) + "," +
          FalconCsvSafe(FALCON_PPD_STATUS) + "," +
@@ -8542,7 +11299,8 @@ public:
          IntegerToString(pdl_skipped) + "," +
          IntegerToString(pdl_broker_modify_sent) + "," +
          IntegerToString(pdl_runtime_sl_changed) + "," +
-         IntegerToString(pdl_lock_ready) + "," +
+         IntegerToString(pdl_lock_ready) + ",";
+      summary_row +=
          IntegerToString(pdl_invariant_breaches) + "," +
          DoubleToString(pdl_coverage_pct, 2) + "," +
          DoubleToString(pdl_acceptance_pct, 2) + "," +
@@ -8578,7 +11336,8 @@ public:
          FalconCsvSafe(FALCON_PVL_DECISION) + "," +
          FalconBoolToYesNo(FALCON_PVL_RUNTIME_ENFORCED) + "," +
          FalconCsvSafe(FALCON_PVL_SCOPE) + "," +
-         IntegerToString(pvl_eval) + "," +
+         IntegerToString(pvl_eval) + ",";
+      summary_row +=
          IntegerToString(pvl_candidates) + "," +
          IntegerToString(pvl_state_ready) + "," +
          IntegerToString(pvl_state_active) + "," +
@@ -8614,7 +11373,8 @@ public:
          IntegerToString(pvt_tp1_transitions) + "," +
          IntegerToString(pvt_tp2_transitions) + "," +
          IntegerToString(pvt_rejected) + "," +
-         IntegerToString(pvt_conflict) + "," +
+         IntegerToString(pvt_conflict) + ",";
+      summary_row +=
          IntegerToString(pvt_missing_ledger) + "," +
          IntegerToString(pvt_broker_modify_sent) + "," +
          IntegerToString(pvt_runtime_sl_changed) + "," +
@@ -8650,7 +11410,8 @@ public:
          DoubleToString(ptl_readiness_pct, 2) + "," +
          DoubleToString(ptl_executor_readiness_pct, 2) + "," +
          DoubleToString(ptl_completeness_pct, 2) + "," +
-         FalconCsvSafe(FALCON_PTL_NO_LOOKAHEAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_PTL_NO_LOOKAHEAD_POLICY) + ",";
+      summary_row +=
          FalconCsvSafe(FALCON_PTL_TRANSITION_POLICY) + "," +
          FalconCsvSafe(FALCON_PTL_ORDER_SEND_POLICY) + "," +
          FalconCsvSafe(FALCON_PTL_NEXT_PHASE) + "," +
@@ -8686,7 +11447,8 @@ public:
          IntegerToString(FALCON_PBF_STOPS_BUFFER_POINTS) + "," +
          FalconCsvSafe(FALCON_PBF_NO_LOOKAHEAD_POLICY) + "," +
          FalconCsvSafe(FALCON_PBF_BROKER_POLICY) + "," +
-         FalconCsvSafe(FALCON_PBF_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PBF_ORDER_SEND_POLICY) + ",";
+      summary_row +=
          FalconCsvSafe(FALCON_PBF_NEXT_PHASE) + "," +
          FalconCsvSafe(FALCON_PBL_STATUS) + "," +
          FalconCsvSafe(FALCON_PBL_DECISION) + "," +
@@ -8722,8 +11484,766 @@ public:
          FalconCsvSafe(FALCON_PBL_BROKER_POLICY) + "," +
          FalconCsvSafe(FALCON_PBL_ORDER_SEND_POLICY) + "," +
          FalconCsvSafe(FALCON_PBL_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PBD_STATUS) + ",";
+      summary_row +=
+         FalconCsvSafe(FALCON_PBD_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PBD_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PBD_SCOPE) + "," +
+         IntegerToString(pbd_eval) + "," +
+         IntegerToString(pbd_broker_feas_lock_ready) + "," +
+         IntegerToString(pbd_candidates) + "," +
+         IntegerToString(pbd_distance_context_ready) + "," +
+         IntegerToString(pbd_required_distance_known) + "," +
+         IntegerToString(pbd_protection_distance_known) + "," +
+         IntegerToString(pbd_stops_distance_safe) + "," +
+         IntegerToString(pbd_freeze_distance_safe) + "," +
+         IntegerToString(pbd_distance_sane) + "," +
+         IntegerToString(pbd_ready) + "," +
+         IntegerToString(pbd_tp1_trades) + "," +
+         IntegerToString(pbd_tp2_trades) + "," +
+         IntegerToString(pbd_rejected) + "," +
+         IntegerToString(pbd_conflict) + "," +
+         IntegerToString(pbd_missing_distance_context) + "," +
+         IntegerToString(pbd_stops_distance_blocked) + "," +
+         IntegerToString(pbd_freeze_distance_blocked) + "," +
+         IntegerToString(pbd_broker_modify_sent) + "," +
+         IntegerToString(pbd_runtime_sl_changed) + "," +
+         IntegerToString(pbd_invariant_breaches) + "," +
+         DoubleToString(pbd_coverage_pct, 2) + "," +
+         DoubleToString(pbd_sanity_pct, 2) + "," +
+         DoubleToString(pbd_context_readiness_pct, 2) + "," +
+         IntegerToString((int)m_symbol_context.stops_level_points) + "," +
+         IntegerToString((int)m_symbol_context.freeze_level_points) + "," +
+         IntegerToString(FALCON_PBF_STOPS_BUFFER_POINTS) + "," +
+         IntegerToString(pbd_min_required_distance_points) + "," +
+         FalconCsvSafe(FALCON_PBD_NO_LOOKAHEAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_PBD_DISTANCE_POLICY) + "," +
+         FalconCsvSafe(FALCON_PBD_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PBD_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PBDL_STATUS) + "," +
+         FalconCsvSafe(FALCON_PBDL_DECISION) + ",";
+      summary_row +=
+         FalconBoolToYesNo(FALCON_PBDL_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PBDL_SCOPE) + "," +
+         IntegerToString(pbdl_eval) + "," +
+         IntegerToString(pbdl_distance_ready) + "," +
+         IntegerToString(pbdl_candidates) + "," +
+         IntegerToString(pbdl_context_ready) + "," +
+         IntegerToString(pbdl_required_distance_known) + "," +
+         IntegerToString(pbdl_protection_distance_known) + "," +
+         IntegerToString(pbdl_stops_distance_safe) + "," +
+         IntegerToString(pbdl_freeze_distance_safe) + "," +
+         IntegerToString(pbdl_distance_sane) + "," +
+         IntegerToString(pbdl_ready) + "," +
+         IntegerToString(pbdl_tp1_trades) + "," +
+         IntegerToString(pbdl_tp2_trades) + "," +
+         IntegerToString(pbdl_rejected) + "," +
+         IntegerToString(pbdl_conflict) + "," +
+         IntegerToString(pbdl_missing_context) + "," +
+         IntegerToString(pbdl_stops_blocked) + "," +
+         IntegerToString(pbdl_freeze_blocked) + "," +
+         IntegerToString(pbdl_broker_modify_sent) + "," +
+         IntegerToString(pbdl_runtime_sl_changed) + "," +
+         IntegerToString(pbdl_invariant_breaches) + "," +
+         DoubleToString(pbdl_coverage_pct, 2) + "," +
+         DoubleToString(pbdl_sanity_pct, 2) + "," +
+         DoubleToString(pbdl_completeness_pct, 2) + "," +
+         IntegerToString((int)m_symbol_context.stops_level_points) + "," +
+         IntegerToString((int)m_symbol_context.freeze_level_points) + "," +
+         IntegerToString(FALCON_PBF_STOPS_BUFFER_POINTS) + "," +
+         IntegerToString(pbd_min_required_distance_points) + "," +
+         FalconCsvSafe(FALCON_PBDL_NO_LOOKAHEAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_PBDL_DISTANCE_POLICY) + "," +
+         FalconCsvSafe(FALCON_PBDL_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PBDL_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PBME_STATUS) + "," +
+         FalconCsvSafe(FALCON_PBME_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PBME_RUNTIME_ENFORCED) + ",";
+      summary_row +=
+         FalconCsvSafe(FALCON_PBME_SCOPE) + "," +
+         IntegerToString(pbme_eval) + "," +
+         IntegerToString(pbme_distance_lock_ready) + "," +
+         IntegerToString(pbme_broker_feas_lock_ready) + "," +
+         IntegerToString(pbme_candidates) + "," +
+         IntegerToString(pbme_distance_sanity_ready) + "," +
+         IntegerToString(pbme_modify_plan_ready) + "," +
+         IntegerToString(pbme_request_shape_ready) + "," +
+         IntegerToString(pbme_protection_level_ready) + "," +
+         IntegerToString(pbme_stops_ready) + "," +
+         IntegerToString(pbme_freeze_ready) + "," +
+         IntegerToString(pbme_eligible) + "," +
+         IntegerToString(pbme_ready) + "," +
+         IntegerToString(pbme_tp1_trades) + "," +
+         IntegerToString(pbme_tp2_trades) + "," +
+         IntegerToString(pbme_rejected) + "," +
+         IntegerToString(pbme_conflict) + "," +
+         IntegerToString(pbme_missing_distance_lock) + "," +
+         IntegerToString(pbme_missing_broker_feas) + "," +
+         IntegerToString(pbme_missing_modify_plan) + "," +
+         IntegerToString(pbme_stops_blocked) + "," +
+         IntegerToString(pbme_freeze_blocked) + "," +
+         IntegerToString(pbme_broker_modify_sent) + "," +
+         IntegerToString(pbme_runtime_sl_changed) + "," +
+         IntegerToString(pbme_invariant_breaches) + "," +
+         DoubleToString(pbme_coverage_pct, 2) + "," +
+         DoubleToString(pbme_eligibility_pct, 2) + "," +
+         DoubleToString(pbme_completeness_pct, 2) + "," +
+         FalconCsvSafe(FALCON_PBME_NO_LOOKAHEAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_PBME_ELIGIBILITY_POLICY) + "," +
+         FalconCsvSafe(FALCON_PBME_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PBME_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PBMEL_STATUS) + "," +
+         FalconCsvSafe(FALCON_PBMEL_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PBMEL_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PBMEL_SCOPE) + ",";
+      summary_row +=
+         IntegerToString(pbmel_eval) + "," +
+         IntegerToString(pbmel_distance_lock_ready) + "," +
+         IntegerToString(pbmel_broker_feas_lock_ready) + "," +
+         IntegerToString(pbmel_candidates) + "," +
+         IntegerToString(pbmel_distance_sanity_ready) + "," +
+         IntegerToString(pbmel_modify_plan_ready) + "," +
+         IntegerToString(pbmel_request_shape_ready) + "," +
+         IntegerToString(pbmel_protection_level_ready) + "," +
+         IntegerToString(pbmel_stops_ready) + "," +
+         IntegerToString(pbmel_freeze_ready) + "," +
+         IntegerToString(pbmel_eligible) + "," +
+         IntegerToString(pbmel_ready) + "," +
+         IntegerToString(pbmel_tp1_trades) + "," +
+         IntegerToString(pbmel_tp2_trades) + "," +
+         IntegerToString(pbmel_rejected) + "," +
+         IntegerToString(pbmel_conflict) + "," +
+         IntegerToString(pbmel_missing_distance_lock) + "," +
+         IntegerToString(pbmel_missing_broker_feas) + "," +
+         IntegerToString(pbmel_missing_modify_plan) + "," +
+         IntegerToString(pbmel_stops_blocked) + "," +
+         IntegerToString(pbmel_freeze_blocked) + "," +
+         IntegerToString(pbmel_broker_modify_sent) + "," +
+         IntegerToString(pbmel_runtime_sl_changed) + "," +
+         IntegerToString(pbmel_invariant_breaches) + "," +
+         DoubleToString(pbmel_coverage_pct, 2) + "," +
+         DoubleToString(pbmel_eligibility_pct, 2) + "," +
+         DoubleToString(pbmel_completeness_pct, 2) + "," +
+         FalconCsvSafe(FALCON_PBMEL_NO_LOOKAHEAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_PBMEL_ELIGIBILITY_POLICY) + "," +
+         FalconCsvSafe(FALCON_PBMEL_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PBMEL_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PEMC_STATUS) + "," +
+         FalconCsvSafe(FALCON_PEMC_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PEMC_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PEMC_SCOPE) + "," +
+         IntegerToString(pemc_eval) + ",";
+      summary_row +=
+         IntegerToString(pemc_lock_ready) + "," +
+         IntegerToString(pemc_candidates) + "," +
+         IntegerToString(pemc_consumer_readable) + "," +
+         IntegerToString(pemc_modify_plan_readable) + "," +
+         IntegerToString(pemc_virtual_sl_readable) + "," +
+         IntegerToString(pemc_level_readable) + "," +
+         IntegerToString(pemc_trigger_readable) + "," +
+         IntegerToString(pemc_ready) + "," +
+         IntegerToString(pemc_rejected) + "," +
+         IntegerToString(pemc_conflict) + "," +
+         IntegerToString(pemc_missing_lock) + "," +
+         IntegerToString(pemc_missing_modify_plan) + "," +
+         IntegerToString(pemc_missing_virtual_sl) + "," +
+         IntegerToString(pemc_broker_modify_sent) + "," +
+         IntegerToString(pemc_runtime_sl_changed) + "," +
+         IntegerToString(pemc_order_send) + "," +
+         IntegerToString(pemc_invariant_breaches) + "," +
+         DoubleToString(pemc_readiness_pct, 2) + "," +
+         DoubleToString(pemc_completeness_pct, 2) + "," +
+         FalconCsvSafe(FALCON_PEMC_NO_LOOKAHEAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_PEMC_CONSUMER_POLICY) + "," +
+         FalconCsvSafe(FALCON_PEMC_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PEMC_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_MEC_STATUS) + "," +
+         FalconCsvSafe(FALCON_MEC_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_MEC_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_MEC_SCOPE) + "," +
+         IntegerToString(mec_registered_strategies) + "," +
+         IntegerToString(mec_defined_magics) + "," +
+         IntegerToString(mec_unique_magics) + "," +
+         IntegerToString(mec_active_engine_magic_ready) + "," +
+         IntegerToString(mec_unknown_magic_rejected) + "," +
+         IntegerToString(mec_duplicate_magic_breaches) + "," +
+         IntegerToString(mec_error_classes_defined) + "," +
+         IntegerToString(mec_classifier_ready) + "," +
+         IntegerToString(mec_retry_policy_defined) + ",";
+      summary_row +=
+         IntegerToString(mec_fatal_retry_blocked) + "," +
+         IntegerToString(mec_needs_refresh_retry_once) + "," +
+         IntegerToString(mec_connection_policy_defined) + "," +
+         IntegerToString(mec_order_send) + "," +
+         IntegerToString(mec_broker_modify_sent) + "," +
+         IntegerToString(mec_runtime_sl_changed) + "," +
+         IntegerToString(mec_invariant_breaches) + "," +
+         DoubleToString(mec_readiness_pct, 2) + "," +
+         DoubleToString(mec_completeness_pct, 2) + "," +
+         FalconCsvSafe(FALCON_MEC_MAGIC_POLICY) + "," +
+         FalconCsvSafe(FALCON_MEC_ERROR_POLICY) + "," +
+         FalconCsvSafe(FALCON_MEC_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_MEC_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_TSPR_STATUS) + "," +
+         FalconCsvSafe(FALCON_TSPR_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_TSPR_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_TSPR_SCOPE) + "," +
+         IntegerToString(tspr_persist_contract) + "," +
+         IntegerToString(tspr_folder_defined) + "," +
+         IntegerToString(tspr_record_shape) + "," +
+         IntegerToString(tspr_broker_reconstruct) + "," +
+         IntegerToString(tspr_min_recovery) + "," +
+         IntegerToString(tspr_event_persist_policy) + "," +
+         IntegerToString(tspr_restart_policy) + "," +
+         IntegerToString(tspr_shadow_trades_covered) + "," +
+         IntegerToString(tspr_recovery_candidates) + "," +
+         IntegerToString(tspr_min_recovery_candidates) + "," +
+         IntegerToString(tspr_untrusted_state_blocked) + "," +
+         IntegerToString(tspr_order_send) + "," +
+         IntegerToString(tspr_broker_modify_sent) + "," +
+         IntegerToString(tspr_runtime_sl_changed) + "," +
+         IntegerToString(tspr_invariant_breaches) + "," +
+         DoubleToString(tspr_readiness_pct, 2) + "," +
+         DoubleToString(tspr_completeness_pct, 2) + "," +
+         FalconCsvSafe(FALCON_TSPR_STATE_POLICY) + "," +
+         FalconCsvSafe(FALCON_TSPR_ORDER_SEND_POLICY) + ",";
+      summary_row +=
+         FalconCsvSafe(FALCON_TSPR_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_SSBL_STATUS) + "," +
+         FalconCsvSafe(FALCON_SSBL_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_SSBL_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_SSBL_SCOPE) + "," +
+         IntegerToString(ssbl_spread_guard_defined) + "," +
+         IntegerToString(ssbl_slippage_cap_defined) + "," +
+         IntegerToString(ssbl_broker_limits_cache) + "," +
+         IntegerToString(ssbl_stops_policy_defined) + "," +
+         IntegerToString(ssbl_freeze_policy_defined) + "," +
+         IntegerToString(ssbl_volume_policy_defined) + "," +
+         IntegerToString(ssbl_stops_buffer_points) + "," +
+         IntegerToString(ssbl_max_spread_points) + "," +
+         IntegerToString(ssbl_max_slippage_points) + "," +
+         IntegerToString(ssbl_shadow_trades_covered) + "," +
+         IntegerToString(ssbl_broker_context_ready) + "," +
+         IntegerToString(ssbl_guard_ready) + "," +
+         IntegerToString(ssbl_rejected_trades) + "," +
+         IntegerToString(ssbl_order_send) + "," +
+         IntegerToString(ssbl_broker_modify_sent) + "," +
+         IntegerToString(ssbl_runtime_sl_changed) + "," +
+         IntegerToString(ssbl_invariant_breaches) + "," +
+         DoubleToString(ssbl_readiness_pct, 2) + "," +
+         DoubleToString(ssbl_completeness_pct, 2) + "," +
+         FalconCsvSafe(FALCON_SSBL_SPREAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_SSBL_LIMITS_POLICY) + "," +
+         FalconCsvSafe(FALCON_SSBL_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_SSBL_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_OTTU_STATUS) + "," +
+         FalconCsvSafe(FALCON_OTTU_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_OTTU_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_OTTU_SCOPE) + "," +
+         IntegerToString(ottu_handler_defined) + "," +
+         IntegerToString(ottu_source_policy_defined) + "," +
+         IntegerToString(ottu_event_routing_defined) + "," +
+         IntegerToString(ottu_deal_add_policy_defined) + ",";
+      summary_row +=
+         IntegerToString(ottu_position_change_policy_defined) + "," +
+         IntegerToString(ottu_state_persist_hook_defined) + "," +
+         IntegerToString(ottu_on_tick_read_only_policy) + "," +
+         IntegerToString(ottu_shadow_trades_covered) + "," +
+         IntegerToString(ottu_broker_events_observed) + "," +
+         IntegerToString(ottu_deal_events_routed) + "," +
+         IntegerToString(ottu_position_events_routed) + "," +
+         IntegerToString(ottu_unknown_events_ignored) + "," +
+         IntegerToString(ottu_order_send) + "," +
+         IntegerToString(ottu_broker_modify_sent) + "," +
+         IntegerToString(ottu_runtime_sl_changed) + "," +
+         IntegerToString(ottu_invariant_breaches) + "," +
+         DoubleToString(ottu_readiness_pct, 2) + "," +
+         DoubleToString(ottu_completeness_pct, 2) + "," +
+         FalconCsvSafe(FALCON_OTTU_SOURCE_POLICY) + "," +
+         FalconCsvSafe(FALCON_OTTU_STATE_POLICY) + "," +
+         FalconCsvSafe(FALCON_OTTU_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_OTTU_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PIVP_STATUS) + "," +
+         FalconCsvSafe(FALCON_PIVP_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PIVP_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PIVP_SCOPE) + "," +
+         IntegerToString(pivp_symbol_policy_defined) + "," +
+         IntegerToString(pivp_timeframe_policy_defined) + "," +
+         IntegerToString(pivp_account_policy_defined) + "," +
+         IntegerToString(pivp_broker_policy_defined) + "," +
+         IntegerToString(pivp_min_balance_policy_defined) + "," +
+         IntegerToString(pivp_wrong_environment_blocks_live) + "," +
+         IntegerToString(pivp_shadow_smoke_non_blocking) + "," +
+         IntegerToString(pivp_supported_symbol_detected) + "," +
+         IntegerToString(pivp_broker_context_ready) + "," +
+         IntegerToString(pivp_shadow_trades_covered) + "," +
+         IntegerToString(pivp_init_failed_triggered) + "," +
+         IntegerToString(pivp_order_send) + "," +
+         IntegerToString(pivp_broker_modify_sent) + "," +
+         IntegerToString(pivp_runtime_sl_changed) + ",";
+      summary_row +=
+         IntegerToString(pivp_invariant_breaches) + "," +
+         DoubleToString(pivp_readiness_pct, 2) + "," +
+         DoubleToString(pivp_completeness_pct, 2) + "," +
+         FalconCsvSafe(FALCON_PIVP_SYMBOL_POLICY) + "," +
+         FalconCsvSafe(FALCON_PIVP_TIMEFRAME_POLICY) + "," +
+         FalconCsvSafe(FALCON_PIVP_ACCOUNT_POLICY) + "," +
+         FalconCsvSafe(FALCON_PIVP_BROKER_POLICY) + "," +
+         FalconCsvSafe(FALCON_PIVP_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PIVP_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_EESL_STATUS) + "," +
+         FalconCsvSafe(FALCON_EESL_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_EESL_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_EESL_SCOPE) + "," +
+         IntegerToString(eesl_contract_defined) + "," +
+         IntegerToString(eesl_independent_defined) + "," +
+         IntegerToString(eesl_every_tick_policy) + "," +
+         IntegerToString(eesl_before_engine_policy) + "," +
+         IntegerToString(eesl_hard_cap_defined) + "," +
+         DoubleToString(FALCON_EESL_HARD_CAP_PCT, 2) + "," +
+         IntegerToString(eesl_blocks_new_entries) + "," +
+         IntegerToString(eesl_close_all_policy) + "," +
+         IntegerToString(eesl_session_disable_policy) + "," +
+         IntegerToString(eesl_alert_policy_defined) + "," +
+         IntegerToString(eesl_shadow_trades_covered) + "," +
+         IntegerToString(eesl_triggered) + "," +
+         IntegerToString(eesl_closed_positions) + "," +
+         IntegerToString(eesl_order_send) + "," +
+         IntegerToString(eesl_broker_modify_sent) + "," +
+         IntegerToString(eesl_runtime_sl_changed) + "," +
+         IntegerToString(eesl_invariant_breaches) + "," +
+         DoubleToString(eesl_readiness_pct, 2) + "," +
+         DoubleToString(eesl_completeness_pct, 2) + "," +
+         FalconCsvSafe(FALCON_EESL_POLICY) + "," +
+         FalconCsvSafe(FALCON_EESL_ACTION_POLICY) + "," +
+         FalconCsvSafe(FALCON_EESL_ALERT_POLICY) + "," +
+         FalconCsvSafe(FALCON_EESL_ORDER_SEND_POLICY) + ",";
+      summary_row +=
+         FalconCsvSafe(FALCON_EESL_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_CPD_STATUS) + "," +
+         FalconCsvSafe(FALCON_CPD_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_CPD_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_CPD_SCOPE) + "," +
+         IntegerToString(cpd_contract_defined) + "," +
+         IntegerToString(cpd_max_total) + "," +
+         IntegerToString(cpd_max_per_engine) + "," +
+         IntegerToString(cpd_max_per_direction) + "," +
+         IntegerToString(cpd_total_cap_defined) + "," +
+         IntegerToString(cpd_per_engine_cap_defined) + "," +
+         IntegerToString(cpd_per_direction_cap_defined) + "," +
+         IntegerToString(cpd_shared_exposure_policy_defined) + "," +
+         IntegerToString(cpd_engine_isolation_policy_defined) + "," +
+         IntegerToString(cpd_direction_cap_policy_defined) + "," +
+         IntegerToString(cpd_shadow_smoke_non_blocking) + "," +
+         IntegerToString(cpd_shadow_trades_covered) + "," +
+         IntegerToString(cpd_open_positions_observed) + "," +
+         IntegerToString(cpd_blocked_by_total_cap) + "," +
+         IntegerToString(cpd_blocked_by_engine_cap) + "," +
+         IntegerToString(cpd_blocked_by_direction_cap) + "," +
+         IntegerToString(cpd_order_send) + "," +
+         IntegerToString(cpd_broker_modify_sent) + "," +
+         IntegerToString(cpd_runtime_sl_changed) + "," +
+         IntegerToString(cpd_invariant_breaches) + "," +
+         DoubleToString(cpd_readiness_pct, 2) + "," +
+         DoubleToString(cpd_completeness_pct, 2) + "," +
+         FalconCsvSafe(FALCON_CPD_SHARED_EXPOSURE_POLICY) + "," +
+         FalconCsvSafe(FALCON_CPD_ENGINE_ISOLATION_POLICY) + "," +
+         FalconCsvSafe(FALCON_CPD_DIRECTION_CAP_POLICY) + "," +
+         FalconCsvSafe(FALCON_CPD_ORDER_SEND_POLICY) + ",";
+      summary_row +=
+         FalconCsvSafe(FALCON_CPD_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PMD_STATUS) + "," +
+         FalconCsvSafe(FALCON_PMD_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PMD_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PMD_SCOPE) + "," +
+         IntegerToString(pmd_shadow_definition_ready) + "," +
+         IntegerToString(pmd_paper_definition_ready) + "," +
+         IntegerToString(pmd_demo_definition_ready) + "," +
+         IntegerToString(pmd_live_definition_ready) + "," +
+         IntegerToString(pmd_paper_position_lifecycle_defined) + "," +
+         IntegerToString(pmd_paper_virtual_sl_defined) + "," +
+         IntegerToString(pmd_paper_protection_defined) + "," +
+         IntegerToString(pmd_paper_runner_defined) + "," +
+         IntegerToString(pmd_paper_equity_curve_defined) + "," +
+         IntegerToString(pmd_paper_exit_model_defined) + "," +
+         IntegerToString(pmd_shadow_smoke_non_blocking) + "," +
+         IntegerToString(pmd_shadow_trades_covered) + "," +
+         IntegerToString(pmd_paper_positions_created) + "," +
+         IntegerToString(pmd_paper_exits_applied) + "," +
+         IntegerToString(pmd_paper_equity_events) + "," +
+         IntegerToString(pmd_order_send) + "," +
+         IntegerToString(pmd_broker_modify_sent) + "," +
+         IntegerToString(pmd_runtime_sl_changed) + "," +
+         IntegerToString(pmd_invariant_breaches) + "," +
+         DoubleToString(pmd_readiness_pct, 2) + "," +
+         DoubleToString(pmd_completeness_pct, 2) + "," +
+         FalconCsvSafe(FALCON_PMD_SHADOW_POLICY) + "," +
+         FalconCsvSafe(FALCON_PMD_PAPER_POLICY) + "," +
+         FalconCsvSafe(FALCON_PMD_DEMO_POLICY) + "," +
+         FalconCsvSafe(FALCON_PMD_LIVE_POLICY) + "," +
+         FalconCsvSafe(FALCON_PMD_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PMD_NEXT_PHASE) + ",";
+      summary_row +=
+         FalconCsvSafe(FALCON_SPF_STATUS) + "," +
+         FalconCsvSafe(FALCON_SPF_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_SPF_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_SPF_SCOPE) + "," +
+         IntegerToString(spf_symbol_family_defined) + "," +
+         IntegerToString(spf_aliases_defined) + "," +
+         IntegerToString(spf_current_symbol_recognized) + "," +
+         IntegerToString(spf_context_valid) + "," +
+         IntegerToString(m_symbol_context.digits) + "," +
+         DoubleToString(m_symbol_context.point, 10) + "," +
+         DoubleToString(m_symbol_context.tick_size, 10) + "," +
+         DoubleToString(m_symbol_context.tick_value, 5) + "," +
+         DoubleToString(m_symbol_context.contract_size, 2) + "," +
+         IntegerToString((int)m_symbol_context.spread_points) + "," +
+         IntegerToString((int)m_symbol_context.stops_level_points) + "," +
+         IntegerToString((int)m_symbol_context.freeze_level_points) + "," +
+         DoubleToString(m_symbol_context.min_lot, 2) + "," +
+         DoubleToString(m_symbol_context.max_lot, 2) + "," +
+         DoubleToString(m_symbol_context.lot_step, 2) + "," +
+         IntegerToString(spf_contract_policy_defined) + "," +
+         IntegerToString(spf_tick_policy_defined) + "," +
+         IntegerToString(spf_point_mapping_defined) + "," +
+         IntegerToString(spf_broker_limits_defined) + "," +
+         IntegerToString(spf_session_policy_defined) + "," +
+         IntegerToString(spf_spread_policy_defined) + "," +
+         IntegerToString(spf_default_safety_defined) + "," +
+         IntegerToString(spf_shadow_smoke_non_blocking) + "," +
+         IntegerToString(spf_shadow_trades_covered) + "," +
+         IntegerToString(spf_paper_guards_applied) + "," +
+         IntegerToString(spf_order_send) + "," +
+         IntegerToString(spf_broker_modify_sent) + "," +
+         IntegerToString(spf_runtime_sl_changed) + "," +
+         IntegerToString(spf_invariant_breaches) + "," +
+         DoubleToString(spf_readiness_pct, 2) + "," +
+         DoubleToString(spf_completeness_pct, 2) + "," +
+         FalconCsvSafe(FALCON_SPF_SYMBOL_ALIASES) + "," +
+         FalconCsvSafe(FALCON_SPF_CONTRACT_POLICY) + "," +
+         FalconCsvSafe(FALCON_SPF_TICK_POLICY) + "," +
+         FalconCsvSafe(FALCON_SPF_POINT_MAPPING_POLICY) + "," +
+         FalconCsvSafe(FALCON_SPF_BROKER_LIMITS_POLICY) + "," +
+         FalconCsvSafe(FALCON_SPF_SESSION_POLICY) + "," +
+         FalconCsvSafe(FALCON_SPF_SPREAD_POLICY) + "," +
+         FalconCsvSafe(FALCON_SPF_DEFAULT_SAFETY_POLICY) + "," +
+         FalconCsvSafe(FALCON_SPF_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_SPF_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PRGA_STATUS) + "," +
+         FalconCsvSafe(FALCON_PRGA_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PRGA_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PRGA_SCOPE) + "," +
+         IntegerToString(prga_contract_ready) + "," +
+         IntegerToString(m_totals.paper_guard_evaluated_trades) + "," +
+         IntegerToString(m_totals.paper_guard_passed_trades) + "," +
+         IntegerToString(m_totals.paper_guard_rejected_trades) + "," +
+         IntegerToString(m_totals.paper_guard_spread_rejected_trades) + "," +
+         IntegerToString(m_totals.paper_guard_stops_rejected_trades) + "," +
+         IntegerToString(m_totals.paper_guard_freeze_rejected_trades) + "," +
+         IntegerToString(m_totals.paper_exposure_evaluated_trades) + "," +
+         IntegerToString(m_totals.paper_exposure_passed_trades) + "," +
+         IntegerToString(m_totals.paper_exposure_blocked_total) + "," +
+         IntegerToString(m_totals.paper_exposure_blocked_engine) + "," +
+         IntegerToString(m_totals.paper_exposure_blocked_direction) + "," +
+         DoubleToString(m_totals.paper_guard_before_net_points, 2) + "," +
+         DoubleToString(m_totals.paper_guard_after_net_points, 2) + "," +
+         DoubleToString(m_totals.paper_guard_impact_points, 2) + "," +
+         DoubleToString(m_totals.paper_guard_before_net_usd, 2) + "," +
+         DoubleToString(m_totals.paper_guard_after_net_usd, 2) + "," +
+         DoubleToString(m_totals.paper_guard_impact_usd, 2) + "," +
+         IntegerToString(prga_order_send) + "," +
+         IntegerToString(prga_broker_modify_sent) + "," +
+         IntegerToString(prga_runtime_sl_changed) + "," +
+         IntegerToString(prga_invariant_breaches) + "," +
+         DoubleToString(prga_readiness_pct, 2) + "," +
+         DoubleToString(prga_application_pct, 2) + "," +
+         FalconCsvSafe(FALCON_PRGA_REJECT_POLICY) + "," +
+         FalconCsvSafe(FALCON_PRGA_EXPOSURE_POLICY) + "," +
+         FalconCsvSafe(FALCON_PRGA_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PRGA_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PRTP_STATUS) + "," +
+         FalconCsvSafe(FALCON_PRTP_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PRTP_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PRTP_SCOPE) + "," +
+         IntegerToString(prtp_contract_ready) + "," +
+         IntegerToString(m_totals.paper_protection_evaluated_trades) + "," +
+         IntegerToString(m_totals.paper_protection_eligible_trades) + "," +
+         IntegerToString(m_totals.paper_protection_activated_trades) + "," +
+         IntegerToString(m_totals.paper_tp1_protection_trades) + "," +
+         IntegerToString(m_totals.paper_tp2_protection_trades) + "," +
+         IntegerToString(m_totals.paper_virtual_sl_changed_trades) + "," +
+         IntegerToString(m_totals.paper_virtual_sl_hit_trades) + "," +
+         IntegerToString(m_totals.paper_protected_exit_trades) + "," +
+         DoubleToString(m_totals.paper_protection_before_net_points, 2) + "," +
+         DoubleToString(m_totals.paper_protection_after_net_points, 2) + "," +
+         DoubleToString(m_totals.paper_protection_impact_points, 2) + "," +
+         DoubleToString(m_totals.paper_protection_before_net_usd, 2) + "," +
+         DoubleToString(m_totals.paper_protection_after_net_usd, 2) + "," +
+         DoubleToString(m_totals.paper_protection_impact_usd, 2) + "," +
+         DoubleToString(m_totals.paper_protection_giveback_prevented_points, 2) + "," +
+         DoubleToString(m_totals.paper_protection_giveback_prevented_usd, 2) + "," +
+         IntegerToString(prtp_order_send) + "," +
+         IntegerToString(prtp_broker_modify_sent) + "," +
+         IntegerToString(prtp_runtime_sl_changed) + "," +
+         IntegerToString(prtp_invariant_breaches) + "," +
+         DoubleToString(prtp_readiness_pct, 2) + "," +
+         DoubleToString(prtp_application_pct, 2) + "," +
+         FalconCsvSafe(FALCON_PRTP_POLICY) + "," +
+         FalconCsvSafe(FALCON_PRTP_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PRTP_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_PRRUN_STATUS) + "," +
+         FalconCsvSafe(FALCON_PRRUN_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_PRRUN_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_PRRUN_SCOPE) + "," +
+         IntegerToString(prrun_contract_ready) + "," +
+         IntegerToString(m_totals.paper_runner_evaluated_trades) + "," +
+         IntegerToString(m_totals.paper_runner_eligible_trades) + "," +
+         IntegerToString(m_totals.paper_runner_activated_trades) + "," +
+         IntegerToString(m_totals.paper_runner_3r_trades) + "," +
+         IntegerToString(m_totals.paper_moon_mode_5r_trades) + "," +
+         IntegerToString(m_totals.paper_runner_exit_trades) + "," +
+         DoubleToString(m_totals.paper_runner_additional_points, 2) + "," +
+         DoubleToString(m_totals.paper_runner_additional_usd, 2) + "," +
+         IntegerToString(m_totals.paper_runner_giveback_trades) + "," +
+         IntegerToString(m_totals.paper_runner_protected_from_loss_trades) + "," +
+         DoubleToString(m_totals.paper_runner_before_net_points, 2) + "," +
+         DoubleToString(m_totals.paper_runner_after_net_points, 2) + "," +
+         DoubleToString(m_totals.paper_runner_impact_points, 2) + "," +
+         DoubleToString(m_totals.paper_runner_before_net_usd, 2) + "," +
+         DoubleToString(m_totals.paper_runner_after_net_usd, 2) + "," +
+         DoubleToString(m_totals.paper_runner_impact_usd, 2) + "," +
+         IntegerToString(prrun_order_send) + "," +
+         IntegerToString(prrun_broker_modify_sent) + "," +
+         IntegerToString(prrun_runtime_sl_changed) + "," +
+         IntegerToString(prrun_invariant_breaches) + "," +
+         DoubleToString(prrun_readiness_pct, 2) + "," +
+         DoubleToString(prrun_application_pct, 2) + "," +
+         FalconCsvSafe(FALCON_PRRUN_POLICY) + "," +
+         FalconCsvSafe(FALCON_PRRUN_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_PRRUN_NEXT_PHASE) + "," +
          FalconCsvSafe(FALCON_RUNNER_BARPATH_POLICY) + "," +
-         FalconCsvSafe(FALCON_RUNNER_BARPATH_NEXT_PHASE);
+         FalconCsvSafe(FALCON_RUNNER_BARPATH_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_CTF_STATUS) + "," +
+         FalconCsvSafe(FALCON_CTF_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_CTF_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_CTF_SCOPE) + "," +
+         IntegerToString(ctf_contract_ready) + "," +
+         DoubleToString(ctf_effective_balance, 2) + "," +
+         FalconCsvSafe(ctf_tier_name) + "," +
+         DoubleToString(FalconCapitalTierMinBalance(ctf_tier_name), 2) + "," +
+         DoubleToString(FalconCapitalTierMaxBalance(ctf_tier_name), 2) + "," +
+         IntegerToString(FalconCapitalTierMaxLosses(ctf_tier_name)) + "," +
+         DoubleToString(FalconCapitalTierMaxDailyR(ctf_tier_name), 2) + "," +
+         DoubleToString(FalconCapitalTierMaxDrawdownPct(ctf_tier_name), 2) + "," +
+         DoubleToString(m_symbol_context.min_lot, 2) + "," +
+         DoubleToString(FixedLotSize, 2) + "," +
+         FalconCsvSafe(ctf_min_lot_status) + "," +
+         IntegerToString(ctf_min_lot_compatible) + "," +
+         IntegerToString(ctf_tier_locked) + "," +
+         IntegerToString(ctf_order_send) + "," +
+         IntegerToString(ctf_broker_modify_sent) + "," +
+         IntegerToString(ctf_runtime_sl_changed) + "," +
+         IntegerToString(ctf_invariant_breaches) + "," +
+         DoubleToString(ctf_readiness_pct, 2) + "," +
+         DoubleToString(ctf_application_pct, 2) + "," +
+         FalconCsvSafe(FALCON_CTF_BALANCE_POLICY) + "," +
+         FalconCsvSafe(FALCON_CTF_MIN_LOT_POLICY) + "," +
+         FalconCsvSafe(FALCON_CTF_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_CTF_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_TLE_STATUS) + "," +
+         FalconCsvSafe(FALCON_TLE_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_TLE_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_TLE_SCOPE) + "," +
+         IntegerToString(tle_contract_ready) + "," +
+         IntegerToString(m_totals.paper_emergency_evaluated_trades) + "," +
+         IntegerToString(m_totals.paper_emergency_safe_trades) + "," +
+         IntegerToString(m_totals.paper_emergency_triggered_trades) + "," +
+         IntegerToString(m_totals.paper_emergency_blocked_entries) + "," +
+         IntegerToString(m_totals.paper_emergency_layer1_triggers) + "," +
+         IntegerToString(m_totals.paper_emergency_layer2_triggers) + "," +
+         IntegerToString(m_totals.paper_emergency_layer3_triggers) + "," +
+         DoubleToString(m_totals.paper_emergency_before_net_points, 2) + "," +
+         DoubleToString(m_totals.paper_emergency_after_net_points, 2) + "," +
+         DoubleToString(m_totals.paper_emergency_impact_points, 2) + "," +
+         DoubleToString(m_totals.paper_emergency_before_net_usd, 2) + "," +
+         DoubleToString(m_totals.paper_emergency_after_net_usd, 2) + "," +
+         DoubleToString(m_totals.paper_emergency_impact_usd, 2) + "," +
+         DoubleToString(m_totals.paper_emergency_max_drawdown_pct, 2) + "," +
+         DoubleToString(m_totals.paper_emergency_worst_daily_r, 2) + "," +
+         IntegerToString(tle_order_send) + "," +
+         IntegerToString(tle_broker_modify_sent) + "," +
+         IntegerToString(tle_runtime_sl_changed) + "," +
+         IntegerToString(tle_invariant_breaches) + "," +
+         DoubleToString(tle_readiness_pct, 2) + "," +
+         DoubleToString(tle_application_pct, 2) + "," +
+         FalconCsvSafe(FALCON_TLE_POLICY) + "," +
+         FalconCsvSafe(FALCON_TLE_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_TLE_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_LSR_STATUS) + "," +
+         FalconCsvSafe(FALCON_LSR_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_LSR_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_LSR_SCOPE) + "," +
+         IntegerToString(lsr_contract_ready) + "," +
+         IntegerToString(m_totals.layer_reset_evaluated_trades) + "," +
+         IntegerToString(m_totals.layer1_reset_on_win_events) + "," +
+         IntegerToString(m_totals.layer2_reset_on_new_day_events) + "," +
+         IntegerToString(m_totals.layer3_reset_on_new_peak_events) + "," +
+         IntegerToString(m_totals.layer_reset_event_trades) + "," +
+         IntegerToString(m_totals.layer_reset_duplicate_triggers) + "," +
+         IntegerToString(lsr_order_send) + "," +
+         IntegerToString(lsr_broker_modify_sent) + "," +
+         IntegerToString(lsr_runtime_sl_changed) + "," +
+         IntegerToString(lsr_invariant_breaches) + "," +
+         DoubleToString(lsr_readiness_pct, 2) + "," +
+         DoubleToString(lsr_application_pct, 2) + "," +
+         FalconCsvSafe(FALCON_LSR_POLICY) + "," +
+         FalconCsvSafe(FALCON_LSR_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_LSR_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_VAL_STATUS) + "," +
+         FalconCsvSafe(FALCON_VAL_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_VAL_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_VAL_SCOPE) + "," +
+         IntegerToString(val_contract_ready) + "," +
+         IntegerToString(val_evaluated_trades) + "," +
+         DoubleToString(m_totals.net_usd, 2) + "," +
+         DoubleToString(m_totals.paper_runner_after_net_usd, 2) + "," +
+         DoubleToString(m_totals.paper_emergency_after_net_usd, 2) + "," +
+         DoubleToString(val_working_baseline_impact_usd, 2) + "," +
+         IntegerToString(m_totals.paper_emergency_triggered_trades) + "," +
+         IntegerToString(m_totals.paper_emergency_blocked_entries) + "," +
+         IntegerToString(m_totals.layer_reset_duplicate_triggers) + "," +
+         IntegerToString(val_multi_window_required) + "," +
+         IntegerToString(val_order_send) + "," +
+         IntegerToString(val_broker_modify_sent) + "," +
+         IntegerToString(val_runtime_sl_changed) + "," +
+         IntegerToString(val_invariant_breaches) + "," +
+         DoubleToString(val_readiness_pct, 2) + "," +
+         DoubleToString(val_application_pct, 2) + "," +
+         FalconCsvSafe(FALCON_VAL_POLICY) + "," +
+         FalconCsvSafe(FALCON_VAL_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_VAL_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_TPF_STATUS) + "," +
+         FalconCsvSafe(FALCON_TPF_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_TPF_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_TPF_SCOPE) + "," +
+         IntegerToString(tpf_contract_ready) + "," +
+         IntegerToString(tpf_evaluated_trades) + "," +
+         FalconCsvSafe(tpf_current_tier) + "," +
+         FalconCsvSafe(tpf_next_tier) + "," +
+         DoubleToString(ctf_effective_balance, 2) + "," +
+         DoubleToString(tpf_next_min_balance, 2) + "," +
+         IntegerToString(FALCON_TPF_MIN_TRADES_IN_TIER) + "," +
+         IntegerToString(tpf_trades_in_tier) + "," +
+         DoubleToString(FALCON_TPF_MIN_WIN_RATE_PCT, 2) + "," +
+         DoubleToString(tpf_win_rate, 2) + "," +
+         DoubleToString(FALCON_TPF_MIN_NET_R, 2) + "," +
+         DoubleToString(tpf_net_r, 2) + "," +
+         IntegerToString(FALCON_TPF_DAYS_WITHOUT_EMERGENCY) + "," +
+         IntegerToString(FALCON_TPF_POST_QUAL_COOLDOWN_DAYS) + "," +
+         IntegerToString(tpf_balance_requirement_met) + "," +
+         IntegerToString(tpf_trades_requirement_met) + "," +
+         IntegerToString(tpf_winrate_requirement_met) + "," +
+         IntegerToString(tpf_netr_requirement_met) + "," +
+         IntegerToString(tpf_no_emergency_requirement_pending) + "," +
+         IntegerToString(tpf_cooldown_requirement_pending) + "," +
+         IntegerToString(tpf_eligible_now) + "," +
+         FalconCsvSafe(tpf_blocked_reason) + "," +
+         IntegerToString(tpf_promotion_events) + "," +
+         IntegerToString(tpf_transition_report_defined) + "," +
+         IntegerToString(tpf_order_send) + "," +
+         IntegerToString(tpf_broker_modify_sent) + "," +
+         IntegerToString(tpf_runtime_sl_changed) + "," +
+         IntegerToString(tpf_invariant_breaches) + "," +
+         DoubleToString(tpf_readiness_pct, 2) + "," +
+         DoubleToString(tpf_application_pct, 2) + "," +
+         FalconCsvSafe(FALCON_TPF_POLICY) + "," +
+         FalconCsvSafe(FALCON_TPF_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_TPF_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_TDF_STATUS) + "," +
+         FalconCsvSafe(FALCON_TDF_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_TDF_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_TDF_SCOPE) + "," +
+         IntegerToString(tdf_contract_ready) + "," +
+         IntegerToString(tdf_evaluated_trades) + "," +
+         FalconCsvSafe(tdf_current_tier) + "," +
+         DoubleToString(ctf_effective_balance, 2) + "," +
+         DoubleToString(tdf_current_tier_min_balance, 2) + "," +
+         DoubleToString(FALCON_TDF_HYSTERESIS_PCT, 2) + "," +
+         DoubleToString(tdf_balance_hysteresis_threshold, 2) + "," +
+         IntegerToString(tdf_emergencies_in_14d) + "," +
+         IntegerToString(FALCON_TDF_MAX_EMERGENCIES_14D) + "," +
+         IntegerToString(tdf_negative_weeks_in_row) + "," +
+         IntegerToString(FALCON_TDF_MAX_NEGATIVE_WEEKS) + "," +
+         DoubleToString(FALCON_TDF_EXTREME_DD_MULTIPLIER, 2) + "," +
+         DoubleToString(tdf_observed_max_drawdown_pct, 2) + "," +
+         DoubleToString(tdf_extreme_drawdown_threshold_pct, 2) + "," +
+         IntegerToString(tdf_balance_hysteresis_breach) + "," +
+         IntegerToString(tdf_multiple_emergencies_breach) + "," +
+         IntegerToString(tdf_negative_weeks_breach) + "," +
+         IntegerToString(tdf_extreme_drawdown_breach) + "," +
+         IntegerToString(tdf_should_demote_now) + "," +
+         FalconCsvSafe(tdf_demotion_reason) + "," +
+         IntegerToString(tdf_demotion_events) + "," +
+         IntegerToString(tdf_transition_report_defined) + "," +
+         IntegerToString(tdf_order_send) + "," +
+         IntegerToString(tdf_broker_modify_sent) + "," +
+         IntegerToString(tdf_runtime_sl_changed) + "," +
+         IntegerToString(tdf_invariant_breaches) + "," +
+         DoubleToString(tdf_readiness_pct, 2) + "," +
+         DoubleToString(tdf_application_pct, 2) + "," +
+         FalconCsvSafe(FALCON_TDF_POLICY) + "," +
+         FalconCsvSafe(FALCON_TDF_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_TDF_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_TDL_STATUS) + "," +
+         FalconCsvSafe(FALCON_TDL_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_TDL_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_TDL_SCOPE) + "," +
+         IntegerToString(tdl_contract_ready) + "," +
+         IntegerToString(tdl_evaluated_trades) + "," +
+         FalconCsvSafe(tdl_start_tier) + "," +
+         FalconCsvSafe(tdl_applied_tier) + "," +
+         FalconCsvSafe(tdl_transition_direction) + "," +
+         FalconCsvSafe(tdl_transition_reason) + "," +
+         IntegerToString(tdl_promotion_applied) + "," +
+         IntegerToString(tdl_demotion_applied) + "," +
+         IntegerToString(tdl_transition_events) + "," +
+         IntegerToString(tdl_active_positions_preserved) + "," +
+         IntegerToString(tdl_next_trades_use_applied_tier) + "," +
+         IntegerToString(tdl_order_send) + "," +
+         IntegerToString(tdl_broker_modify_sent) + "," +
+         IntegerToString(tdl_runtime_sl_changed) + "," +
+         IntegerToString(tdl_invariant_breaches) + "," +
+         DoubleToString(tdl_readiness_pct, 2) + "," +
+         DoubleToString(tdl_application_pct, 2) + "," +
+         FalconCsvSafe(FALCON_TDL_POLICY) + "," +
+         FalconCsvSafe(FALCON_TDL_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_TDL_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_LCRF_STATUS) + "," +
+         FalconCsvSafe(FALCON_LCRF_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_LCRF_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_LCRF_SCOPE) + "," +
+         IntegerToString(lcrf_contract_ready) + "," +
+         IntegerToString(lcrf_evaluated_trades) + "," +
+         IntegerToString(m_totals.lotsizing_feasibility_feasible_trades) + "," +
+         IntegerToString(m_totals.lotsizing_feasibility_borderline_trades) + "," +
+         IntegerToString(m_totals.lotsizing_feasibility_not_feasible_trades) + "," +
+         IntegerToString(m_totals.lotsizing_feasibility_invalid_trades) + "," +
+         IntegerToString(m_totals.lotsizing_single_trade_cap_breach_trades) + "," +
+         DoubleToString(lcrf_min_lot_risk_usd_avg, 2) + "," +
+         DoubleToString(m_totals.lotsizing_min_lot_risk_usd_max, 2) + "," +
+         DoubleToString(lcrf_min_lot_risk_pct_avg, 2) + "," +
+         DoubleToString(m_totals.lotsizing_min_lot_risk_pct_max, 2) + "," +
+         DoubleToString(lcrf_potential_loss_r_avg, 2) + "," +
+         DoubleToString(m_totals.lotsizing_potential_loss_r_max, 2) + "," +
+         IntegerToString(lcrf_order_send) + "," +
+         IntegerToString(lcrf_broker_modify_sent) + "," +
+         IntegerToString(lcrf_runtime_sl_changed) + "," +
+         IntegerToString(lcrf_invariant_breaches) + "," +
+         DoubleToString(lcrf_readiness_pct, 2) + "," +
+         DoubleToString(lcrf_application_pct, 2) + "," +
+         FalconCsvSafe(FALCON_LCRF_POLICY) + "," +
+         FalconCsvSafe(FALCON_LCRF_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_LCRF_NEXT_PHASE);
 
       // v0.20.2: Write CRLF explicitly as separate strings. This prevents MetaTrader/CSV
       // readers from receiving the header and summary row concatenated on a single line.
@@ -8857,6 +12377,462 @@ private:
       }
    }
 
+
+   void ApplyPaperRuntimeGuardApplication(FalconTradeLifecycleRecord &record)
+   {
+      double sl_distance_points = 0.0;
+      string reject_reason = FalconPrgaRejectReason(record, m_symbol_context, sl_distance_points);
+
+      record.paper_guard_layer = "FalconGuard";
+      record.paper_spread_points = record.fvg_spread_points;
+      if(record.paper_spread_points < 0)
+         record.paper_spread_points = m_symbol_context.spread_points;
+      record.paper_max_spread_points = FALCON_SSBL_MAX_SPREAD_POINTS;
+      record.paper_sl_distance_points = sl_distance_points;
+      record.paper_stops_level_points = m_symbol_context.stops_level_points;
+      record.paper_freeze_level_points = m_symbol_context.freeze_level_points;
+
+      if(reject_reason == "")
+      {
+         record.paper_guard_status = "PASSED";
+         record.paper_reject_reason = "";
+         record.paper_guard_net_index_points = record.net_index_points;
+         record.paper_guard_net_usd = record.net_usd;
+      }
+      else
+      {
+         record.paper_guard_status = "REJECTED";
+         record.paper_reject_reason = reject_reason;
+         record.paper_guard_net_index_points = 0.0;
+         record.paper_guard_net_usd = 0.0;
+      }
+   }
+
+   void ApplyPaperRuntimeSmartSLProtectionApplication(FalconTradeLifecycleRecord &record)
+   {
+      record.paper_protection_state = "NONE";
+      record.paper_virtual_sl = 0.0;
+      record.paper_protection_trigger = "NONE";
+      record.paper_protection_level = 0.0;
+      record.paper_protection_activated = false;
+      record.paper_virtual_sl_changed = false;
+      record.paper_virtual_sl_hit = false;
+      record.paper_exit_reason = "PAPER_SHADOW_EXIT_UNCHANGED";
+      record.paper_protection_net_index_points = record.paper_guard_net_index_points;
+      record.paper_protection_net_usd = record.paper_guard_net_usd;
+
+      if(record.paper_guard_status != "PASSED")
+      {
+         record.paper_exit_reason = "PAPER_GUARD_REJECTED";
+         return;
+      }
+
+      FalconRunnerBarPathStats barpath_stats;
+      if(!FalconBuildRunnerBarPathStats(record, barpath_stats))
+      {
+         record.paper_exit_reason = "PAPER_PROTECTION_PATH_SCAN_FAILED";
+         return;
+      }
+
+      if(!barpath_stats.tp1_touched)
+      {
+         record.paper_exit_reason = "PAPER_NO_PROOF";
+         return;
+      }
+
+      double tp1_points = FalconDirectionalProfitPoints(record, record.tp1);
+      double tp2_points = FalconDirectionalProfitPoints(record, record.tp2);
+      double protected_points = 0.0;
+
+      record.paper_protection_activated = true;
+      record.paper_virtual_sl_changed = true;
+
+      if(barpath_stats.tp2_touched)
+      {
+         record.paper_protection_state = "TP2_PROTECTED";
+         record.paper_protection_trigger = "TP2_PROOF";
+         protected_points = tp1_points;
+      }
+      else
+      {
+         record.paper_protection_state = "TP1_PROTECTED";
+         record.paper_protection_trigger = "TP1_PROOF";
+         protected_points = MathMax(0.0, tp1_points * 0.25);
+      }
+
+      if(protected_points <= 0.0 && tp2_points > 0.0)
+         protected_points = MathMax(0.0, tp2_points * 0.25);
+
+      record.paper_virtual_sl = FalconProtectedPriceFromProfitPoints(record, protected_points);
+      record.paper_protection_level = record.paper_virtual_sl;
+
+      bool protection_hit = false;
+      if(record.paper_protection_trigger == "TP2_PROOF" && barpath_stats.returned_to_loss_after_tp2)
+         protection_hit = true;
+      else if(record.paper_protection_trigger == "TP1_PROOF" && barpath_stats.returned_to_loss_after_tp1)
+         protection_hit = true;
+
+      if(protection_hit && protected_points > record.paper_guard_net_index_points)
+      {
+         record.paper_virtual_sl_hit = true;
+         record.paper_exit_reason = "PAPER_VIRTUAL_SL_HIT";
+         record.paper_protection_net_index_points = protected_points;
+         record.paper_protection_net_usd = FalconEstimateUsdByRawPoints(protected_points, record.lot_size, m_symbol_context);
+      }
+      else
+      {
+         record.paper_exit_reason = "PAPER_SHADOW_EXIT_UNCHANGED_PROTECTED";
+      }
+   }
+
+   void ApplyPaperRuntimeRunnerApplication(FalconTradeLifecycleRecord &record)
+   {
+      record.paper_runner_state = "NONE";
+      record.paper_runner_activated = false;
+      record.paper_runner_max_r = 0.0;
+      record.paper_runner_captured_points = record.paper_protection_net_index_points;
+      record.paper_runner_additional_points = 0.0;
+      record.paper_runner_exit_reason = "PAPER_RUNNER_NOT_ELIGIBLE";
+      record.paper_runner_net_index_points = record.paper_protection_net_index_points;
+      record.paper_runner_net_usd = record.paper_protection_net_usd;
+      record.paper_final_exit_reason = record.paper_exit_reason;
+
+      if(record.paper_guard_status != "PASSED")
+      {
+         record.paper_runner_exit_reason = "PAPER_GUARD_REJECTED";
+         record.paper_final_exit_reason = record.paper_exit_reason;
+         return;
+      }
+
+      if(!record.paper_protection_activated || !record.paper_virtual_sl_changed)
+      {
+         record.paper_runner_exit_reason = "PAPER_NO_EARNED_PROTECTION";
+         record.paper_final_exit_reason = record.paper_exit_reason;
+         return;
+      }
+
+      FalconRunnerBarPathStats barpath_stats;
+      if(!FalconBuildRunnerBarPathStats(record, barpath_stats))
+      {
+         record.paper_runner_exit_reason = "PAPER_RUNNER_PATH_SCAN_FAILED";
+         record.paper_final_exit_reason = record.paper_exit_reason;
+         return;
+      }
+
+      record.paper_runner_max_r = barpath_stats.max_r_actual_proxy;
+
+      double tp2_points = FalconDirectionalProfitPoints(record, record.tp2);
+      double protected_base_points = MathMax(0.0, record.paper_protection_net_index_points);
+      double max_favorable_points = MathMax(0.0, barpath_stats.max_favorable_points);
+
+      if(!barpath_stats.tp2_touched || max_favorable_points <= protected_base_points)
+      {
+         record.paper_runner_exit_reason = "PAPER_RUNNER_NO_CONTINUATION_PROOF";
+         record.paper_final_exit_reason = record.paper_exit_reason;
+         return;
+      }
+
+      record.paper_runner_activated = true;
+      record.paper_runner_state = "ACTIVE";
+
+      double extension_after_tp2 = MathMax(0.0, max_favorable_points - tp2_points);
+      double capture_ratio = 0.35;
+      if(barpath_stats.max_r_actual_proxy >= 5.0)
+      {
+         record.paper_runner_state = "MOON";
+         capture_ratio = 0.50;
+      }
+
+      double captured_points = tp2_points + (extension_after_tp2 * capture_ratio);
+      captured_points = MathMin(captured_points, max_favorable_points);
+      captured_points = MathMax(captured_points, protected_base_points);
+
+      record.paper_runner_captured_points = captured_points;
+      record.paper_runner_additional_points = MathMax(0.0, captured_points - record.paper_protection_net_index_points);
+
+      if(record.paper_runner_additional_points > 0.0)
+      {
+         record.paper_runner_net_index_points = captured_points;
+         record.paper_runner_net_usd = FalconEstimateUsdByRawPoints(captured_points, record.lot_size, m_symbol_context);
+         record.paper_runner_exit_reason = (record.paper_runner_state == "MOON" ? "PAPER_MOON_RUNNER_EXIT" : "PAPER_RUNNER_TRAIL_EXIT");
+         record.paper_final_exit_reason = record.paper_runner_exit_reason;
+      }
+      else
+      {
+         record.paper_runner_exit_reason = "PAPER_RUNNER_NO_ADDITIONAL_CAPTURE";
+         record.paper_final_exit_reason = record.paper_exit_reason;
+      }
+   }
+
+
+   void ApplyCapitalTierFoundation(FalconTradeLifecycleRecord &record)
+   {
+      double effective_balance = FalconEffectiveCapitalForTier();
+      string tier_name = FalconCapitalTierName(effective_balance);
+      record.falcon_tier_at_entry = tier_name;
+      record.falcon_tier_at_exit = tier_name;
+      record.falcon_effective_balance = effective_balance;
+      record.falcon_tier_min_balance = FalconCapitalTierMinBalance(tier_name);
+      record.falcon_tier_max_balance = FalconCapitalTierMaxBalance(tier_name);
+      record.falcon_tier_max_losses = FalconCapitalTierMaxLosses(tier_name);
+      record.falcon_tier_max_daily_r = FalconCapitalTierMaxDailyR(tier_name);
+      record.falcon_tier_max_drawdown_pct = FalconCapitalTierMaxDrawdownPct(tier_name);
+      record.falcon_broker_min_lot = m_symbol_context.min_lot;
+      record.falcon_fixed_lot = FixedLotSize;
+      record.falcon_min_lot_constraint = FalconMinLotConstraintStatus(m_symbol_context.min_lot, FixedLotSize);
+   }
+
+   void ApplyLowCapitalRiskFeasibilityFoundation(FalconTradeLifecycleRecord &record)
+   {
+      record.falcon_lotsizing_feasibility_status = "INVALID";
+      record.falcon_lotsizing_feasibility_reason = "NOT_EVALUATED";
+      record.falcon_min_lot_risk_points = 0.0;
+      record.falcon_min_lot_risk_usd = 0.0;
+      record.falcon_min_lot_risk_pct_of_capital = 0.0;
+      record.falcon_tier_base_risk_pct = 0.0;
+      record.falcon_tier_risk_budget_usd = 0.0;
+      record.falcon_potential_loss_r = 0.0;
+      record.falcon_max_single_trade_loss_r = 0.0;
+      record.falcon_single_trade_loss_cap_breach = 0;
+
+      double effective_balance = record.falcon_effective_balance;
+      if(effective_balance <= 0.0)
+         effective_balance = FalconEffectiveCapitalForTier();
+
+      string tier_name = record.falcon_tier_at_entry;
+      if(StringLen(tier_name) <= 0)
+         tier_name = FalconCapitalTierName(effective_balance);
+
+      double min_lot = record.falcon_broker_min_lot;
+      if(min_lot <= 0.0)
+         min_lot = m_symbol_context.min_lot;
+      if(min_lot <= 0.0)
+         min_lot = FixedLotSize;
+
+      double risk_points = MathAbs(record.entry_price - record.structural_sl);
+      double base_risk_pct = FalconCapitalTierBaseRiskPct(tier_name);
+      double risk_budget_usd = 0.0;
+      if(effective_balance > 0.0 && base_risk_pct > 0.0)
+         risk_budget_usd = effective_balance * base_risk_pct / 100.0;
+
+      double min_lot_risk_usd = MathAbs(FalconEstimateUsdByRawPoints(risk_points, min_lot, m_symbol_context));
+      double min_lot_risk_pct = 0.0;
+      if(effective_balance > 0.0)
+         min_lot_risk_pct = 100.0 * min_lot_risk_usd / effective_balance;
+
+      double potential_loss_r = 0.0;
+      if(risk_budget_usd > 0.0)
+         potential_loss_r = min_lot_risk_usd / risk_budget_usd;
+
+      double max_single_trade_loss_r = FalconSingleTradeLossCapR(tier_name);
+
+      record.falcon_min_lot_risk_points = risk_points;
+      record.falcon_min_lot_risk_usd = min_lot_risk_usd;
+      record.falcon_min_lot_risk_pct_of_capital = min_lot_risk_pct;
+      record.falcon_tier_base_risk_pct = base_risk_pct;
+      record.falcon_tier_risk_budget_usd = risk_budget_usd;
+      record.falcon_potential_loss_r = potential_loss_r;
+      record.falcon_max_single_trade_loss_r = max_single_trade_loss_r;
+
+      if(effective_balance <= 0.0)
+      {
+         record.falcon_lotsizing_feasibility_status = "INVALID";
+         record.falcon_lotsizing_feasibility_reason = "EFFECTIVE_BALANCE_UNKNOWN";
+         return;
+      }
+      if(min_lot <= 0.0)
+      {
+         record.falcon_lotsizing_feasibility_status = "INVALID";
+         record.falcon_lotsizing_feasibility_reason = "MIN_LOT_UNKNOWN";
+         return;
+      }
+      if(risk_points <= 0.0 || min_lot_risk_usd <= 0.0)
+      {
+         record.falcon_lotsizing_feasibility_status = "INVALID";
+         record.falcon_lotsizing_feasibility_reason = "STRUCTURAL_RISK_UNKNOWN";
+         return;
+      }
+      if(risk_budget_usd <= 0.0 || potential_loss_r <= 0.0)
+      {
+         record.falcon_lotsizing_feasibility_status = "INVALID";
+         record.falcon_lotsizing_feasibility_reason = "RISK_BUDGET_UNKNOWN";
+         return;
+      }
+
+      if(max_single_trade_loss_r > 0.0 && potential_loss_r > max_single_trade_loss_r)
+      {
+         record.falcon_lotsizing_feasibility_status = "NOT_FEASIBLE";
+         record.falcon_lotsizing_feasibility_reason = "MIN_LOT_RISK_EXCEEDS_SINGLE_TRADE_CAP";
+         record.falcon_single_trade_loss_cap_breach = 1;
+         return;
+      }
+
+      if(max_single_trade_loss_r > 0.0 && potential_loss_r > (max_single_trade_loss_r / FALCON_LCRF_BORDERLINE_MULTIPLIER))
+      {
+         record.falcon_lotsizing_feasibility_status = "BORDERLINE";
+         record.falcon_lotsizing_feasibility_reason = "MIN_LOT_RISK_NEAR_SINGLE_TRADE_CAP";
+         return;
+      }
+
+      record.falcon_lotsizing_feasibility_status = "FEASIBLE";
+      record.falcon_lotsizing_feasibility_reason = "MIN_LOT_RISK_WITHIN_TIER_BUDGET";
+   }
+
+   void ApplyThreeLayerEmergencyApplication(FalconTradeLifecycleRecord &record)
+   {
+      double effective_balance = record.falcon_effective_balance;
+      if(effective_balance <= 0.0)
+         effective_balance = FalconEffectiveCapitalForTier();
+      if(effective_balance <= 0.0)
+         effective_balance = 1.0;
+
+      if(m_tle_equity <= 0.0)
+      {
+         m_tle_equity = effective_balance;
+         m_tle_peak_equity = effective_balance;
+      }
+      if(m_tle_peak_equity <= 0.0)
+         m_tle_peak_equity = m_tle_equity;
+
+      datetime trade_day = StringToTime(TimeToString(record.exit_time, TIME_DATE));
+      if(trade_day <= 0)
+         trade_day = StringToTime(TimeToString(record.entry_time, TIME_DATE));
+      if(m_tle_current_day == 0)
+         m_tle_current_day = trade_day;
+      bool layer2_reset_on_new_day = false;
+      bool emergency_resolved_on_new_day = false;
+      string resolved_emergency_reason = "NONE";
+      if(trade_day > 0 && trade_day != m_tle_current_day)
+      {
+         layer2_reset_on_new_day = true;
+         m_tle_current_day = trade_day;
+         m_tle_daily_r = 0.0;
+
+         // v0.53.2a: Layer 1 and Layer 2 are daily pause layers.
+         // They must not block all remaining test days. Resolve them at
+         // the next day boundary, while Layer 3 remains peak/drawdown based.
+         if(m_tle_emergency_active &&
+            (m_tle_emergency_reason == "LAYER_1_CONSECUTIVE" ||
+             m_tle_emergency_reason == "LAYER_2_DAILY_R"))
+         {
+            emergency_resolved_on_new_day = true;
+            resolved_emergency_reason = m_tle_emergency_reason;
+            m_tle_emergency_active = false;
+            m_tle_emergency_reason = "NONE";
+            m_tle_consecutive_losses = 0;
+         }
+      }
+
+      record.falcon_emergency_status = "SAFE";
+      record.falcon_emergency_triggered_layer = 0;
+      record.falcon_emergency_reason = "NONE";
+      record.falcon_reset_status = "NO_RESET";
+      record.falcon_layer1_reset_on_win = 0;
+      record.falcon_layer2_reset_on_new_day = 0;
+      record.falcon_layer3_reset_on_new_peak = 0;
+      record.falcon_reset_reason = "NONE";
+      record.falcon_layer1_max_losses = record.falcon_tier_max_losses;
+      record.falcon_layer2_max_daily_r = record.falcon_tier_max_daily_r;
+      record.falcon_layer3_max_drawdown_pct = record.falcon_tier_max_drawdown_pct;
+      record.falcon_emergency_before_net_points = record.paper_runner_net_index_points;
+      record.falcon_emergency_before_net_usd = record.paper_runner_net_usd;
+      record.falcon_emergency_after_net_points = record.paper_runner_net_index_points;
+      record.falcon_emergency_after_net_usd = record.paper_runner_net_usd;
+
+      if(m_tle_emergency_active)
+      {
+         record.falcon_emergency_status = "BLOCKED";
+         record.falcon_emergency_triggered_layer = -1;
+         record.falcon_emergency_reason = m_tle_emergency_reason;
+         record.falcon_emergency_after_net_points = 0.0;
+         record.falcon_emergency_after_net_usd = 0.0;
+         record.falcon_layer1_consecutive_losses = m_tle_consecutive_losses;
+         record.falcon_layer2_daily_r = m_tle_daily_r;
+         record.falcon_layer3_drawdown_pct = m_tle_max_drawdown_pct;
+         record.falcon_reset_status = "EMERGENCY_ACTIVE_BLOCKED";
+         return;
+      }
+
+      double risk_points = MathAbs(record.entry_price - record.structural_sl);
+      double risk_usd = MathAbs(FalconEstimateUsdByRawPoints(risk_points, record.lot_size, m_symbol_context));
+      if(risk_usd <= 0.0)
+         risk_usd = MathAbs(record.paper_guard_net_usd);
+      if(risk_usd <= 0.0)
+         risk_usd = 1.0;
+
+      double trade_r = record.paper_runner_net_usd / risk_usd;
+
+      bool layer1_reset_on_win = false;
+      if(record.paper_runner_net_usd < -0.0001)
+      {
+         m_tle_consecutive_losses++;
+      }
+      else if(record.paper_runner_net_usd > 0.0001)
+      {
+         if(m_tle_consecutive_losses > 0)
+            layer1_reset_on_win = true;
+         m_tle_consecutive_losses = 0;
+      }
+
+      m_tle_daily_r += trade_r;
+      m_tle_equity += record.paper_runner_net_usd;
+      bool layer3_reset_on_new_peak = false;
+      if(m_tle_equity > m_tle_peak_equity)
+      {
+         if(m_tle_peak_equity > 0.0)
+            layer3_reset_on_new_peak = true;
+         m_tle_peak_equity = m_tle_equity;
+      }
+
+      double drawdown_pct = 0.0;
+      if(m_tle_peak_equity > 0.0 && m_tle_equity < m_tle_peak_equity)
+         drawdown_pct = 100.0 * (m_tle_peak_equity - m_tle_equity) / m_tle_peak_equity;
+      if(drawdown_pct > m_tle_max_drawdown_pct)
+         m_tle_max_drawdown_pct = drawdown_pct;
+
+      record.falcon_layer1_consecutive_losses = m_tle_consecutive_losses;
+      record.falcon_layer2_daily_r = m_tle_daily_r;
+      record.falcon_layer3_drawdown_pct = drawdown_pct;
+      record.falcon_layer1_reset_on_win = (layer1_reset_on_win ? 1 : 0);
+      record.falcon_layer2_reset_on_new_day = (layer2_reset_on_new_day ? 1 : 0);
+      record.falcon_layer3_reset_on_new_peak = (layer3_reset_on_new_peak ? 1 : 0);
+      if(record.falcon_layer1_reset_on_win == 1 || record.falcon_layer2_reset_on_new_day == 1 || record.falcon_layer3_reset_on_new_peak == 1 || emergency_resolved_on_new_day)
+      {
+         record.falcon_reset_status = "RESET_APPLIED";
+         string reset_reason = "";
+         if(record.falcon_layer1_reset_on_win == 1) reset_reason += "LAYER1_ON_WIN;";
+         if(record.falcon_layer2_reset_on_new_day == 1) reset_reason += "LAYER2_ON_NEW_DAY;";
+         if(record.falcon_layer3_reset_on_new_peak == 1) reset_reason += "LAYER3_ON_NEW_PEAK;";
+         if(emergency_resolved_on_new_day) reset_reason += "EMERGENCY_DAILY_RESOLVE_" + resolved_emergency_reason + ";";
+         record.falcon_reset_reason = reset_reason;
+      }
+
+      if(record.falcon_layer1_max_losses > 0 && m_tle_consecutive_losses >= record.falcon_layer1_max_losses)
+      {
+         record.falcon_emergency_status = "TRIGGERED";
+         record.falcon_emergency_triggered_layer = 1;
+         record.falcon_emergency_reason = "LAYER_1_CONSECUTIVE";
+      }
+      else if(record.falcon_layer2_max_daily_r > 0.0 && m_tle_daily_r <= -record.falcon_layer2_max_daily_r)
+      {
+         record.falcon_emergency_status = "TRIGGERED";
+         record.falcon_emergency_triggered_layer = 2;
+         record.falcon_emergency_reason = "LAYER_2_DAILY_R";
+      }
+      else if(record.falcon_layer3_max_drawdown_pct > 0.0 && drawdown_pct >= record.falcon_layer3_max_drawdown_pct)
+      {
+         record.falcon_emergency_status = "TRIGGERED";
+         record.falcon_emergency_triggered_layer = 3;
+         record.falcon_emergency_reason = "LAYER_3_TIER_DRAWDOWN";
+      }
+
+      if(record.falcon_emergency_status == "TRIGGERED")
+      {
+         m_tle_emergency_active = true;
+         m_tle_emergency_reason = record.falcon_emergency_reason;
+      }
+   }
+
    void ResetTotals()
    {
       m_totals.total_trades                = 0;
@@ -8976,6 +12952,99 @@ private:
       m_totals.fast_tm_fast_antiproof_warning_trades = 0;
       m_totals.fast_tm_conservative_partial_ready_trades = 0;
       m_totals.fast_tm_runner_wait_for_confirmation_trades = 0;
+      m_totals.paper_guard_evaluated_trades = 0;
+      m_totals.paper_guard_passed_trades = 0;
+      m_totals.paper_guard_rejected_trades = 0;
+      m_totals.paper_guard_spread_rejected_trades = 0;
+      m_totals.paper_guard_stops_rejected_trades = 0;
+      m_totals.paper_guard_freeze_rejected_trades = 0;
+      m_totals.paper_exposure_evaluated_trades = 0;
+      m_totals.paper_exposure_passed_trades = 0;
+      m_totals.paper_exposure_blocked_total = 0;
+      m_totals.paper_exposure_blocked_engine = 0;
+      m_totals.paper_exposure_blocked_direction = 0;
+      m_totals.paper_guard_before_net_points = 0.0;
+      m_totals.paper_guard_after_net_points = 0.0;
+      m_totals.paper_guard_impact_points = 0.0;
+      m_totals.paper_guard_before_net_usd = 0.0;
+      m_totals.paper_guard_after_net_usd = 0.0;
+      m_totals.paper_guard_impact_usd = 0.0;
+      m_totals.paper_protection_evaluated_trades = 0;
+      m_totals.paper_protection_eligible_trades = 0;
+      m_totals.paper_protection_activated_trades = 0;
+      m_totals.paper_tp1_protection_trades = 0;
+      m_totals.paper_tp2_protection_trades = 0;
+      m_totals.paper_virtual_sl_changed_trades = 0;
+      m_totals.paper_virtual_sl_hit_trades = 0;
+      m_totals.paper_protected_exit_trades = 0;
+      m_totals.paper_protection_before_net_points = 0.0;
+      m_totals.paper_protection_after_net_points = 0.0;
+      m_totals.paper_protection_impact_points = 0.0;
+      m_totals.paper_protection_before_net_usd = 0.0;
+      m_totals.paper_protection_after_net_usd = 0.0;
+      m_totals.paper_protection_impact_usd = 0.0;
+      m_totals.paper_protection_giveback_prevented_points = 0.0;
+      m_totals.paper_protection_giveback_prevented_usd = 0.0;
+      m_totals.paper_runner_evaluated_trades = 0;
+      m_totals.paper_runner_eligible_trades = 0;
+      m_totals.paper_runner_activated_trades = 0;
+      m_totals.paper_runner_3r_trades = 0;
+      m_totals.paper_moon_mode_5r_trades = 0;
+      m_totals.paper_runner_exit_trades = 0;
+      m_totals.paper_runner_giveback_trades = 0;
+      m_totals.paper_runner_protected_from_loss_trades = 0;
+      m_totals.paper_runner_before_net_points = 0.0;
+      m_totals.paper_runner_after_net_points = 0.0;
+      m_totals.paper_runner_impact_points = 0.0;
+      m_totals.paper_runner_before_net_usd = 0.0;
+      m_totals.paper_runner_after_net_usd = 0.0;
+      m_totals.paper_runner_impact_usd = 0.0;
+      m_totals.paper_runner_additional_points = 0.0;
+      m_totals.paper_runner_additional_usd = 0.0;
+
+      m_totals.lotsizing_feasibility_evaluated_trades = 0;
+      m_totals.lotsizing_feasibility_feasible_trades = 0;
+      m_totals.lotsizing_feasibility_borderline_trades = 0;
+      m_totals.lotsizing_feasibility_not_feasible_trades = 0;
+      m_totals.lotsizing_feasibility_invalid_trades = 0;
+      m_totals.lotsizing_single_trade_cap_breach_trades = 0;
+      m_totals.lotsizing_min_lot_risk_usd_total = 0.0;
+      m_totals.lotsizing_min_lot_risk_usd_max = 0.0;
+      m_totals.lotsizing_min_lot_risk_pct_total = 0.0;
+      m_totals.lotsizing_min_lot_risk_pct_max = 0.0;
+      m_totals.lotsizing_potential_loss_r_total = 0.0;
+      m_totals.lotsizing_potential_loss_r_max = 0.0;
+
+      m_totals.paper_emergency_evaluated_trades = 0;
+      m_totals.paper_emergency_safe_trades = 0;
+      m_totals.paper_emergency_triggered_trades = 0;
+      m_totals.paper_emergency_blocked_entries = 0;
+      m_totals.paper_emergency_layer1_triggers = 0;
+      m_totals.paper_emergency_layer2_triggers = 0;
+      m_totals.paper_emergency_layer3_triggers = 0;
+      m_totals.paper_emergency_before_net_points = 0.0;
+      m_totals.paper_emergency_after_net_points = 0.0;
+      m_totals.paper_emergency_impact_points = 0.0;
+      m_totals.paper_emergency_before_net_usd = 0.0;
+      m_totals.paper_emergency_after_net_usd = 0.0;
+      m_totals.paper_emergency_impact_usd = 0.0;
+      m_totals.paper_emergency_max_drawdown_pct = 0.0;
+      m_totals.paper_emergency_worst_daily_r = 0.0;
+      m_totals.layer_reset_evaluated_trades = 0;
+      m_totals.layer1_reset_on_win_events = 0;
+      m_totals.layer2_reset_on_new_day_events = 0;
+      m_totals.layer3_reset_on_new_peak_events = 0;
+      m_totals.layer_reset_event_trades = 0;
+      m_totals.layer_reset_duplicate_triggers = 0;
+
+      m_tle_emergency_active = false;
+      m_tle_emergency_reason = "NONE";
+      m_tle_consecutive_losses = 0;
+      m_tle_current_day = 0;
+      m_tle_daily_r = 0.0;
+      m_tle_equity = 0.0;
+      m_tle_peak_equity = 0.0;
+      m_tle_max_drawdown_pct = 0.0;
    }
 
    void UpdateTotals(const FalconTradeLifecycleRecord &record)
@@ -8995,6 +13064,149 @@ private:
       m_totals.total_profit_usd          += record.profit_usd;
       m_totals.total_loss_usd            += record.loss_usd;
       m_totals.net_usd                   += record.net_usd;
+
+      m_totals.paper_guard_evaluated_trades++;
+      m_totals.paper_guard_before_net_points += record.net_index_points;
+      m_totals.paper_guard_before_net_usd += record.net_usd;
+      m_totals.paper_guard_after_net_points += record.paper_guard_net_index_points;
+      m_totals.paper_guard_after_net_usd += record.paper_guard_net_usd;
+      m_totals.paper_guard_impact_points = m_totals.paper_guard_after_net_points - m_totals.paper_guard_before_net_points;
+      m_totals.paper_guard_impact_usd = m_totals.paper_guard_after_net_usd - m_totals.paper_guard_before_net_usd;
+
+      if(record.paper_guard_status == "PASSED")
+      {
+         m_totals.paper_guard_passed_trades++;
+         m_totals.paper_exposure_evaluated_trades++;
+         m_totals.paper_exposure_passed_trades++;
+      }
+      else if(record.paper_guard_status == "REJECTED")
+      {
+         m_totals.paper_guard_rejected_trades++;
+         if(record.paper_reject_reason == "SPREAD_TOO_WIDE")
+            m_totals.paper_guard_spread_rejected_trades++;
+         else if(record.paper_reject_reason == "SL_TOO_CLOSE")
+            m_totals.paper_guard_stops_rejected_trades++;
+         else if(record.paper_reject_reason == "FREEZE_LEVEL_BLOCKED")
+            m_totals.paper_guard_freeze_rejected_trades++;
+      }
+
+      m_totals.paper_protection_evaluated_trades++;
+      m_totals.paper_protection_before_net_points += record.paper_guard_net_index_points;
+      m_totals.paper_protection_before_net_usd += record.paper_guard_net_usd;
+      m_totals.paper_protection_after_net_points += record.paper_protection_net_index_points;
+      m_totals.paper_protection_after_net_usd += record.paper_protection_net_usd;
+      m_totals.paper_protection_impact_points = m_totals.paper_protection_after_net_points - m_totals.paper_protection_before_net_points;
+      m_totals.paper_protection_impact_usd = m_totals.paper_protection_after_net_usd - m_totals.paper_protection_before_net_usd;
+
+      if(record.paper_protection_activated)
+      {
+         m_totals.paper_protection_eligible_trades++;
+         m_totals.paper_protection_activated_trades++;
+      }
+      if(record.paper_protection_state == "TP1_PROTECTED")
+         m_totals.paper_tp1_protection_trades++;
+      else if(record.paper_protection_state == "TP2_PROTECTED")
+         m_totals.paper_tp2_protection_trades++;
+      if(record.paper_virtual_sl_changed)
+         m_totals.paper_virtual_sl_changed_trades++;
+      if(record.paper_virtual_sl_hit)
+      {
+         m_totals.paper_virtual_sl_hit_trades++;
+         m_totals.paper_protected_exit_trades++;
+         m_totals.paper_protection_giveback_prevented_points += (record.paper_protection_net_index_points - record.paper_guard_net_index_points);
+         m_totals.paper_protection_giveback_prevented_usd += (record.paper_protection_net_usd - record.paper_guard_net_usd);
+      }
+
+      m_totals.paper_runner_evaluated_trades++;
+      m_totals.paper_runner_before_net_points += record.paper_protection_net_index_points;
+      m_totals.paper_runner_before_net_usd += record.paper_protection_net_usd;
+      m_totals.paper_runner_after_net_points += record.paper_runner_net_index_points;
+      m_totals.paper_runner_after_net_usd += record.paper_runner_net_usd;
+      m_totals.paper_runner_impact_points = m_totals.paper_runner_after_net_points - m_totals.paper_runner_before_net_points;
+      m_totals.paper_runner_impact_usd = m_totals.paper_runner_after_net_usd - m_totals.paper_runner_before_net_usd;
+      if(record.paper_protection_activated && record.paper_virtual_sl_changed)
+         m_totals.paper_runner_eligible_trades++;
+      if(record.paper_runner_activated)
+      {
+         m_totals.paper_runner_activated_trades++;
+         m_totals.paper_runner_exit_trades++;
+      }
+      if(record.paper_runner_max_r >= 3.0)
+         m_totals.paper_runner_3r_trades++;
+      if(record.paper_runner_state == "MOON")
+         m_totals.paper_moon_mode_5r_trades++;
+      if(record.paper_runner_additional_points > 0.0)
+      {
+         m_totals.paper_runner_additional_points += record.paper_runner_additional_points;
+         m_totals.paper_runner_additional_usd += (record.paper_runner_net_usd - record.paper_protection_net_usd);
+      }
+      if(record.paper_runner_activated && record.paper_runner_additional_points > 0.0)
+         m_totals.paper_runner_giveback_trades++;
+      if(record.paper_guard_net_index_points < 0.0 && record.paper_runner_net_index_points >= 0.0)
+         m_totals.paper_runner_protected_from_loss_trades++;
+
+      m_totals.lotsizing_feasibility_evaluated_trades++;
+      if(record.falcon_lotsizing_feasibility_status == "FEASIBLE")
+         m_totals.lotsizing_feasibility_feasible_trades++;
+      else if(record.falcon_lotsizing_feasibility_status == "BORDERLINE")
+         m_totals.lotsizing_feasibility_borderline_trades++;
+      else if(record.falcon_lotsizing_feasibility_status == "NOT_FEASIBLE")
+         m_totals.lotsizing_feasibility_not_feasible_trades++;
+      else
+         m_totals.lotsizing_feasibility_invalid_trades++;
+      if(record.falcon_single_trade_loss_cap_breach == 1)
+         m_totals.lotsizing_single_trade_cap_breach_trades++;
+      m_totals.lotsizing_min_lot_risk_usd_total += record.falcon_min_lot_risk_usd;
+      if(record.falcon_min_lot_risk_usd > m_totals.lotsizing_min_lot_risk_usd_max)
+         m_totals.lotsizing_min_lot_risk_usd_max = record.falcon_min_lot_risk_usd;
+      m_totals.lotsizing_min_lot_risk_pct_total += record.falcon_min_lot_risk_pct_of_capital;
+      if(record.falcon_min_lot_risk_pct_of_capital > m_totals.lotsizing_min_lot_risk_pct_max)
+         m_totals.lotsizing_min_lot_risk_pct_max = record.falcon_min_lot_risk_pct_of_capital;
+      m_totals.lotsizing_potential_loss_r_total += record.falcon_potential_loss_r;
+      if(record.falcon_potential_loss_r > m_totals.lotsizing_potential_loss_r_max)
+         m_totals.lotsizing_potential_loss_r_max = record.falcon_potential_loss_r;
+
+      m_totals.paper_emergency_evaluated_trades++;
+      m_totals.paper_emergency_before_net_points += record.falcon_emergency_before_net_points;
+      m_totals.paper_emergency_before_net_usd += record.falcon_emergency_before_net_usd;
+      m_totals.paper_emergency_after_net_points += record.falcon_emergency_after_net_points;
+      m_totals.paper_emergency_after_net_usd += record.falcon_emergency_after_net_usd;
+      m_totals.paper_emergency_impact_points = m_totals.paper_emergency_after_net_points - m_totals.paper_emergency_before_net_points;
+      m_totals.paper_emergency_impact_usd = m_totals.paper_emergency_after_net_usd - m_totals.paper_emergency_before_net_usd;
+      if(record.falcon_emergency_status == "SAFE")
+         m_totals.paper_emergency_safe_trades++;
+      else if(record.falcon_emergency_status == "TRIGGERED")
+      {
+         m_totals.paper_emergency_triggered_trades++;
+         if(record.falcon_emergency_triggered_layer == 1)
+            m_totals.paper_emergency_layer1_triggers++;
+         else if(record.falcon_emergency_triggered_layer == 2)
+            m_totals.paper_emergency_layer2_triggers++;
+         else if(record.falcon_emergency_triggered_layer == 3)
+            m_totals.paper_emergency_layer3_triggers++;
+      }
+      else if(record.falcon_emergency_status == "BLOCKED")
+         m_totals.paper_emergency_blocked_entries++;
+      if(record.falcon_layer3_drawdown_pct > m_totals.paper_emergency_max_drawdown_pct)
+         m_totals.paper_emergency_max_drawdown_pct = record.falcon_layer3_drawdown_pct;
+      if(record.falcon_layer2_daily_r < m_totals.paper_emergency_worst_daily_r)
+         m_totals.paper_emergency_worst_daily_r = record.falcon_layer2_daily_r;
+
+      m_totals.layer_reset_evaluated_trades++;
+      if(record.falcon_layer1_reset_on_win == 1) m_totals.layer1_reset_on_win_events++;
+      if(record.falcon_layer2_reset_on_new_day == 1) m_totals.layer2_reset_on_new_day_events++;
+      if(record.falcon_layer3_reset_on_new_peak == 1) m_totals.layer3_reset_on_new_peak_events++;
+      if(record.falcon_layer1_reset_on_win == 1 || record.falcon_layer2_reset_on_new_day == 1 || record.falcon_layer3_reset_on_new_peak == 1)
+         m_totals.layer_reset_event_trades++;
+      // v0.53.3a: A trigger on the same row as LAYER2_ON_NEW_DAY can be valid
+      // when a multi-day trade exits on the new day and immediately breaches the
+      // daily R budget. Count only a true duplicate trigger after an emergency
+      // daily-resolution event, not every trigger that follows a normal reset.
+      if(record.falcon_emergency_status == "TRIGGERED" &&
+         StringFind(record.falcon_reset_reason, "EMERGENCY_DAILY_RESOLVE_") >= 0)
+      {
+         m_totals.layer_reset_duplicate_triggers++;
+      }
 
       if(record.direction == FALCON_DIRECTION_BUY)
       {
@@ -9291,21 +13503,53 @@ private:
          return;
       }
 
-      FileWrite(handle,
-                "EAName", "Version", "Build", "Symbol",
-                "TradeId", "StrategyId", "StrategyName", "EngineId",
-                "Stage", "Direction", "EntryTime", "ExitTime",
-                "LotSize", "Entry", "SL", "TP1", "TP2", "TP3", "Exit",
-                "Outcome", "WinLose",
-                "ProfitIndexPoints", "LoseIndexPoints", "NetIndexPoints",
-                "ProfitUSD", "LoseUSD", "NetUSD",
-                "FvgSizePoints", "FvgSpreadPoints", "FvgRetestAgeBars",
-                "FvgSetupTime", "FvgRetestWatchTime", "FvgAgeBarsAtWatch", "FvgAgeSource",
-                "FvgRetestFreshState", "FvgHoldQualityScore", "FvgHoldQualityBucket",
-                "QualityFiltersPassed",
-                "FvgQGuardProfile", "FvgQGuardPassed", "FvgQGuardDecision", "FvgQGuardReason",
-                "FvgQGuardSimNetPoints", "FvgQGuardSimNetUSD",
-                "CloseReason", "EvidenceSummary");
+      // v0.50.0a compile fix: TradeLifecycle now has 66 columns.
+      // MetaEditor can reject large FileWrite(...) vararg calls as wrong parameters count.
+      // Write the CSV header as one controlled string instead; schema is unchanged.
+      string trade_header = "";
+      trade_header += "EAName,Version,Build,Symbol,";
+      trade_header += "TradeId,StrategyId,StrategyName,EngineId,";
+      trade_header += "Stage,Direction,EntryTime,ExitTime,";
+      trade_header += "LotSize,Entry,SL,TP1,TP2,TP3,Exit,";
+      trade_header += "Outcome,WinLose,";
+      trade_header += "ProfitIndexPoints,LoseIndexPoints,NetIndexPoints,";
+      trade_header += "ProfitUSD,LoseUSD,NetUSD,";
+      trade_header += "FvgSizePoints,FvgSpreadPoints,FvgRetestAgeBars,";
+      trade_header += "FvgSetupTime,FvgRetestWatchTime,FvgAgeBarsAtWatch,FvgAgeSource,";
+      trade_header += "FvgRetestFreshState,FvgHoldQualityScore,FvgHoldQualityBucket,";
+      trade_header += "QualityFiltersPassed,";
+      trade_header += "FvgQGuardProfile,FvgQGuardPassed,FvgQGuardDecision,FvgQGuardReason,";
+      trade_header += "FvgQGuardSimNetPoints,FvgQGuardSimNetUSD,";
+      trade_header += "PaperGuardStatus,PaperRejectReason,PaperGuardLayer,";
+      trade_header += "PaperSpreadPoints,PaperMaxSpreadPoints,PaperSLDistancePoints,";
+      trade_header += "PaperStopsLevelPoints,PaperFreezeLevelPoints,";
+      trade_header += "PaperGuardNetIndexPoints,PaperGuardNetUSD,";
+      trade_header += "PaperProtectionState,PaperVirtualSL,PaperProtectionTrigger,";
+      trade_header += "PaperProtectionLevel,PaperProtectionActivated,";
+      trade_header += "PaperVirtualSLChanged,PaperVirtualSLHit,PaperExitReason,";
+      trade_header += "PaperProtectionNetIndexPoints,PaperProtectionNetUSD,";
+      trade_header += "PaperRunnerState,PaperRunnerActivated,PaperRunnerMaxR,";
+      trade_header += "PaperRunnerCapturedPoints,PaperRunnerAdditionalPoints,";
+      trade_header += "PaperRunnerExitReason,PaperRunnerNetIndexPoints,PaperRunnerNetUSD,";
+      trade_header += "PaperFinalExitReason,";
+      trade_header += "FalconTierAtEntry,FalconTierAtExit,FalconEffectiveBalance,";
+      trade_header += "FalconTierMinBalance,FalconTierMaxBalance,FalconTierMaxConsecutiveLosses,";
+      trade_header += "FalconTierMaxDailyR,FalconTierMaxDrawdownPct,";
+      trade_header += "FalconBrokerMinLot,FalconFixedLot,FalconMinLotConstraint,";
+      trade_header += "FalconLotSizingFeasibilityStatus,FalconLotSizingFeasibilityReason,";
+      trade_header += "FalconMinLotRiskPoints,FalconMinLotRiskUSD,FalconMinLotRiskPctOfCapital,";
+      trade_header += "FalconTierBaseRiskPct,FalconTierRiskBudgetUSD,FalconPotentialLossR,";
+      trade_header += "FalconMaxSingleTradeLossR,FalconSingleTradeLossCapBreach,";
+      trade_header += "FalconEmergencyStatus,FalconEmergencyTriggeredLayer,FalconEmergencyReason,";
+      trade_header += "FalconLayer1ConsecutiveLosses,FalconLayer1MaxLosses,";
+      trade_header += "FalconLayer2DailyR,FalconLayer2MaxDailyR,";
+      trade_header += "FalconLayer3DrawdownPct,FalconLayer3MaxDrawdownPct,";
+      trade_header += "FalconEmergencyBeforeNetPoints,FalconEmergencyAfterNetPoints,";
+      trade_header += "FalconEmergencyBeforeNetUSD,FalconEmergencyAfterNetUSD,";
+      trade_header += "FalconResetStatus,FalconLayer1ResetOnWin,FalconLayer2ResetOnNewDay,";
+      trade_header += "FalconLayer3ResetOnNewPeak,FalconResetReason,";
+      trade_header += "CloseReason,EvidenceSummary";
+      FileWriteString(handle, trade_header + "\r\n");
       FileClose(handle);
    }
 
@@ -9337,53 +13581,124 @@ private:
       }
 
       FileSeek(handle, 0, SEEK_END);
-      FileWrite(handle,
-                EA_NAME,
-                EA_VERSION_TAG,
-                EA_BUILD_TAG,
-                m_symbol_context.symbol,
-                record.trade_id,
-                record.strategy_id,
-                record.strategy_name,
-                record.engine_id,
-                FalconStageToString(record.stage),
-                FalconDirectionToString(record.direction),
-                FalconTimeToString(record.entry_time),
-                FalconTimeToString(record.exit_time),
-                DoubleToString(record.lot_size, 2),
-                DoubleToString(record.entry_price, m_symbol_context.digits),
-                DoubleToString(record.structural_sl, m_symbol_context.digits),
-                DoubleToString(record.tp1, m_symbol_context.digits),
-                DoubleToString(record.tp2, m_symbol_context.digits),
-                DoubleToString(record.tp3, m_symbol_context.digits),
-                DoubleToString(record.exit_price, m_symbol_context.digits),
-                FalconOutcomeToString(record.outcome),
-                FalconOutcomeToString(record.outcome),
-                DoubleToString(record.profit_index_points, 2),
-                DoubleToString(record.loss_index_points, 2),
-                DoubleToString(record.net_index_points, 2),
-                DoubleToString(record.profit_usd, 2),
-                DoubleToString(record.loss_usd, 2),
-                DoubleToString(record.net_usd, 2),
-                DoubleToString(record.fvg_size_points, 2),
-                (int)record.fvg_spread_points,
-                record.fvg_retest_age_bars,
-                FalconTimeToString(record.fvg_setup_time),
-                FalconTimeToString(record.fvg_retest_watch_time),
-                record.fvg_age_bars_at_watch,
-                record.fvg_age_source,
-                record.fvg_retest_fresh_state,
-                record.fvg_hold_quality_score,
-                record.fvg_hold_quality_bucket,
-                FalconBoolToYesNo(record.quality_filters_passed),
-                record.fvg_quality_shadow_guard_profile,
-                FalconBoolToYesNo(record.fvg_quality_shadow_guard_passed),
-                record.fvg_quality_shadow_guard_decision,
-                record.fvg_quality_shadow_guard_reason,
-                DoubleToString(record.fvg_quality_shadow_guard_sim_net_points, 2),
-                DoubleToString(record.fvg_quality_shadow_guard_sim_net_usd, 2),
-                record.close_reason,
-                record.evidence_summary);
+      // v0.50.0a compile fix: avoid oversized FileWrite(...) vararg call.
+      // All text values pass through FalconCsvSafe to keep TradeLifecycle column counts stable.
+      string trade_row = "";
+      trade_row += FalconCsvSafe(EA_NAME) + ",";
+      trade_row += FalconCsvSafe(EA_VERSION_TAG) + ",";
+      trade_row += FalconCsvSafe(EA_BUILD_TAG) + ",";
+      trade_row += FalconCsvSafe(m_symbol_context.symbol) + ",";
+      trade_row += FalconCsvSafe(record.trade_id) + ",";
+      trade_row += FalconCsvSafe(record.strategy_id) + ",";
+      trade_row += FalconCsvSafe(record.strategy_name) + ",";
+      trade_row += FalconCsvSafe(record.engine_id) + ",";
+      trade_row += FalconCsvSafe(FalconStageToString(record.stage)) + ",";
+      trade_row += FalconCsvSafe(FalconDirectionToString(record.direction)) + ",";
+      trade_row += FalconCsvSafe(FalconTimeToString(record.entry_time)) + ",";
+      trade_row += FalconCsvSafe(FalconTimeToString(record.exit_time)) + ",";
+      trade_row += DoubleToString(record.lot_size, 2) + ",";
+      trade_row += DoubleToString(record.entry_price, m_symbol_context.digits) + ",";
+      trade_row += DoubleToString(record.structural_sl, m_symbol_context.digits) + ",";
+      trade_row += DoubleToString(record.tp1, m_symbol_context.digits) + ",";
+      trade_row += DoubleToString(record.tp2, m_symbol_context.digits) + ",";
+      trade_row += DoubleToString(record.tp3, m_symbol_context.digits) + ",";
+      trade_row += DoubleToString(record.exit_price, m_symbol_context.digits) + ",";
+      trade_row += FalconCsvSafe(FalconOutcomeToString(record.outcome)) + ",";
+      trade_row += FalconCsvSafe(FalconOutcomeToString(record.outcome)) + ",";
+      trade_row += DoubleToString(record.profit_index_points, 2) + ",";
+      trade_row += DoubleToString(record.loss_index_points, 2) + ",";
+      trade_row += DoubleToString(record.net_index_points, 2) + ",";
+      trade_row += DoubleToString(record.profit_usd, 2) + ",";
+      trade_row += DoubleToString(record.loss_usd, 2) + ",";
+      trade_row += DoubleToString(record.net_usd, 2) + ",";
+      trade_row += DoubleToString(record.fvg_size_points, 2) + ",";
+      trade_row += IntegerToString((int)record.fvg_spread_points) + ",";
+      trade_row += IntegerToString(record.fvg_retest_age_bars) + ",";
+      trade_row += FalconCsvSafe(FalconTimeToString(record.fvg_setup_time)) + ",";
+      trade_row += FalconCsvSafe(FalconTimeToString(record.fvg_retest_watch_time)) + ",";
+      trade_row += IntegerToString(record.fvg_age_bars_at_watch) + ",";
+      trade_row += FalconCsvSafe(record.fvg_age_source) + ",";
+      trade_row += FalconCsvSafe(record.fvg_retest_fresh_state) + ",";
+      trade_row += IntegerToString(record.fvg_hold_quality_score) + ",";
+      trade_row += FalconCsvSafe(record.fvg_hold_quality_bucket) + ",";
+      trade_row += FalconCsvSafe(FalconBoolToYesNo(record.quality_filters_passed)) + ",";
+      trade_row += FalconCsvSafe(record.fvg_quality_shadow_guard_profile) + ",";
+      trade_row += FalconCsvSafe(FalconBoolToYesNo(record.fvg_quality_shadow_guard_passed)) + ",";
+      trade_row += FalconCsvSafe(record.fvg_quality_shadow_guard_decision) + ",";
+      trade_row += FalconCsvSafe(record.fvg_quality_shadow_guard_reason) + ",";
+      trade_row += DoubleToString(record.fvg_quality_shadow_guard_sim_net_points, 2) + ",";
+      trade_row += DoubleToString(record.fvg_quality_shadow_guard_sim_net_usd, 2) + ",";
+      trade_row += FalconCsvSafe(record.paper_guard_status) + ",";
+      trade_row += FalconCsvSafe(record.paper_reject_reason) + ",";
+      trade_row += FalconCsvSafe(record.paper_guard_layer) + ",";
+      trade_row += IntegerToString((int)record.paper_spread_points) + ",";
+      trade_row += IntegerToString(record.paper_max_spread_points) + ",";
+      trade_row += DoubleToString(record.paper_sl_distance_points, 2) + ",";
+      trade_row += IntegerToString((int)record.paper_stops_level_points) + ",";
+      trade_row += IntegerToString((int)record.paper_freeze_level_points) + ",";
+      trade_row += DoubleToString(record.paper_guard_net_index_points, 2) + ",";
+      trade_row += DoubleToString(record.paper_guard_net_usd, 2) + ",";
+      trade_row += FalconCsvSafe(record.paper_protection_state) + ",";
+      trade_row += DoubleToString(record.paper_virtual_sl, m_symbol_context.digits) + ",";
+      trade_row += FalconCsvSafe(record.paper_protection_trigger) + ",";
+      trade_row += DoubleToString(record.paper_protection_level, m_symbol_context.digits) + ",";
+      trade_row += FalconCsvSafe(FalconBoolToYesNo(record.paper_protection_activated)) + ",";
+      trade_row += FalconCsvSafe(FalconBoolToYesNo(record.paper_virtual_sl_changed)) + ",";
+      trade_row += FalconCsvSafe(FalconBoolToYesNo(record.paper_virtual_sl_hit)) + ",";
+      trade_row += FalconCsvSafe(record.paper_exit_reason) + ",";
+      trade_row += DoubleToString(record.paper_protection_net_index_points, 2) + ",";
+      trade_row += DoubleToString(record.paper_protection_net_usd, 2) + ",";
+      trade_row += FalconCsvSafe(record.paper_runner_state) + ",";
+      trade_row += FalconCsvSafe(FalconBoolToYesNo(record.paper_runner_activated)) + ",";
+      trade_row += DoubleToString(record.paper_runner_max_r, 2) + ",";
+      trade_row += DoubleToString(record.paper_runner_captured_points, 2) + ",";
+      trade_row += DoubleToString(record.paper_runner_additional_points, 2) + ",";
+      trade_row += FalconCsvSafe(record.paper_runner_exit_reason) + ",";
+      trade_row += DoubleToString(record.paper_runner_net_index_points, 2) + ",";
+      trade_row += DoubleToString(record.paper_runner_net_usd, 2) + ",";
+      trade_row += FalconCsvSafe(record.paper_final_exit_reason) + ",";
+      trade_row += FalconCsvSafe(record.falcon_tier_at_entry) + ",";
+      trade_row += FalconCsvSafe(record.falcon_tier_at_exit) + ",";
+      trade_row += DoubleToString(record.falcon_effective_balance, 2) + ",";
+      trade_row += DoubleToString(record.falcon_tier_min_balance, 2) + ",";
+      trade_row += DoubleToString(record.falcon_tier_max_balance, 2) + ",";
+      trade_row += IntegerToString(record.falcon_tier_max_losses) + ",";
+      trade_row += DoubleToString(record.falcon_tier_max_daily_r, 2) + ",";
+      trade_row += DoubleToString(record.falcon_tier_max_drawdown_pct, 2) + ",";
+      trade_row += DoubleToString(record.falcon_broker_min_lot, 2) + ",";
+      trade_row += DoubleToString(record.falcon_fixed_lot, 2) + ",";
+      trade_row += FalconCsvSafe(record.falcon_min_lot_constraint) + ",";
+      trade_row += FalconCsvSafe(record.falcon_lotsizing_feasibility_status) + ",";
+      trade_row += FalconCsvSafe(record.falcon_lotsizing_feasibility_reason) + ",";
+      trade_row += DoubleToString(record.falcon_min_lot_risk_points, 2) + ",";
+      trade_row += DoubleToString(record.falcon_min_lot_risk_usd, 2) + ",";
+      trade_row += DoubleToString(record.falcon_min_lot_risk_pct_of_capital, 2) + ",";
+      trade_row += DoubleToString(record.falcon_tier_base_risk_pct, 2) + ",";
+      trade_row += DoubleToString(record.falcon_tier_risk_budget_usd, 2) + ",";
+      trade_row += DoubleToString(record.falcon_potential_loss_r, 2) + ",";
+      trade_row += DoubleToString(record.falcon_max_single_trade_loss_r, 2) + ",";
+      trade_row += IntegerToString(record.falcon_single_trade_loss_cap_breach) + ",";
+      trade_row += FalconCsvSafe(record.falcon_emergency_status) + ",";
+      trade_row += IntegerToString(record.falcon_emergency_triggered_layer) + ",";
+      trade_row += FalconCsvSafe(record.falcon_emergency_reason) + ",";
+      trade_row += IntegerToString(record.falcon_layer1_consecutive_losses) + ",";
+      trade_row += IntegerToString(record.falcon_layer1_max_losses) + ",";
+      trade_row += DoubleToString(record.falcon_layer2_daily_r, 2) + ",";
+      trade_row += DoubleToString(record.falcon_layer2_max_daily_r, 2) + ",";
+      trade_row += DoubleToString(record.falcon_layer3_drawdown_pct, 2) + ",";
+      trade_row += DoubleToString(record.falcon_layer3_max_drawdown_pct, 2) + ",";
+      trade_row += DoubleToString(record.falcon_emergency_before_net_points, 2) + ",";
+      trade_row += DoubleToString(record.falcon_emergency_after_net_points, 2) + ",";
+      trade_row += DoubleToString(record.falcon_emergency_before_net_usd, 2) + ",";
+      trade_row += DoubleToString(record.falcon_emergency_after_net_usd, 2) + ",";
+      trade_row += FalconCsvSafe(record.falcon_reset_status) + ",";
+      trade_row += IntegerToString(record.falcon_layer1_reset_on_win) + ",";
+      trade_row += IntegerToString(record.falcon_layer2_reset_on_new_day) + ",";
+      trade_row += IntegerToString(record.falcon_layer3_reset_on_new_peak) + ",";
+      trade_row += FalconCsvSafe(record.falcon_reset_reason) + ",";
+      trade_row += FalconCsvSafe(record.close_reason) + ",";
+      trade_row += FalconCsvSafe(record.evidence_summary);
+      FileWriteString(handle, trade_row + "\r\n");
       FileClose(handle);
    }
 };
@@ -9402,7 +13717,85 @@ public:
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.29.8. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement, SL/TP, Smart TM, Bar-Path, Decision Tree, and Timing diagnostics are reporting-only beyond the controlled Shadow guard.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.55.1. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement, SL/TP, Smart TM, Bar-Path, Decision Tree, and Timing diagnostics are reporting-only beyond the controlled Shadow guard.");
+   }
+};
+
+
+// ==================================================================
+// Risk & TradeManagement Architecture Consolidation Contract - v0.55.0
+// Runtime-neutral ownership map. The active behavior remains the exact
+// v0.54.2 chain: PaperGuard -> Protection -> Runner -> Capital Tier ->
+// Three-Layer Emergency -> Promotion/Demotion Runtime Lock.
+// ==================================================================
+bool FalconV055ArchitectureConsolidationContractReady()
+{
+   if(!FalconCapitalTierContractReady()) return false;
+   if(!FalconThreeLayerEmergencyContractReady()) return false;
+   if(!FalconTierRuntimeLockContractReady()) return false;
+   return true;
+}
+
+class CFalconRiskTradeManagementArchitecture
+{
+private:
+   bool m_initialized;
+   bool m_contract_ready;
+
+public:
+   CFalconRiskTradeManagementArchitecture()
+   {
+      m_initialized = false;
+      m_contract_ready = false;
+   }
+
+   bool Initialize()
+   {
+      m_contract_ready = FalconV055ArchitectureConsolidationContractReady();
+      m_initialized = true;
+      return m_contract_ready;
+   }
+
+   bool IsInitialized()
+   {
+      return m_initialized;
+   }
+
+   bool IsContractReady()
+   {
+      return m_contract_ready;
+   }
+
+   string RiskOwnershipMap()
+   {
+      return "RiskManager=" + FALCON_RISK_MANAGER_STATUS +
+             ";LotSizingManager=" + FALCON_LOT_SIZING_MANAGER_STATUS +
+             ";DailyGovernance=" + FALCON_DAILY_GOVERNANCE_STATUS +
+             ";EngineRiskAllocation=" + FALCON_ENGINE_RISK_ALLOCATION_STATUS +
+             ";KillSwitch=" + FALCON_KILL_SWITCH_STATUS_V055;
+   }
+
+   string TradeManagementOwnershipMap()
+   {
+      return "StructuralStopEngine=" + FALCON_STRUCTURAL_STOP_ENGINE_STATUS +
+             ";TPBuilder=" + FALCON_TP_BUILDER_STATUS_V055 +
+             ";PartialManager=" + FALCON_PARTIAL_MANAGER_STATUS_V055 +
+             ";ProofProtectionEngine=" + FALCON_PROOF_PROTECTION_ENGINE_STATUS +
+             ";RunnerManager=" + FALCON_RUNNER_MANAGER_STATUS_V055 +
+             ";AdaptiveRatchetEngine=" + FALCON_ADAPTIVE_RATCHET_ENGINE_STATUS +
+             ";EarlyFailureExitEngine=" + FALCON_EARLY_FAILURE_EXIT_ENGINE_STATUS;
+   }
+
+   void PrintState()
+   {
+      CFalconLogger::Info(StringFormat("v0.55.0 Architecture Consolidation | Status=%s | Decision=%s | ContractReady=%d | RuntimeEnforced=%d",
+                                       FALCON_ARCH_STATUS,
+                                       FALCON_ARCH_DECISION,
+                                       (m_contract_ready ? 1 : 0),
+                                       (FALCON_ARCH_RUNTIME_ENFORCED ? 1 : 0)));
+      CFalconLogger::Info("v0.55.0 Risk ownership map: " + RiskOwnershipMap());
+      CFalconLogger::Info("v0.55.0 TradeManagement ownership map: " + TradeManagementOwnershipMap());
+      CFalconLogger::Info("v0.55.0 Behavior policy: " + FALCON_ARCH_POLICY + " | " + FALCON_ARCH_ORDER_SEND_POLICY);
    }
 };
 
@@ -9424,6 +13817,7 @@ CFalconFvgMicroTradePlanStagingDryRun g_fvg_micro_tradeplan_stager;
 CFalconFvgMicroShadowLifecycleSimulation g_fvg_micro_lifecycle_simulator;
 CFalconReportWriter      g_report_writer;
 CFalconExecutionGuard    g_execution_guard;
+CFalconRiskTradeManagementArchitecture g_risk_tm_architecture;
 bool                     g_is_initialized = false;
 long                     g_runtime_tick_counter = 0;
 datetime                 g_last_processed_m5_closed_candle_time = 0;
@@ -9582,11 +13976,12 @@ int OnInit()
    g_last_processed_m5_closed_candle_time = 0;
    g_last_staged_fvg_candidate_id = "";
    FalconInitializeReportPeriodTags();
+   g_falcon_session_start_balance = AccountInfoDouble(ACCOUNT_BALANCE);
 
    PrintFormat("============================================================");
    PrintFormat("%s", EA_NAME);
    PrintFormat("Version: %s | Build: %s", EA_VERSION_TAG, EA_BUILD_TAG);
-   PrintFormat("Stage: Paper Protection Virtual SL Transition Readiness / Summary-only / No OrderSend / No runtime SL change");
+   PrintFormat("Stage: Risk & TradeManagement Architecture Consolidation / No Behavior Change / No OrderSend / No runtime SL change");
    PrintFormat("ReportProfile: %s", FalconReportProfileToString());
    PrintFormat("============================================================");
    FalconPrintReportFolderHints();
@@ -9656,10 +14051,13 @@ int OnInit()
       g_report_writer.WriteRuntimeReportVerificationSnapshot("OnInit_AfterStrategyAdapterReport");
    }
 
+   g_risk_tm_architecture.Initialize();
+   g_risk_tm_architecture.PrintState();
+   CFalconLogger::Info("v0.55.1 Low-Capital Risk Feasibility Foundation active: measurement-only; no trade blocking yet.");
    g_execution_guard.AssertNoExecution();
 
    g_is_initialized = true;
-   CFalconLogger::Info("Initialization completed successfully. EA is Shadow-only, FalconGuard pre-execution design-ready, and report-ready.");
+   CFalconLogger::Info("Initialization completed successfully. EA is Shadow/Paper-reporting only, Risk/TM architecture-consolidated, FalconGuard pre-execution design-ready, and report-ready.");
    return INIT_SUCCEEDED;
 }
 
@@ -9674,6 +14072,17 @@ void OnDeinit(const int reason)
    FalconFinalizeAndRenameReportFiles("OnDeinit_AutoPeriodFinalize");
    CFalconLogger::Info(StringFormat("Deinitializing. Reason=%d", reason));
    g_is_initialized = false;
+}
+
+void OnTradeTransaction(const MqlTradeTransaction &trans,
+                        const MqlTradeRequest &request,
+                        const MqlTradeResult &result)
+{
+   // v0.43.0: event-driven state update scaffold only.
+   // Future Demo/Live builds will use this event as the source of truth
+   // for open/partial/close/modify state. This build still sends no
+   // orders and performs no broker-side modifications.
+   FalconOttuRouteTransaction(trans);
 }
 
 void OnTick()

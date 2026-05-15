@@ -1,0 +1,56 @@
+JA FalconCore v0.38.1 Static Validation
+Build: PaperProtectionBrokerModifyEligibilityValidationLock_NoExecution
+
+Scope:
+Trading Logic Change = NO
+Entry Change = NO
+SL/TP Change = NO
+Exit Change = NO
+Runtime Protection = NO
+Runtime Runner = NO
+Broker Modify = NO
+OrderSend = NO
+Demo/Live = NO
+New Inputs = NO
+New Reports = NO
+TradeLifecycle schema change = NO
+
+Static checks:
+Duplicate macros = 0
+Braces balanced = True (506/506)
+Parentheses balanced = True (3324/3324)
+Square brackets balanced = True (111/111)
+Direct OrderSend calls = 0
+Long identifiers > 63 chars = 0
+Summary header columns = 861
+Summary row columns = 861
+PBMEL prefix occurrences = 16
+pbmel variable prefix occurrences = 94
+
+v0.38.0 report baseline used:
+v0.38.0 TotalTrades = 436
+v0.38.0 WinRate = 68.81
+v0.38.0 NetIndexPoints = 2303.99
+v0.38.0 TotalProfitUSD = 876.68
+v0.38.0 TotalLossUSD = 415.88
+v0.38.0 NetUSD = 460.80
+PBME ReadyTrades = 159
+PBME EligibleTrades = 159
+PBME InvariantBreaches = 0
+PBME BrokerModifySent = 0
+PBME RuntimeSLChanged = 0
+
+Expected v0.38.1 April lock values:
+FalconPaperProtectBrokerModifyEligLockCandidateTrades = 159
+FalconPaperProtectBrokerModifyEligLockEligibleTrades = 159
+FalconPaperProtectBrokerModifyEligLockReadyTrades = 159
+FalconPaperProtectBrokerModifyEligLockTP1Trades = 108
+FalconPaperProtectBrokerModifyEligLockTP2Trades = 51
+FalconPaperProtectBrokerModifyEligLockRejectedTrades = 0
+FalconPaperProtectBrokerModifyEligLockConflictTrades = 0
+FalconPaperProtectBrokerModifyEligLockBrokerModifySent = 0
+FalconPaperProtectBrokerModifyEligLockRuntimeSLChanged = 0
+FalconPaperProtectBrokerModifyEligLockInvariantBreaches = 0
+FalconPaperProtectBrokerModifyEligLockCompletenessPct = 100.00
+
+DOCX render QA = OK (2 pages rendered and visually inspected)

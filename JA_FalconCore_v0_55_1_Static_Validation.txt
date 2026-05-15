@@ -1,0 +1,46 @@
+JA FalconCore v0.55.1 Static Validation
+GeneratedAt=2026-05-15 17:55:47
+Source=JA_FalconCore_Automated_Trading_Platform_v0_55_1_LowCapitalRiskFeasibilityFoundation.mq5
+
+Version checks:
+- #property version: 1.551
+- EA_VERSION_TAG: v0.55.1
+- EA_BUILD_TAG: LowCapitalRiskFeasibilityFoundation
+
+Static safety checks:
+- OrderSend(...) occurrences: 0
+- OrderSendAsync(...) occurrences: 0
+- PositionModify(...) occurrences: 0
+- CTrade .Buy/.Sell direct occurrences: 0
+- Macro duplicate count: 0
+- Brace balance: 661 opening / 661 closing
+- Parentheses balance: 4867 opening / 4867 closing
+
+v0.55.1 layer checks:
+- FALCON_LCRF_STATUS present: YES
+- FalconLowCapitalRiskFeasibilityContractReady present: YES
+- ApplyLowCapitalRiskFeasibilityFoundation present: YES
+- RegisterClosedTrade applies LCRF before Emergency: YES
+- TradeLifecycle new risk fields present: YES
+- Summary new LCRF fields present: YES
+
+CSV schema static parity:
+- TradeLifecycle header columns: 114
+- TradeLifecycle estimated row columns: 114
+- Summary header columns: 1467
+- Summary estimated row columns: 1467
+
+Behavior-change policy:
+- Entry change: NO
+- Exit change: NO
+- SL/TP change: NO
+- Protection change: NO
+- Runner change: NO
+- Emergency/Tier change: NO
+- Risk feasibility rejection: NO, measurement-only in v0.55.1
+- OrderSend/BrokerModify/RuntimeSLChanged: statically absent
+
+Required MetaEditor validation:
+- Compile must be checked in MetaEditor: expected 0 errors / 0 warnings.
+- Strategy Tester Primary Window: 2026-04-01 to 2026-04-30 actual observed.
+- Confirmation Window: 2026-05-01 to 2026-05-14.

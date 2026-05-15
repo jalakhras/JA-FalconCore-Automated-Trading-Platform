@@ -1,0 +1,33 @@
+JA FalconCore v0.55.1 — LOCKED Release Notes
+
+Version: v0.55.1
+Name: Low-Capital Risk Feasibility Foundation
+Status: LOCKED
+Type: Risk / Measurement / Paper Runtime / No Behavior Change
+
+Final verdict:
+- v0.55.1 passed multi-window validation as a measurement foundation.
+- Results match v0.55.0 behavior baselines.
+- No Entry/Exit/SL/TP/Protection/Runner/Emergency/Tier behavior changed.
+- OrderSend=0, BrokerModifySent=0, RuntimeSLChanged=0, InvariantBreaches=0.
+
+Validated windows:
+- January OOS: 2026-01-01 -> 2026-01-30, Working NetUSD 849.43
+- February OOS: 2026-02-01 -> 2026-02-27, Working NetUSD 1312.24
+- March OOS: 2026-03-01 -> 2026-03-31, Working NetUSD 1889.39
+- April Full: 2026-04-01 -> 2026-04-30, Working NetUSD 1102.45
+- May Fresh: 2026-05-01 -> 2026-05-14, Working NetUSD 759.45
+
+Risk feasibility findings:
+- Total evaluated trades: 2402
+- FEASIBLE: 0
+- BORDERLINE: 33
+- NOT_FEASIBLE: 2369
+- Single Trade Cap Breaches: 2369
+- Effective balance in tests: 50.00 USD / MICRO tier
+
+Interpretation:
+The layer revealed that strict Single Trade Loss Cap enforcement on a 50 USD MICRO account with broker minimum lot 0.01 would block nearly all valid FVG_MICRO_RETEST trades. Therefore v0.55.1 is locked as measurement foundation only. Enforcement must be calibrated in v0.55.2; direct strict enforcement is rejected.
+
+Next candidate:
+v0.55.2 — Calibrated Single Trade Loss Cap / Low-Capital Risk Enforcement Candidate
