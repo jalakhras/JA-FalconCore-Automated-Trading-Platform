@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.55.4d - Minimal Report Final Pass       |
+//|                     Version: v0.55.5 - Minimal Report Final Pass       |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.5544"
+#property version   "1.5550"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.55.4d"
-#define EA_BUILD_TAG   "MinimalReportFinalPass"
+#define EA_VERSION_TAG "v0.55.5"
+#define EA_BUILD_TAG   "CapitalFlowSourceClassification"
 
 #define FALCON_MTF_COUNT       6
 
@@ -2646,6 +2646,14 @@ struct FalconTradeLifecycleRecord
    int                       falcon_dynamic_capital_aware_blocked;
    string                    falcon_dynamic_capital_reason;
 
+   // v0.55.5: Capital flow source classification fields. Reporting-only; no trading behavior change.
+   string                    falcon_capital_flow_source;
+   double                    falcon_capital_flow_delta_usd;
+   double                    falcon_external_capital_delta_usd;
+   int                       falcon_capital_flow_external_event;
+   string                    falcon_capital_flow_status;
+   string                    falcon_capital_flow_reason;
+
    // v0.55.3: Dynamic LotSizing Model / Capital Flow Awareness fields.
    string                    falcon_dlm_status;
    string                    falcon_dlm_decision;
@@ -2767,7 +2775,7 @@ struct FalconReportTotals
    double total_loss_usd;
    double net_usd;
 
-   // v0.55.4d: truthful final-working USD totals derived from per-trade final layer output.
+   // v0.55.5: truthful final-working USD totals derived from per-trade final layer output.
    int    final_profit_trades;
    int    final_loss_trades;
    int    final_breakeven_trades;
@@ -2775,11 +2783,22 @@ struct FalconReportTotals
    double final_total_loss_usd;
    double final_working_net_usd;
 
-   // v0.55.4d: visible-row audit totals using the exact 4-decimal values written into TradeLifecycle.
+   // v0.55.5: visible-row audit totals using the exact 4-decimal values written into TradeLifecycle.
    double visible_raw_net_usd_4dp;
    double visible_final_working_net_usd_4dp;
    double visible_final_total_profit_usd_4dp;
    double visible_final_total_loss_usd_4dp;
+
+   // v0.55.5: Capital flow classification summary counters.
+   int    capital_flow_evaluated_trades;
+   int    capital_flow_trade_profit_events;
+   int    capital_flow_trade_loss_events;
+   int    capital_flow_flat_events;
+   int    capital_flow_injection_events;
+   int    capital_flow_withdrawal_events;
+   int    capital_flow_unknown_events;
+   int    capital_flow_integrity_breaches;
+   double capital_flow_external_net_usd;
 
    double win_rate;
    double loss_rate;
@@ -4454,7 +4473,7 @@ void FalconWriteAutoPeriodManifest(const string trigger,
       return;
    }
 
-   // v0.55.4d: keep AutoPeriodManifest as file-period metadata only.
+   // v0.55.5: keep AutoPeriodManifest as file-period metadata only.
    // Long explanatory notes belong in Release Notes / Project Memory, not CSV.
    FileWrite(handle,
              "EAName", "Version", "Build", "GeneratedAt",
@@ -8782,6 +8801,7 @@ public:
       ApplyDynamicLotSizingModel(record);
       ApplyCalibratedSingleTradeLossCapEnforcement(record);
       ApplyThreeLayerEmergencyApplication(record);
+      ApplyCapitalFlowSourceClassification(record);
       UpdateTotals(record);
       AppendTradeRecord(record);
    }
@@ -8832,9 +8852,14 @@ public:
          integrity_breaches++;
       if(m_totals.total_trades != m_totals.dynamic_lotsizing_evaluated_trades)
          integrity_breaches++;
+      if(m_totals.total_trades != m_totals.capital_flow_evaluated_trades)
+         integrity_breaches++;
+      if(m_totals.capital_flow_integrity_breaches > 0)
+         integrity_breaches++;
 
+      string capital_flow_integrity_status = (m_totals.capital_flow_integrity_breaches == 0 && m_totals.total_trades == m_totals.capital_flow_evaluated_trades ? "PASS" : "FAIL");
       string report_integrity_status = (integrity_breaches == 0 ? "PASS" : "FAIL");
-      string row_count_status = (m_totals.total_trades == m_totals.dynamic_lotsizing_evaluated_trades ? "PASS" : "FAIL");
+      string row_count_status = (m_totals.total_trades == m_totals.dynamic_lotsizing_evaluated_trades && m_totals.total_trades == m_totals.capital_flow_evaluated_trades ? "PASS" : "FAIL");
 
       int handle = FileOpen(m_summary_report_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
@@ -8875,6 +8900,13 @@ public:
       summary_row += IntegerToString(m_totals.dynamic_lotsizing_dynamic_mode_trades) + ",";
       summary_row += DoubleToString(dynamic_active_lot_avg, 2) + ",";
       summary_row += DoubleToString(m_totals.dynamic_lotsizing_safety_active_lot_max, 2) + ",";
+      summary_row += IntegerToString(m_totals.capital_flow_evaluated_trades) + ",";
+      summary_row += IntegerToString(m_totals.capital_flow_trade_profit_events) + ",";
+      summary_row += IntegerToString(m_totals.capital_flow_trade_loss_events) + ",";
+      summary_row += IntegerToString(m_totals.capital_flow_injection_events) + ",";
+      summary_row += IntegerToString(m_totals.capital_flow_withdrawal_events) + ",";
+      summary_row += DoubleToString(m_totals.capital_flow_external_net_usd, 4) + ",";
+      summary_row += FalconCsvSafe(capital_flow_integrity_status) + ",";
       summary_row += IntegerToString(m_totals.paper_emergency_triggered_trades) + ",";
       summary_row += IntegerToString(m_totals.paper_emergency_blocked_entries) + ",";
       summary_row += "0,0,0,";
@@ -8887,7 +8919,7 @@ public:
       summary_row += DoubleToString(raw_net_diff, 4) + ",";
       summary_row += FalconCsvSafe("MINIMAL_REPORT_FINAL_PASS: default reports keep only decision fields, final working USD truth, dynamic lot essentials, emergency outcome, and integrity audit fields.");
 
-      FileWriteString(handle, SlimSummaryHeaderV0554d() + "\r\n");
+      FileWriteString(handle, SlimSummaryHeaderV0555() + "\r\n");
       FileWriteString(handle, summary_row + "\r\n");
       FileClose(handle);
    }
@@ -9816,6 +9848,69 @@ private:
       }
    }
 
+   void ApplyCapitalFlowSourceClassification(FalconTradeLifecycleRecord &record)
+   {
+      // v0.55.5: reporting-only classification. It does not modify capital, lot, entry, exit, or emergency state.
+      double before_capital = record.falcon_dynamic_risk_capital_before_trade;
+      double after_capital  = record.falcon_dynamic_risk_capital_after_trade;
+      double final_trade_delta = record.falcon_emergency_after_net_usd;
+
+      record.falcon_capital_flow_source = "UNKNOWN";
+      record.falcon_capital_flow_delta_usd = 0.0;
+      record.falcon_external_capital_delta_usd = 0.0;
+      record.falcon_capital_flow_external_event = 0;
+      record.falcon_capital_flow_status = "PASS";
+      record.falcon_capital_flow_reason = "NOT_EVALUATED";
+
+      if(before_capital <= 0.0 || after_capital <= 0.0)
+      {
+         record.falcon_capital_flow_status = "PASS";
+         record.falcon_capital_flow_source = "UNKNOWN";
+         record.falcon_capital_flow_reason = "CAPITAL_BEFORE_OR_AFTER_NOT_AVAILABLE";
+         return;
+      }
+
+      double capital_delta = after_capital - before_capital;
+      double external_delta = capital_delta - final_trade_delta;
+      record.falcon_capital_flow_delta_usd = capital_delta;
+      record.falcon_external_capital_delta_usd = external_delta;
+
+      double external_tolerance = 0.01;
+      if(MathAbs(external_delta) > external_tolerance)
+      {
+         record.falcon_capital_flow_external_event = 1;
+         if(external_delta > 0.0)
+         {
+            record.falcon_capital_flow_source = "INJECTION";
+            record.falcon_capital_flow_reason = "CAPITAL_DELTA_EXCEEDS_TRADE_DELTA_POSITIVE_EXTERNAL_FLOW";
+         }
+         else
+         {
+            record.falcon_capital_flow_source = "WITHDRAWAL";
+            record.falcon_capital_flow_reason = "CAPITAL_DELTA_EXCEEDS_TRADE_DELTA_NEGATIVE_EXTERNAL_FLOW";
+         }
+         // External capital movement is not a reporting failure; it must be classified and separated from strategy P/L.
+         record.falcon_capital_flow_status = "PASS";
+         return;
+      }
+
+      if(final_trade_delta > 0.0001)
+      {
+         record.falcon_capital_flow_source = "TRADE_PROFIT";
+         record.falcon_capital_flow_reason = "CAPITAL_DELTA_MATCHES_FINAL_WORKING_TRADE_PROFIT";
+      }
+      else if(final_trade_delta < -0.0001)
+      {
+         record.falcon_capital_flow_source = "TRADE_LOSS";
+         record.falcon_capital_flow_reason = "CAPITAL_DELTA_MATCHES_FINAL_WORKING_TRADE_LOSS";
+      }
+      else
+      {
+         record.falcon_capital_flow_source = "FLAT";
+         record.falcon_capital_flow_reason = "NO_FINAL_WORKING_TRADE_DELTA";
+      }
+   }
+
    void ResetTotals()
    {
       m_totals.total_trades                = 0;
@@ -9838,6 +9933,15 @@ private:
       m_totals.visible_final_working_net_usd_4dp = 0.0;
       m_totals.visible_final_total_profit_usd_4dp = 0.0;
       m_totals.visible_final_total_loss_usd_4dp = 0.0;
+      m_totals.capital_flow_evaluated_trades = 0;
+      m_totals.capital_flow_trade_profit_events = 0;
+      m_totals.capital_flow_trade_loss_events = 0;
+      m_totals.capital_flow_flat_events = 0;
+      m_totals.capital_flow_injection_events = 0;
+      m_totals.capital_flow_withdrawal_events = 0;
+      m_totals.capital_flow_unknown_events = 0;
+      m_totals.capital_flow_integrity_breaches = 0;
+      m_totals.capital_flow_external_net_usd = 0.0;
       m_totals.win_rate                    = 0.0;
       m_totals.loss_rate                   = 0.0;
 
@@ -10129,6 +10233,23 @@ private:
          m_totals.visible_final_total_profit_usd_4dp += visible_final_working_usd;
       else if(visible_final_working_usd < 0.0)
          m_totals.visible_final_total_loss_usd_4dp += MathAbs(visible_final_working_usd);
+
+      m_totals.capital_flow_evaluated_trades++;
+      if(record.falcon_capital_flow_source == "TRADE_PROFIT")
+         m_totals.capital_flow_trade_profit_events++;
+      else if(record.falcon_capital_flow_source == "TRADE_LOSS")
+         m_totals.capital_flow_trade_loss_events++;
+      else if(record.falcon_capital_flow_source == "FLAT")
+         m_totals.capital_flow_flat_events++;
+      else if(record.falcon_capital_flow_source == "INJECTION")
+         m_totals.capital_flow_injection_events++;
+      else if(record.falcon_capital_flow_source == "WITHDRAWAL")
+         m_totals.capital_flow_withdrawal_events++;
+      else
+         m_totals.capital_flow_unknown_events++;
+      if(record.falcon_capital_flow_status != "PASS")
+         m_totals.capital_flow_integrity_breaches++;
+      m_totals.capital_flow_external_net_usd += record.falcon_external_capital_delta_usd;
 
       m_totals.paper_guard_evaluated_trades++;
       m_totals.paper_guard_before_net_points += record.net_index_points;
@@ -10637,21 +10758,21 @@ private:
       }
    }
 
-   string SlimTradeHeaderV0554d()
+   string SlimTradeHeaderV0555()
    {
-      // v0.55.4d: final minimal per-trade surface.
+      // v0.55.5: final minimal per-trade surface.
       // Keep only changing trade facts, final USD truth fields, dynamic lot essentials, emergency outcome, and row integrity.
       string trade_header = "TradeId,StrategyId,EngineId,Direction,EntryTime,ExitTime,";
       trade_header += "Stage,Outcome,CloseReason,ActiveLot,";
       trade_header += "RawIndexPoints,RawTradeUSD,ProtectionNetUSD,RunnerNetUSD,FinalWorkingTradeUSD,";
       trade_header += "TierAtEntry,DLMUseFixedLot,DLMRecommendedLot,DynamicCapitalBefore,DynamicCapitalAfter,";
-      trade_header += "DLMActiveRiskPct,DynamicRiskPctOfCapital,EmergencyStatus,EmergencyLayer,EmergencyReason,FinalStatus,ReportRowIntegrityStatus";
+      trade_header += "CapitalFlowSource,CapitalDeltaUSD,ExternalCapitalDeltaUSD,DLMActiveRiskPct,DynamicRiskPctOfCapital,EmergencyStatus,EmergencyLayer,EmergencyReason,FinalStatus,ReportRowIntegrityStatus";
       return trade_header;
    }
 
-   string SlimSummaryHeaderV0554d()
+   string SlimSummaryHeaderV0555()
    {
-      // v0.55.4d: final minimal window-level decision surface.
+      // v0.55.5: final minimal window-level decision surface.
       string summary_header = "EAName,Version,Build,Symbol,GeneratedAt,ReportProfile,FromDateTag,ToDateTag,UseFixedLot,FixedLotSize,";
       summary_header += "TotalTrades,WinTrades,LoseTrades,WinRate,";
       summary_header += "RawTotalProfitUSD,RawTotalLossUSD,RawNetUSD,";
@@ -10659,6 +10780,7 @@ private:
       summary_header += "BuyTrades,BuyWinRate,SellTrades,SellWinRate,";
       summary_header += "ProtectionActivatedTrades,RunnerActivatedTrades,";
       summary_header += "DynamicLotEvaluatedTrades,DynamicLotFixedModeTrades,DynamicLotDynamicModeTrades,DynamicLotActiveLotAvg,DynamicLotActiveLotMax,";
+      summary_header += "CapitalFlowEvaluatedTrades,CapitalTradeProfitEvents,CapitalTradeLossEvents,CapitalInjectionEvents,CapitalWithdrawalEvents,ExternalCapitalNetUSD,CapitalFlowIntegrityStatus,";
       summary_header += "EmergencyTriggeredTrades,EmergencyBlockedEntries,";
       summary_header += "SafetyOrderSend,BrokerModifySent,RuntimeSLChanged,InvariantBreaches,";
       summary_header += "VisibleRawNetUSDDiff,VisibleFinalNetUSDDiff,ReportIntegrityStatus,TradeRowsVsSummaryStatus,FinalNetUSDDiff,RawNetUSDDiff,ReportNotes";
@@ -10674,7 +10796,7 @@ private:
          return;
       }
 
-      FileWriteString(handle, SlimTradeHeaderV0554d() + "\r\n");
+      FileWriteString(handle, SlimTradeHeaderV0555() + "\r\n");
       FileClose(handle);
    }
 
@@ -10687,7 +10809,7 @@ private:
          return;
       }
 
-      FileWriteString(handle, SlimSummaryHeaderV0554d() + "\r\n");
+      FileWriteString(handle, SlimSummaryHeaderV0555() + "\r\n");
       FileClose(handle);
    }
 
@@ -10727,6 +10849,9 @@ private:
       trade_row += DoubleToString(record.falcon_dlm_recommended_lot, 2) + ",";
       trade_row += DoubleToString(record.falcon_dynamic_risk_capital_before_trade, 4) + ",";
       trade_row += DoubleToString(record.falcon_dynamic_risk_capital_after_trade, 4) + ",";
+      trade_row += FalconCsvSafe(record.falcon_capital_flow_source) + ",";
+      trade_row += DoubleToString(record.falcon_capital_flow_delta_usd, 4) + ",";
+      trade_row += DoubleToString(record.falcon_external_capital_delta_usd, 4) + ",";
       trade_row += DoubleToString(record.falcon_dlm_active_risk_pct, 4) + ",";
       trade_row += DoubleToString(record.falcon_dynamic_risk_pct_of_capital, 4) + ",";
       trade_row += FalconCsvSafe(record.falcon_emergency_status) + ",";
@@ -10755,7 +10880,7 @@ public:
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.55.4d. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement, SL/TP, Smart TM, Bar-Path, Decision Tree, and Timing diagnostics are reporting-only beyond the controlled Shadow guard.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.55.5. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement, SL/TP, Smart TM, Bar-Path, Decision Tree, and Timing diagnostics are reporting-only beyond the controlled Shadow guard.");
    }
 };
 

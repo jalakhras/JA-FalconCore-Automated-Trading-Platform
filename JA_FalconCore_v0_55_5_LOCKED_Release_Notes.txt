@@ -1,0 +1,42 @@
+JA FalconCore v0.55.5 — Capital Flow Source Classification — LOCKED
+
+Verdict:
+LOCKED / ACCEPTED
+
+Scope:
+Capital accounting and reporting classification only. No trading logic change.
+
+What changed:
+- Added per-trade CapitalFlowSource classification.
+- Added CapitalDeltaUSD and ExternalCapitalDeltaUSD.
+- Added Summary counters for trade profit/loss events, injection events, withdrawal events, and external capital net.
+- Added CapitalFlowIntegrityStatus.
+
+Submitted test windows:
+- January OOS: 2026-01-01 → 2026-01-30
+- February OOS: 2026-02-01 → 2026-02-27
+- March OOS: 2026-03-01 → 2026-03-31
+- April Full: 2026-04-01 → 2026-04-30
+- May Fresh: 2026-05-01 → 2026-05-14
+
+Key results:
+January Dynamic FinalWorkingNetUSD = 1,633.64
+February Dynamic FinalWorkingNetUSD = 6,817.65
+March Dynamic FinalWorkingNetUSD = 34,682.35
+April Dynamic FinalWorkingNetUSD = 4,524.85
+May Dynamic FinalWorkingNetUSD = 1,103.55
+
+Safety:
+OrderSend = 0
+BrokerModifySent = 0
+RuntimeSLChanged = 0
+InvariantBreaches = 0
+
+Capital flow:
+CapitalFlowIntegrityStatus = PASS in all submitted windows.
+CapitalInjectionEvents = 0
+CapitalWithdrawalEvents = 0
+ExternalCapitalNetUSD = 0.0000 / negative-zero rounding only
+
+Next:
+v0.55.6 — Capital Injection / Withdrawal Simulation Scenarios

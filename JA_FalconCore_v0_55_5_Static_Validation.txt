@@ -1,0 +1,14 @@
+JA FalconCore v0.55.5 Static Validation
+Version: v0.55.5
+Build: CapitalFlowSourceClassification
+OrderSend occurrences: 0
+OrderSendAsync occurrences: 0
+PositionModify occurrences: 0
+CTrade Buy/Sell occurrences: 0
+Braces balance: 0
+Parentheses balance: 0
+TradeLifecycle columns: 30
+Summary columns: 51
+Capital flow classification fields present: True
+Pipeline call present after emergency: True
+No trading logic change intended: Entry/Exit/SL/TP/Protection/Runner/Emergency/DynamicLot unchanged; classification is reporting-only.
