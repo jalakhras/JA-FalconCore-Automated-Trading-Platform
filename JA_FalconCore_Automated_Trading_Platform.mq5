@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.55.2a - Dynamic Capital-Aware Single Trade Loss Cap Fix       |
+//|                     Version: v0.55.3b - Dynamic LotSizing Safety Ramp / Max Growth Cap       |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.5521"
+#property version   "1.5532"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.55.2a"
-#define EA_BUILD_TAG   "DynamicCapitalAwareSingleTradeLossCapFix"
+#define EA_VERSION_TAG "v0.55.3b"
+#define EA_BUILD_TAG   "DynamicLotSizingSafetyRampMaxGrowthCap"
 
 #define FALCON_MTF_COUNT       6
 
@@ -1513,7 +1513,7 @@ double g_falcon_session_start_balance = 0.0;
 #define FALCON_TDL_SCOPE                        "PROMOTION_APPLICATION;DEMOTION_APPLICATION;ACTIVE_POSITIONS_UNCHANGED;NEXT_TRADES_USE_APPLIED_TIER;PAPER_ONLY"
 #define FALCON_TDL_POLICY                       "PROMOTION_MUST_BE_EARNED;DEMOTION_IS_IMMEDIATE;DEMOTION_PRIORITY;NO_TRANSITION_WHEN_REQUIREMENTS_FAIL"
 #define FALCON_TDL_ORDER_SEND_POLICY            "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
-#define FALCON_TDL_NEXT_PHASE                   "v0.55.2a_DynamicCapitalAwareSingleTradeLossCapFix"
+#define FALCON_TDL_NEXT_PHASE                   "v0.55.3b_DynamicLotSizingSafetyRampMaxGrowthCap"
 
 
 // ==================================================================
@@ -1531,10 +1531,10 @@ double g_falcon_session_start_balance = 0.0;
 #define FALCON_ARCH_POLICY                       "NO_ENTRY_CHANGE;NO_EXIT_CHANGE;NO_SLTP_CHANGE;NO_PROTECTION_CHANGE;NO_RUNNER_CHANGE;NO_EMERGENCY_CHANGE;NO_TIER_CHANGE"
 #define FALCON_ARCH_ORDER_SEND_POLICY            "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
 #define FALCON_ARCH_REPORT_POLICY                "SUMMARY_VERSION_BUILD_ONLY;NO_NEW_CSV_REPORTS;NO_DIAGNOSTIC_SPAM"
-#define FALCON_ARCH_NEXT_PHASE                   "v0.55.2a_DynamicCapitalAwareSingleTradeLossCapFix"
+#define FALCON_ARCH_NEXT_PHASE                   "v0.55.3b_DynamicLotSizingSafetyRampMaxGrowthCap"
 
 #define FALCON_RISK_MANAGER_STATUS               "CONSOLIDATED_OWNER_FOR_GUARD_TIER_EMERGENCY_DECISIONS"
-#define FALCON_LOT_SIZING_MANAGER_STATUS         "PARTIAL_FIXED_LOT_MIN_LOT_AWARE_DYNAMIC_RISK_NOT_YET_ACTIVE"
+#define FALCON_LOT_SIZING_MANAGER_STATUS         "DYNAMIC_LOT_PAPER_RUNTIME_APPLICATION_USEFIXEDLOT_RESPECTED"
 #define FALCON_DAILY_GOVERNANCE_STATUS           "PARTIAL_DAILY_R_AND_DAILY_PAUSE_RESET_OWNER"
 #define FALCON_ENGINE_RISK_ALLOCATION_STATUS     "FOUNDATION_FVG_MICRO_100_PERCENT_ONLY"
 #define FALCON_KILL_SWITCH_STATUS_V055           "PARTIAL_PAPER_EMERGENCY_BLOCKING_NO_BROKER_CLOSE_YET"
@@ -1561,7 +1561,7 @@ double g_falcon_session_start_balance = 0.0;
 #define FALCON_LCRF_ORDER_SEND_POLICY             "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
 #define FALCON_LCRF_DEFAULT_SINGLE_TRADE_CAP_PCT  50.0
 #define FALCON_LCRF_BORDERLINE_MULTIPLIER         1.20
-#define FALCON_LCRF_NEXT_PHASE                    "v0.55.2a_DynamicCapitalAwareSingleTradeLossCapFix"
+#define FALCON_LCRF_NEXT_PHASE                    "v0.55.3b_DynamicLotSizingSafetyRampMaxGrowthCap"
 
 
 // ==================================================================
@@ -1584,7 +1584,30 @@ double g_falcon_session_start_balance = 0.0;
 #define FALCON_STLC_DYNAMIC_MAX_RISK_PCT          50.0
 #define FALCON_STLC_DYNAMIC_CAPITAL_FLOOR_USD     1.0
 #define FALCON_STLC_DYNAMIC_CAPITAL_MODE          "PAPER_RISK_CAPITAL_BEFORE_TRADE_UPDATES_AFTER_EACH_CLOSED_TRADE"
-#define FALCON_STLC_NEXT_PHASE                    "v0.55.2a_DYNAMIC_CAPITAL_MULTI_WINDOW_VALIDATION_LOCK"
+#define FALCON_STLC_NEXT_PHASE                    "v0.55.3b_DynamicLotSizingSafetyRampMaxGrowthCap"
+
+
+// ==================================================================
+// Dynamic LotSizing Model / Capital Flow Awareness - v0.55.3
+// Candidate / reporting-only layer. It computes a dynamic recommended
+// lot size per closed Paper trade using PaperRiskCapitalBeforeTrade,
+// tier base risk budget, structural SL distance, broker min/max lot,
+// and broker lot step. The user-facing UseFixedLot input is respected:
+// when UseFixedLot=true the active/paper lot remains FixedLotSize and
+// dynamic lot is only reported as a candidate. When UseFixedLot=false,
+// the model reports the dynamic lot that should be used by a future
+// enforcement build, but this candidate does not alter historical Paper
+// entries yet. No OrderSend, BrokerModify, or RuntimeSL change.
+// ==================================================================
+#define FALCON_DLM_STATUS                         "DYNAMIC_LOTSIZING_SAFETY_RAMP_MAX_GROWTH_CAP"
+#define FALCON_DLM_DECISION                       "APPLY_DYNAMIC_LOT_TO_PAPER_USD_WITH_TIER_CAP_CAPITAL_CAP_AND_GROWTH_RAMP"
+#define FALCON_DLM_RUNTIME_ENFORCED               true
+#define FALCON_DLM_SCOPE                          "LOTSIZINGMANAGER;USEFIXEDLOT;DYNAMIC_CAPITAL;STRUCTURAL_RISK;BROKER_MIN_MAX_STEP;PAPER_RUNTIME_APPLICATION;TIER_MAX_LOT;CAPITAL_MAX_LOT;GROWTH_RAMP"
+#define FALCON_DLM_POLICY                         "USE_FIXED_LOT_TRUE_PRESERVES_FIXEDLOT;USE_FIXED_LOT_FALSE_APPLIES_DYNAMIC_LOT_WITH_SAFETY_RAMP;CAPITAL_UPDATES_AFTER_EACH_TRADE;TIER_CAP;CAPITAL_CAP;MAX_GROWTH_CAP;NO_BROKER_EXECUTION"
+#define FALCON_DLM_ORDER_SEND_POLICY              "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
+#define FALCON_DLM_NEXT_PHASE                     "v0.55.3b_DYNAMIC_LOTSIZING_SAFETY_RAMP_MULTI_WINDOW_LOCK"
+#define FALCON_DLM_CAPITAL_USD_PER_001_LOT        250.0
+#define FALCON_DLM_MAX_LOT_GROWTH_MULTIPLIER      1.20
 
 
 // ==================================================================
@@ -2609,6 +2632,39 @@ struct FalconTradeLifecycleRecord
    int                       falcon_dynamic_capital_aware_blocked;
    string                    falcon_dynamic_capital_reason;
 
+   // v0.55.3: Dynamic LotSizing Model / Capital Flow Awareness fields.
+   string                    falcon_dlm_status;
+   string                    falcon_dlm_decision;
+   int                       falcon_dlm_runtime_enforced;
+   int                       falcon_dlm_use_fixed_lot;
+   double                    falcon_dlm_fixed_lot_size;
+   double                    falcon_dlm_effective_capital;
+   double                    falcon_dlm_base_risk_pct;
+   double                    falcon_dlm_risk_budget_usd;
+   double                    falcon_dlm_risk_points;
+   double                    falcon_dlm_risk_usd_per_one_lot;
+   double                    falcon_dlm_raw_lot;
+   double                    falcon_dlm_recommended_lot;
+   double                    falcon_dlm_active_lot;
+   double                    falcon_dlm_tier_max_lot;
+   double                    falcon_dlm_capital_max_lot;
+   double                    falcon_dlm_previous_active_lot;
+   double                    falcon_dlm_growth_ramp_max_lot;
+   int                       falcon_dlm_tier_cap_applied;
+   int                       falcon_dlm_capital_cap_applied;
+   int                       falcon_dlm_growth_ramp_applied;
+   string                    falcon_dlm_safety_mode;
+   double                    falcon_dlm_broker_min_lot;
+   double                    falcon_dlm_broker_max_lot;
+   double                    falcon_dlm_broker_lot_step;
+   int                       falcon_dlm_min_lot_floor_applied;
+   int                       falcon_dlm_max_lot_cap_applied;
+   double                    falcon_dlm_recommended_risk_usd;
+   double                    falcon_dlm_recommended_risk_pct;
+   double                    falcon_dlm_active_risk_usd;
+   double                    falcon_dlm_active_risk_pct;
+   string                    falcon_dlm_reason;
+
    // v0.53.1: Three-Layer Emergency active paper replacement fields.
    string                    falcon_emergency_status;
    int                       falcon_emergency_triggered_layer;
@@ -2915,6 +2971,24 @@ struct FalconReportTotals
    double single_trade_loss_cap_dynamic_cap_pct_max;
    int    single_trade_loss_cap_dynamic_capital_updates;
    int    single_trade_loss_cap_dynamic_capital_blocks;
+
+   // v0.55.3: Dynamic LotSizing Model totals.
+   int    dynamic_lotsizing_evaluated_trades;
+   int    dynamic_lotsizing_fixed_mode_trades;
+   int    dynamic_lotsizing_dynamic_mode_trades;
+   int    dynamic_lotsizing_candidate_ready_trades;
+   int    dynamic_lotsizing_invalid_trades;
+   int    dynamic_lotsizing_min_lot_floor_trades;
+   int    dynamic_lotsizing_max_lot_cap_trades;
+   int    dynamic_lotsizing_tier_cap_trades;
+   int    dynamic_lotsizing_capital_cap_trades;
+   int    dynamic_lotsizing_growth_ramp_trades;
+   double dynamic_lotsizing_safety_active_lot_max;
+   double dynamic_lotsizing_raw_lot_total;
+   double dynamic_lotsizing_recommended_lot_total;
+   double dynamic_lotsizing_active_lot_total;
+   double dynamic_lotsizing_recommended_risk_pct_max;
+   double dynamic_lotsizing_active_risk_pct_max;
 
    // v0.53.1: Three-Layer Emergency active replacement totals.
    int    paper_emergency_evaluated_trades;
@@ -3419,6 +3493,21 @@ bool FalconSingleTradeLossCapContractReady()
    if(StringFind(FALCON_STLC_POLICY, "STRICT_CAP_REMAINS_MEASUREMENT") < 0) return false;
    if(StringFind(FALCON_STLC_POLICY, "PROMOTION_STILL_EARNED") < 0) return false;
    if(StringFind(FALCON_STLC_ORDER_SEND_POLICY, "ORDER_SEND_HARD_BLOCKED") < 0) return false;
+   return true;
+}
+
+bool FalconDynamicLotSizingModelContractReady()
+{
+   if(!FalconSingleTradeLossCapContractReady()) return false;
+   if(!FALCON_DLM_RUNTIME_ENFORCED) return false;
+   if(StringFind(FALCON_DLM_POLICY, "USE_FIXED_LOT_TRUE_PRESERVES_FIXEDLOT") < 0) return false;
+   if(StringFind(FALCON_DLM_POLICY, "USE_FIXED_LOT_FALSE_APPLIES_DYNAMIC_LOT_WITH_SAFETY_RAMP") < 0) return false;
+   if(StringFind(FALCON_DLM_POLICY, "CAPITAL_UPDATES_AFTER_EACH_TRADE") < 0) return false;
+   if(StringFind(FALCON_DLM_POLICY, "TIER_CAP") < 0) return false;
+   if(StringFind(FALCON_DLM_POLICY, "CAPITAL_CAP") < 0) return false;
+   if(StringFind(FALCON_DLM_POLICY, "MAX_GROWTH_CAP") < 0) return false;
+   if(StringFind(FALCON_DLM_POLICY, "NO_BROKER_EXECUTION") < 0) return false;
+   if(StringFind(FALCON_DLM_ORDER_SEND_POLICY, "ORDER_SEND_HARD_BLOCKED") < 0) return false;
    return true;
 }
 
@@ -7503,6 +7592,10 @@ private:
    double              m_tle_peak_equity;
    double              m_tle_max_drawdown_pct;
 
+   // v0.55.3b: Dynamic lot sizing safety ramp state.
+   bool                m_dlm_previous_active_lot_ready;
+   double              m_dlm_previous_active_lot;
+
    // v0.22.2 Lock cleanup: multi-profile summary arrays removed from active report surface.
 
    bool                m_initialized;
@@ -8669,6 +8762,7 @@ public:
       ApplyPaperRuntimeRunnerApplication(record);
       ApplyCapitalTierFoundation(record);
       ApplyLowCapitalRiskFeasibilityFoundation(record);
+      ApplyDynamicLotSizingModel(record);
       ApplyCalibratedSingleTradeLossCapEnforcement(record);
       ApplyThreeLayerEmergencyApplication(record);
       UpdateTotals(record);
@@ -10886,7 +10980,22 @@ public:
          "FalconSingleTradeLossCapDynamicCapitalBlocks,"
          "FalconSingleTradeLossCapOrderSend,FalconSingleTradeLossCapBrokerModifySent,FalconSingleTradeLossCapRuntimeSLChanged,"
          "FalconSingleTradeLossCapInvariantBreaches,FalconSingleTradeLossCapReadinessPct,FalconSingleTradeLossCapApplicationPct,"
-         "FalconSingleTradeLossCapPolicy,FalconSingleTradeLossCapOrderSendPolicy,FalconSingleTradeLossCapNextPhase";
+         "FalconSingleTradeLossCapPolicy,FalconSingleTradeLossCapOrderSendPolicy,FalconSingleTradeLossCapNextPhase,"
+         "FalconDynamicLotSizingStatus,FalconDynamicLotSizingDecision,FalconDynamicLotSizingRuntimeEnforced,"
+         "FalconDynamicLotSizingScope,FalconDynamicLotSizingContractReady,FalconDynamicLotSizingEvaluatedTrades,"
+         "FalconDynamicLotSizingFixedModeTrades,FalconDynamicLotSizingDynamicModeTrades,"
+         "FalconDynamicLotSizingCandidateReadyTrades,FalconDynamicLotSizingInvalidTrades,"
+         "FalconDynamicLotSizingMinLotFloorTrades,FalconDynamicLotSizingMaxLotCapTrades,"
+         "FalconDynamicLotSizingTierCapTrades,FalconDynamicLotSizingCapitalCapTrades,FalconDynamicLotSizingGrowthRampTrades,"
+         "FalconDynamicLotSizingSafetyActiveLotMax,"
+         "FalconDynamicLotSizingRawLotAvg,FalconDynamicLotSizingRecommendedLotAvg,FalconDynamicLotSizingActiveLotAvg,"
+         "FalconDynamicLotSizingRecommendedRiskPctMax,FalconDynamicLotSizingActiveRiskPctMax,"
+         "FalconDynamicLotSizingUseFixedLotPolicy,FalconDynamicLotSizingOrderSendPolicy,FalconDynamicLotSizingNextPhase";
+
+      double dlm_raw_lot_avg = FalconSafeAverageDouble(m_totals.dynamic_lotsizing_raw_lot_total, m_totals.dynamic_lotsizing_evaluated_trades);
+      double dlm_recommended_lot_avg = FalconSafeAverageDouble(m_totals.dynamic_lotsizing_recommended_lot_total, m_totals.dynamic_lotsizing_evaluated_trades);
+      double dlm_active_lot_avg = FalconSafeAverageDouble(m_totals.dynamic_lotsizing_active_lot_total, m_totals.dynamic_lotsizing_evaluated_trades);
+      int dlm_contract_ready = (FalconDynamicLotSizingModelContractReady() ? 1 : 0);
 
       // v0.45.0a compile fix: split the very long Summary row expression into small
       // append chunks. This changes only compiler expression shape; CSV schema and
@@ -12426,7 +12535,31 @@ public:
          DoubleToString(stlc_application_pct, 2) + "," +
          FalconCsvSafe(FALCON_STLC_POLICY) + "," +
          FalconCsvSafe(FALCON_STLC_ORDER_SEND_POLICY) + "," +
-         FalconCsvSafe(FALCON_STLC_NEXT_PHASE);
+         FalconCsvSafe(FALCON_STLC_NEXT_PHASE) + "," +
+         FalconCsvSafe(FALCON_DLM_STATUS) + "," +
+         FalconCsvSafe(FALCON_DLM_DECISION) + "," +
+         FalconBoolToYesNo(FALCON_DLM_RUNTIME_ENFORCED) + "," +
+         FalconCsvSafe(FALCON_DLM_SCOPE) + "," +
+         IntegerToString(dlm_contract_ready) + "," +
+         IntegerToString(m_totals.dynamic_lotsizing_evaluated_trades) + "," +
+         IntegerToString(m_totals.dynamic_lotsizing_fixed_mode_trades) + "," +
+         IntegerToString(m_totals.dynamic_lotsizing_dynamic_mode_trades) + "," +
+         IntegerToString(m_totals.dynamic_lotsizing_candidate_ready_trades) + "," +
+         IntegerToString(m_totals.dynamic_lotsizing_invalid_trades) + "," +
+         IntegerToString(m_totals.dynamic_lotsizing_min_lot_floor_trades) + "," +
+         IntegerToString(m_totals.dynamic_lotsizing_max_lot_cap_trades) + "," +
+         IntegerToString(m_totals.dynamic_lotsizing_tier_cap_trades) + "," +
+         IntegerToString(m_totals.dynamic_lotsizing_capital_cap_trades) + "," +
+         IntegerToString(m_totals.dynamic_lotsizing_growth_ramp_trades) + "," +
+         DoubleToString(m_totals.dynamic_lotsizing_safety_active_lot_max, 2) + "," +
+         DoubleToString(dlm_raw_lot_avg, 4) + "," +
+         DoubleToString(dlm_recommended_lot_avg, 2) + "," +
+         DoubleToString(dlm_active_lot_avg, 2) + "," +
+         DoubleToString(m_totals.dynamic_lotsizing_recommended_risk_pct_max, 2) + "," +
+         DoubleToString(m_totals.dynamic_lotsizing_active_risk_pct_max, 2) + "," +
+         FalconCsvSafe(FALCON_DLM_POLICY) + "," +
+         FalconCsvSafe(FALCON_DLM_ORDER_SEND_POLICY) + "," +
+         FalconCsvSafe(FALCON_DLM_NEXT_PHASE);
 
       // v0.20.2: Write CRLF explicitly as separate strings. This prevents MetaTrader/CSV
       // readers from receiving the header and summary row concatenated on a single line.
@@ -12908,9 +13041,13 @@ private:
       if(dynamic_capital <= 0.0)
          dynamic_capital = CurrentPaperRiskCapitalBeforeTrade();
 
+      double active_risk_usd = record.falcon_min_lot_risk_usd;
+      if(record.falcon_dlm_active_risk_usd > 0.0)
+         active_risk_usd = record.falcon_dlm_active_risk_usd;
+
       double dynamic_risk_pct = 0.0;
       if(dynamic_capital > 0.0)
-         dynamic_risk_pct = 100.0 * record.falcon_min_lot_risk_usd / dynamic_capital;
+         dynamic_risk_pct = 100.0 * active_risk_usd / dynamic_capital;
       record.falcon_dynamic_risk_pct_of_capital = dynamic_risk_pct;
 
       double calibrated_cap_r = FalconCalibratedSingleTradeLossCapR(tier_name);
@@ -12919,12 +13056,12 @@ private:
       record.falcon_single_trade_loss_cap_risk_pct_cap = calibrated_risk_pct_cap;
       record.falcon_dynamic_single_trade_cap_pct = calibrated_risk_pct_cap;
 
-      if(dynamic_capital <= 0.0 || record.falcon_min_lot_risk_usd <= 0.0 || calibrated_risk_pct_cap <= 0.0)
+      if(dynamic_capital <= 0.0 || active_risk_usd <= 0.0 || calibrated_risk_pct_cap <= 0.0)
       {
          record.falcon_single_trade_loss_cap_status = "INVALID";
          record.falcon_single_trade_loss_cap_decision = "ALLOW_PASS_THROUGH";
-         record.falcon_single_trade_loss_cap_reason = "DYNAMIC_RISK_INPUT_UNKNOWN";
-         record.falcon_dynamic_capital_reason = "DYNAMIC_RISK_INPUT_UNKNOWN";
+         record.falcon_single_trade_loss_cap_reason = "DYNAMIC_ACTIVE_LOT_RISK_INPUT_UNKNOWN";
+         record.falcon_dynamic_capital_reason = "DYNAMIC_ACTIVE_LOT_RISK_INPUT_UNKNOWN";
          return;
       }
 
@@ -12959,6 +13096,249 @@ private:
 
       record.falcon_single_trade_loss_cap_impact_points = record.falcon_single_trade_loss_cap_after_net_points - record.falcon_single_trade_loss_cap_before_net_points;
       record.falcon_single_trade_loss_cap_impact_usd = record.falcon_single_trade_loss_cap_after_net_usd - record.falcon_single_trade_loss_cap_before_net_usd;
+   }
+
+   double FalconDynamicTierMaxLot(const string tier_name)
+   {
+      if(tier_name == "MICRO")    return 0.01;
+      if(tier_name == "TINY")     return 0.03;
+      if(tier_name == "SMALL")    return 0.10;
+      if(tier_name == "MEDIUM")   return 0.30;
+      if(tier_name == "STANDARD") return 1.00;
+      if(tier_name == "LARGE")    return 2.00;
+      return MathMax(0.01, m_symbol_context.min_lot);
+   }
+
+   double FalconDynamicCapitalMaxLot(const double effective_capital)
+   {
+      double min_lot = m_symbol_context.min_lot;
+      if(min_lot <= 0.0) min_lot = 0.01;
+      if(effective_capital <= 0.0)
+         return min_lot;
+
+      // Internal safety formula: each 0.01 lot should be backed by ~250 USD of dynamic paper capital.
+      // This allows dynamic growth, but prevents a small account equity curve from jumping straight into oversized lots.
+      double raw_capital_lot = (effective_capital / FALCON_DLM_CAPITAL_USD_PER_001_LOT) * 0.01;
+      int min_floor = 0;
+      int max_cap = 0;
+      return FalconNormalizeDynamicLotToBroker(raw_capital_lot, min_floor, max_cap);
+   }
+
+   double FalconDynamicGrowthRampMaxLot()
+   {
+      double min_lot = m_symbol_context.min_lot;
+      double step = m_symbol_context.lot_step;
+      if(step <= 0.0) step = 0.01;
+      if(min_lot <= 0.0) min_lot = step;
+
+      if(!m_dlm_previous_active_lot_ready || m_dlm_previous_active_lot <= 0.0)
+         return min_lot;
+
+      double ramp_cap = (m_dlm_previous_active_lot * FALCON_DLM_MAX_LOT_GROWTH_MULTIPLIER) + step;
+      if(ramp_cap < min_lot)
+         ramp_cap = min_lot;
+
+      int min_floor = 0;
+      int max_cap = 0;
+      return FalconNormalizeDynamicLotToBroker(ramp_cap, min_floor, max_cap);
+   }
+
+   double FalconNormalizeDynamicLotToBroker(const double raw_lot, int &min_floor_applied, int &max_cap_applied)
+   {
+      min_floor_applied = 0;
+      max_cap_applied = 0;
+
+      double lot = raw_lot;
+      double min_lot = m_symbol_context.min_lot;
+      double max_lot = m_symbol_context.max_lot;
+      double step = m_symbol_context.lot_step;
+
+      if(step <= 0.0) step = 0.01;
+      if(min_lot <= 0.0) min_lot = step;
+      if(max_lot <= 0.0) max_lot = MathMax(min_lot, lot);
+
+      if(lot <= 0.0)
+         lot = min_lot;
+
+      double stepped_lot = MathFloor(lot / step) * step;
+      if(stepped_lot <= 0.0)
+         stepped_lot = min_lot;
+
+      if(stepped_lot < min_lot)
+      {
+         stepped_lot = min_lot;
+         min_floor_applied = 1;
+      }
+      if(stepped_lot > max_lot)
+      {
+         stepped_lot = max_lot;
+         max_cap_applied = 1;
+      }
+
+      return NormalizeDouble(stepped_lot, 2);
+   }
+
+   void FalconRefreshUsdMetricsForActiveLot(FalconTradeLifecycleRecord &record, const double active_lot)
+   {
+      if(active_lot <= 0.0)
+         return;
+
+      record.lot_size = active_lot;
+      record.net_usd = FalconEstimateUsdByRawPoints(record.net_index_points, active_lot, m_symbol_context);
+      if(record.net_usd > 0.0)
+      {
+         record.profit_usd = record.net_usd;
+         record.loss_usd = 0.0;
+      }
+      else if(record.net_usd < 0.0)
+      {
+         record.profit_usd = 0.0;
+         record.loss_usd = MathAbs(record.net_usd);
+      }
+      else
+      {
+         record.profit_usd = 0.0;
+         record.loss_usd = 0.0;
+      }
+
+      record.fvg_quality_shadow_guard_sim_net_usd = FalconEstimateUsdByRawPoints(record.fvg_quality_shadow_guard_sim_net_points, active_lot, m_symbol_context);
+      record.paper_guard_net_usd = FalconEstimateUsdByRawPoints(record.paper_guard_net_index_points, active_lot, m_symbol_context);
+      record.paper_protection_net_usd = FalconEstimateUsdByRawPoints(record.paper_protection_net_index_points, active_lot, m_symbol_context);
+      record.paper_runner_net_usd = FalconEstimateUsdByRawPoints(record.paper_runner_net_index_points, active_lot, m_symbol_context);
+   }
+
+   void ApplyDynamicLotSizingModel(FalconTradeLifecycleRecord &record)
+   {
+      record.falcon_dlm_status = FALCON_DLM_STATUS;
+      record.falcon_dlm_decision = "INVALID";
+      record.falcon_dlm_runtime_enforced = (FALCON_DLM_RUNTIME_ENFORCED ? 1 : 0);
+      record.falcon_dlm_use_fixed_lot = (UseFixedLot ? 1 : 0);
+      record.falcon_dlm_fixed_lot_size = FixedLotSize;
+      record.falcon_dlm_effective_capital = record.falcon_dynamic_risk_capital_before_trade;
+      record.falcon_dlm_base_risk_pct = record.falcon_tier_base_risk_pct;
+      record.falcon_dlm_risk_budget_usd = record.falcon_tier_risk_budget_usd;
+      record.falcon_dlm_risk_points = record.falcon_min_lot_risk_points;
+      record.falcon_dlm_risk_usd_per_one_lot = 0.0;
+      record.falcon_dlm_raw_lot = 0.0;
+      record.falcon_dlm_recommended_lot = 0.0;
+      record.falcon_dlm_active_lot = record.lot_size;
+      record.falcon_dlm_tier_max_lot = 0.0;
+      record.falcon_dlm_capital_max_lot = 0.0;
+      record.falcon_dlm_previous_active_lot = (m_dlm_previous_active_lot_ready ? m_dlm_previous_active_lot : 0.0);
+      record.falcon_dlm_growth_ramp_max_lot = 0.0;
+      record.falcon_dlm_tier_cap_applied = 0;
+      record.falcon_dlm_capital_cap_applied = 0;
+      record.falcon_dlm_growth_ramp_applied = 0;
+      record.falcon_dlm_safety_mode = "NOT_EVALUATED";
+      record.falcon_dlm_broker_min_lot = m_symbol_context.min_lot;
+      record.falcon_dlm_broker_max_lot = m_symbol_context.max_lot;
+      record.falcon_dlm_broker_lot_step = m_symbol_context.lot_step;
+      record.falcon_dlm_min_lot_floor_applied = 0;
+      record.falcon_dlm_max_lot_cap_applied = 0;
+      record.falcon_dlm_recommended_risk_usd = 0.0;
+      record.falcon_dlm_recommended_risk_pct = 0.0;
+      record.falcon_dlm_active_risk_usd = 0.0;
+      record.falcon_dlm_active_risk_pct = 0.0;
+      record.falcon_dlm_reason = "NOT_EVALUATED";
+
+      if(record.falcon_dlm_effective_capital <= 0.0)
+         record.falcon_dlm_effective_capital = CurrentPaperRiskCapitalBeforeTrade();
+      if(record.falcon_dlm_active_lot <= 0.0)
+         record.falcon_dlm_active_lot = FixedLotSize;
+
+      if(record.falcon_dlm_effective_capital <= 0.0 || record.falcon_dlm_risk_budget_usd <= 0.0 || record.falcon_dlm_risk_points <= 0.0)
+      {
+         record.falcon_dlm_decision = "INVALID";
+         record.falcon_dlm_reason = "CAPITAL_OR_RISK_BUDGET_OR_STRUCTURAL_RISK_UNKNOWN";
+         return;
+      }
+
+      double one_lot_risk_usd = MathAbs(FalconEstimateUsdByRawPoints(record.falcon_dlm_risk_points, 1.0, m_symbol_context));
+      record.falcon_dlm_risk_usd_per_one_lot = one_lot_risk_usd;
+      if(one_lot_risk_usd <= 0.0)
+      {
+         record.falcon_dlm_decision = "INVALID";
+         record.falcon_dlm_reason = "ONE_LOT_RISK_UNKNOWN";
+         return;
+      }
+
+      double raw_lot = record.falcon_dlm_risk_budget_usd / one_lot_risk_usd;
+      record.falcon_dlm_raw_lot = raw_lot;
+
+      int min_floor = 0;
+      int max_cap = 0;
+      double recommended_lot = FalconNormalizeDynamicLotToBroker(raw_lot, min_floor, max_cap);
+      record.falcon_dlm_recommended_lot = recommended_lot;
+      record.falcon_dlm_min_lot_floor_applied = min_floor;
+      record.falcon_dlm_max_lot_cap_applied = max_cap;
+
+      string dynamic_tier = record.falcon_dynamic_risk_tier_by_capital;
+      if(StringLen(dynamic_tier) <= 0)
+         dynamic_tier = FalconCapitalTierName(record.falcon_dlm_effective_capital);
+
+      record.falcon_dlm_tier_max_lot = FalconDynamicTierMaxLot(dynamic_tier);
+      record.falcon_dlm_capital_max_lot = FalconDynamicCapitalMaxLot(record.falcon_dlm_effective_capital);
+      record.falcon_dlm_growth_ramp_max_lot = FalconDynamicGrowthRampMaxLot();
+
+      double active_lot = record.lot_size;
+      if(UseFixedLot)
+      {
+         active_lot = FixedLotSize;
+         record.falcon_dlm_decision = "FIXED_LOT_ACTIVE_FIXEDLOT_PRESERVED";
+         record.falcon_dlm_safety_mode = "FIXED_MODE_NO_DYNAMIC_APPLICATION";
+         record.falcon_dlm_reason = "USE_FIXED_LOT_TRUE_FIXEDLOT_PRESERVED_NO_DYNAMIC_APPLICATION";
+      }
+      else
+      {
+         double safety_lot = recommended_lot;
+
+         if(record.falcon_dlm_tier_max_lot > 0.0 && safety_lot > record.falcon_dlm_tier_max_lot)
+         {
+            safety_lot = record.falcon_dlm_tier_max_lot;
+            record.falcon_dlm_tier_cap_applied = 1;
+         }
+
+         if(record.falcon_dlm_capital_max_lot > 0.0 && safety_lot > record.falcon_dlm_capital_max_lot)
+         {
+            safety_lot = record.falcon_dlm_capital_max_lot;
+            record.falcon_dlm_capital_cap_applied = 1;
+         }
+
+         if(record.falcon_dlm_growth_ramp_max_lot > 0.0 && safety_lot > record.falcon_dlm_growth_ramp_max_lot)
+         {
+            safety_lot = record.falcon_dlm_growth_ramp_max_lot;
+            record.falcon_dlm_growth_ramp_applied = 1;
+         }
+
+         int safety_min_floor = 0;
+         int safety_max_cap = 0;
+         active_lot = FalconNormalizeDynamicLotToBroker(safety_lot, safety_min_floor, safety_max_cap);
+
+         record.falcon_dlm_decision = "DYNAMIC_LOT_APPLIED_WITH_SAFETY_RAMP";
+         record.falcon_dlm_safety_mode = "TIER_CAP_PLUS_CAPITAL_CAP_PLUS_GROWTH_RAMP";
+         record.falcon_dlm_reason = "USE_FIXED_LOT_FALSE_RECOMMENDED_LOT_SAFETY_CAPPED_BEFORE_PAPER_USD_APPLICATION";
+      }
+
+      if(active_lot <= 0.0)
+         active_lot = m_symbol_context.min_lot;
+      if(active_lot <= 0.0)
+         active_lot = FixedLotSize;
+
+      record.falcon_dlm_active_lot = active_lot;
+      record.falcon_dlm_recommended_risk_usd = MathAbs(FalconEstimateUsdByRawPoints(record.falcon_dlm_risk_points, recommended_lot, m_symbol_context));
+      record.falcon_dlm_active_risk_usd = MathAbs(FalconEstimateUsdByRawPoints(record.falcon_dlm_risk_points, active_lot, m_symbol_context));
+
+      if(record.falcon_dlm_effective_capital > 0.0)
+      {
+         record.falcon_dlm_recommended_risk_pct = 100.0 * record.falcon_dlm_recommended_risk_usd / record.falcon_dlm_effective_capital;
+         record.falcon_dlm_active_risk_pct = 100.0 * record.falcon_dlm_active_risk_usd / record.falcon_dlm_effective_capital;
+      }
+
+      if(FALCON_DLM_RUNTIME_ENFORCED)
+         FalconRefreshUsdMetricsForActiveLot(record, active_lot);
+
+      m_dlm_previous_active_lot = active_lot;
+      m_dlm_previous_active_lot_ready = true;
    }
 
    void ApplyThreeLayerEmergencyApplication(FalconTradeLifecycleRecord &record)
@@ -13328,6 +13708,23 @@ private:
       m_totals.single_trade_loss_cap_dynamic_capital_updates = 0;
       m_totals.single_trade_loss_cap_dynamic_capital_blocks = 0;
 
+      m_totals.dynamic_lotsizing_evaluated_trades = 0;
+      m_totals.dynamic_lotsizing_fixed_mode_trades = 0;
+      m_totals.dynamic_lotsizing_dynamic_mode_trades = 0;
+      m_totals.dynamic_lotsizing_candidate_ready_trades = 0;
+      m_totals.dynamic_lotsizing_invalid_trades = 0;
+      m_totals.dynamic_lotsizing_min_lot_floor_trades = 0;
+      m_totals.dynamic_lotsizing_max_lot_cap_trades = 0;
+      m_totals.dynamic_lotsizing_tier_cap_trades = 0;
+      m_totals.dynamic_lotsizing_capital_cap_trades = 0;
+      m_totals.dynamic_lotsizing_growth_ramp_trades = 0;
+      m_totals.dynamic_lotsizing_safety_active_lot_max = 0.0;
+      m_totals.dynamic_lotsizing_raw_lot_total = 0.0;
+      m_totals.dynamic_lotsizing_recommended_lot_total = 0.0;
+      m_totals.dynamic_lotsizing_active_lot_total = 0.0;
+      m_totals.dynamic_lotsizing_recommended_risk_pct_max = 0.0;
+      m_totals.dynamic_lotsizing_active_risk_pct_max = 0.0;
+
       m_totals.paper_emergency_evaluated_trades = 0;
       m_totals.paper_emergency_safe_trades = 0;
       m_totals.paper_emergency_triggered_trades = 0;
@@ -13358,6 +13755,8 @@ private:
       m_tle_equity = 0.0;
       m_tle_peak_equity = 0.0;
       m_tle_max_drawdown_pct = 0.0;
+      m_dlm_previous_active_lot_ready = false;
+      m_dlm_previous_active_lot = 0.0;
    }
 
    void UpdateTotals(const FalconTradeLifecycleRecord &record)
@@ -13527,6 +13926,35 @@ private:
          m_totals.single_trade_loss_cap_dynamic_risk_pct_max = record.falcon_dynamic_risk_pct_of_capital;
       if(record.falcon_dynamic_single_trade_cap_pct > m_totals.single_trade_loss_cap_dynamic_cap_pct_max)
          m_totals.single_trade_loss_cap_dynamic_cap_pct_max = record.falcon_dynamic_single_trade_cap_pct;
+
+      m_totals.dynamic_lotsizing_evaluated_trades++;
+      if(record.falcon_dlm_use_fixed_lot == 1)
+         m_totals.dynamic_lotsizing_fixed_mode_trades++;
+      else
+         m_totals.dynamic_lotsizing_dynamic_mode_trades++;
+      if(record.falcon_dlm_decision == "INVALID")
+         m_totals.dynamic_lotsizing_invalid_trades++;
+      else
+         m_totals.dynamic_lotsizing_candidate_ready_trades++;
+      if(record.falcon_dlm_min_lot_floor_applied == 1)
+         m_totals.dynamic_lotsizing_min_lot_floor_trades++;
+      if(record.falcon_dlm_max_lot_cap_applied == 1)
+         m_totals.dynamic_lotsizing_max_lot_cap_trades++;
+      if(record.falcon_dlm_tier_cap_applied == 1)
+         m_totals.dynamic_lotsizing_tier_cap_trades++;
+      if(record.falcon_dlm_capital_cap_applied == 1)
+         m_totals.dynamic_lotsizing_capital_cap_trades++;
+      if(record.falcon_dlm_growth_ramp_applied == 1)
+         m_totals.dynamic_lotsizing_growth_ramp_trades++;
+      if(record.falcon_dlm_active_lot > m_totals.dynamic_lotsizing_safety_active_lot_max)
+         m_totals.dynamic_lotsizing_safety_active_lot_max = record.falcon_dlm_active_lot;
+      m_totals.dynamic_lotsizing_raw_lot_total += record.falcon_dlm_raw_lot;
+      m_totals.dynamic_lotsizing_recommended_lot_total += record.falcon_dlm_recommended_lot;
+      m_totals.dynamic_lotsizing_active_lot_total += record.falcon_dlm_active_lot;
+      if(record.falcon_dlm_recommended_risk_pct > m_totals.dynamic_lotsizing_recommended_risk_pct_max)
+         m_totals.dynamic_lotsizing_recommended_risk_pct_max = record.falcon_dlm_recommended_risk_pct;
+      if(record.falcon_dlm_active_risk_pct > m_totals.dynamic_lotsizing_active_risk_pct_max)
+         m_totals.dynamic_lotsizing_active_risk_pct_max = record.falcon_dlm_active_risk_pct;
 
       m_totals.paper_emergency_evaluated_trades++;
       m_totals.paper_emergency_before_net_points += record.falcon_emergency_before_net_points;
@@ -13912,6 +14340,15 @@ private:
       trade_header += "FalconDynamicCapitalMode,FalconDynamicRiskCapitalBeforeTrade,FalconDynamicRiskCapitalAfterTrade,";
       trade_header += "FalconDynamicRiskTierByCapital,FalconDynamicRiskPctOfCapital,FalconDynamicSingleTradeCapPct,";
       trade_header += "FalconDynamicCapitalAwareBlocked,FalconDynamicCapitalReason,";
+      trade_header += "FalconDLMStatus,FalconDLMDecision,FalconDLMRuntimeEnforced,FalconDLMUseFixedLot,";
+      trade_header += "FalconDLMFixedLotSize,FalconDLMEffectiveCapital,FalconDLMBaseRiskPct,FalconDLMRiskBudgetUSD,";
+      trade_header += "FalconDLMRiskPoints,FalconDLMRiskUSDPerOneLot,FalconDLMRawLot,FalconDLMRecommendedLot,";
+      trade_header += "FalconDLMActiveLot,FalconDLMTierMaxLot,FalconDLMCapitalMaxLot,FalconDLMPreviousActiveLot,";
+      trade_header += "FalconDLMGrowthRampMaxLot,FalconDLMTierCapApplied,FalconDLMCapitalCapApplied,";
+      trade_header += "FalconDLMGrowthRampApplied,FalconDLMSafetyMode,";
+      trade_header += "FalconDLMBrokerMinLot,FalconDLMBrokerMaxLot,FalconDLMBrokerLotStep,";
+      trade_header += "FalconDLMMinLotFloorApplied,FalconDLMMaxLotCapApplied,FalconDLMRecommendedRiskUSD,";
+      trade_header += "FalconDLMRecommendedRiskPct,FalconDLMActiveRiskUSD,FalconDLMActiveRiskPct,FalconDLMReason,";
       trade_header += "FalconEmergencyStatus,FalconEmergencyTriggeredLayer,FalconEmergencyReason,";
       trade_header += "FalconLayer1ConsecutiveLosses,FalconLayer1MaxLosses,";
       trade_header += "FalconLayer2DailyR,FalconLayer2MaxDailyR,";
@@ -14072,6 +14509,37 @@ private:
       trade_row += DoubleToString(record.falcon_dynamic_single_trade_cap_pct, 2) + ",";
       trade_row += IntegerToString(record.falcon_dynamic_capital_aware_blocked) + ",";
       trade_row += FalconCsvSafe(record.falcon_dynamic_capital_reason) + ",";
+      trade_row += FalconCsvSafe(record.falcon_dlm_status) + ",";
+      trade_row += FalconCsvSafe(record.falcon_dlm_decision) + ",";
+      trade_row += IntegerToString(record.falcon_dlm_runtime_enforced) + ",";
+      trade_row += IntegerToString(record.falcon_dlm_use_fixed_lot) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_fixed_lot_size, 2) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_effective_capital, 2) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_base_risk_pct, 2) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_risk_budget_usd, 2) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_risk_points, 2) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_risk_usd_per_one_lot, 2) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_raw_lot, 4) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_recommended_lot, 2) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_active_lot, 2) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_tier_max_lot, 2) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_capital_max_lot, 2) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_previous_active_lot, 2) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_growth_ramp_max_lot, 2) + ",";
+      trade_row += IntegerToString(record.falcon_dlm_tier_cap_applied) + ",";
+      trade_row += IntegerToString(record.falcon_dlm_capital_cap_applied) + ",";
+      trade_row += IntegerToString(record.falcon_dlm_growth_ramp_applied) + ",";
+      trade_row += FalconCsvSafe(record.falcon_dlm_safety_mode) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_broker_min_lot, 2) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_broker_max_lot, 2) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_broker_lot_step, 2) + ",";
+      trade_row += IntegerToString(record.falcon_dlm_min_lot_floor_applied) + ",";
+      trade_row += IntegerToString(record.falcon_dlm_max_lot_cap_applied) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_recommended_risk_usd, 2) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_recommended_risk_pct, 2) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_active_risk_usd, 2) + ",";
+      trade_row += DoubleToString(record.falcon_dlm_active_risk_pct, 2) + ",";
+      trade_row += FalconCsvSafe(record.falcon_dlm_reason) + ",";
       trade_row += FalconCsvSafe(record.falcon_emergency_status) + ",";
       trade_row += IntegerToString(record.falcon_emergency_triggered_layer) + ",";
       trade_row += FalconCsvSafe(record.falcon_emergency_reason) + ",";
@@ -14111,7 +14579,7 @@ public:
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.55.1. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement, SL/TP, Smart TM, Bar-Path, Decision Tree, and Timing diagnostics are reporting-only beyond the controlled Shadow guard.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.55.3b. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement, SL/TP, Smart TM, Bar-Path, Decision Tree, and Timing diagnostics are reporting-only beyond the controlled Shadow guard.");
    }
 };
 

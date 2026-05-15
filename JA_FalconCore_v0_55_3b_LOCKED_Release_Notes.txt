@@ -1,0 +1,37 @@
+JA FalconCore Automated Trading Platform
+v0.55.3b — Dynamic LotSizing Safety Ramp / Max Growth Cap — LOCKED
+
+Status: PASSED / ACCEPTED / LOCKED
+Type: Dynamic LotSizing Paper Runtime Application with safety ramp
+
+Decision:
+v0.55.3b is locked after passing multi-window validation with UseFixedLot=false.
+The dynamic lot model now applies to Paper USD results while bounded by Tier Max Lot, Capital-Backed Lot Cap, and Growth Ramp Cap.
+
+Core rules:
+- UseFixedLot=true preserves FixedLotSize and does not apply dynamic lot sizing.
+- UseFixedLot=false applies dynamic lot sizing to Paper Runtime results.
+- ActiveLot is controlled by risk budget, broker limits, tier cap, capital cap, and growth ramp.
+- OrderSend/BrokerModify/RuntimeSLChanged remain 0 in Shadow/Paper.
+
+Multi-window validation:
+- January OOS: Trades=492, WinRate=65.45%, TotalProfitUSD=1570.77, TotalLossUSD=925.81, NetUSD=644.96, RunnerNetUSD=1677.41, WorkingNetUSD=1633.64, ActiveLotMax=0.06, ActiveLotAvg=0.02, InvariantBreaches=0
+- February OOS: Trades=488, WinRate=67.01%, TotalProfitUSD=5433.13, TotalLossUSD=2452.44, NetUSD=2980.69, RunnerNetUSD=6817.65, WorkingNetUSD=6817.65, ActiveLotMax=0.27, ActiveLotAvg=0.06, InvariantBreaches=0
+- March OOS: Trades=628, WinRate=65.61%, TotalProfitUSD=24109.26, TotalLossUSD=12083.80, NetUSD=12025.46, RunnerNetUSD=34907.93, WorkingNetUSD=34682.35, ActiveLotMax=1.00, ActiveLotAvg=0.20, InvariantBreaches=0
+- April Full: Trades=536, WinRate=68.28%, TotalProfitUSD=4236.11, TotalLossUSD=1996.44, NetUSD=2239.67, RunnerNetUSD=4529.73, WorkingNetUSD=4524.85, ActiveLotMax=0.18, ActiveLotAvg=0.04, InvariantBreaches=0
+- May Fresh: Trades=258, WinRate=64.73%, TotalProfitUSD=880.06, TotalLossUSD=411.22, NetUSD=468.83, RunnerNetUSD=1103.55, WorkingNetUSD=1103.55, ActiveLotMax=0.04, ActiveLotAvg=0.01, InvariantBreaches=0
+
+Safety invariants:
+- OrderSend = 0
+- BrokerModifySent = 0
+- RuntimeSLChanged = 0
+- SingleTradeLossCapInvariantBreaches = 0
+- ThreeLayerEmergencyInvariantBreaches = 0
+- DynamicLotSizingInvalidTrades = 0
+
+Locked baseline:
+v0.55.3b April Full Dynamic Working NetUSD = 4524.85
+v0.55.3b May Fresh Dynamic Working NetUSD = 1103.55
+
+Next recommended step:
+v0.55.4 — Capital Injection / Withdrawal Detection and Dynamic Capital Source Classification, before Escalation Detection.

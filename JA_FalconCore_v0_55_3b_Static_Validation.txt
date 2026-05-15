@@ -1,0 +1,32 @@
+JA FalconCore v0.55.3b Static Validation
+Version: v0.55.3b
+Build: DynamicLotSizingSafetyRampMaxGrowthCap
+
+Scope:
+- Dynamic LotSizing Paper Runtime Application with Safety Ramp / Max Growth Cap.
+- UseFixedLot=true preserves FixedLotSize.
+- UseFixedLot=false applies dynamic lot only after tier cap, capital cap, and per-trade growth ramp.
+- No broker execution.
+
+Static Checks:
+OrderSend(...) = 0
+OrderSendAsync(...) = 0
+PositionModify(...) = 0
+CTrade Buy/Sell = 0
+Duplicate macros = NONE
+Braces = 695 / 695
+Parentheses = 5165 / 5165
+TradeLifecycle schema parity = 167 / 167
+Summary header columns = 1527
+Dynamic safety fields present = YES
+Tier cap helper present = YES
+Capital cap helper present = YES
+Growth ramp helper present = YES
+
+Expected Compile Target:
+0 errors / 0 warnings in MetaEditor.
+
+Required Test Windows:
+1) Fixed regression: April Full + May Fresh with UseFixedLot=true, FixedLotSize=0.01.
+2) Dynamic runtime: April Full + May Fresh with UseFixedLot=false.
+3) Multi-window lock: January / February / March / April Full / May Fresh with UseFixedLot=false.
