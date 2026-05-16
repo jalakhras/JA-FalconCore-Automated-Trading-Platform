@@ -1,0 +1,66 @@
+JA FalconCore Automated Trading Platform
+v0.55.13-fix4 — Recovery Blocked Entry State Fix
+Status: LOCKED / ACCEPTED
+Date: 2026-05-16
+
+Official baseline for this lock:
+- Previous official LOCK: v0.55.12a-fix2 — Broker Session Schedule Close Fix.
+- v0.55.13-fix4 is now the latest official LOCK after report validation.
+
+Purpose:
+- Complete Paper State Persistence / Restart Recovery Foundation.
+- Add dynamic Session Boundary Recovery Checkpoint logic.
+- Ensure entries blocked by StopNewTradesBeforeClose are not treated as open trades requiring restart recovery.
+- Preserve trading results when safety inputs are OFF.
+
+Core behavior:
+- PaperStateSnapshot remains a formal report and is not removed during cleanup.
+- No actual restore/recovery execution is enabled yet.
+- Recovery is Foundation / Measurement only.
+- No Demo, no Live, no OrderSend, no BrokerModify, no runtime SL modification.
+- Session close time is derived from broker/server sessions via SymbolInfoSessionTrade, with internal fallback only when broker sessions are unavailable.
+
+Final input defaults:
+- StopNewTradesBeforeClose = false
+- StopNewTradesBeforeCloseMinutes = 5
+- CloseTradesBeforeDailyClose = false
+- DailyCloseSafetyMinutes = 5
+- CloseTradesBeforeWeekend = false
+- WeekendCloseSafetyMinutes = 5
+
+Validation summary:
+Regression OFF:
+- Fixed April: 1102.45 PASS
+- Fixed May: 759.45 PASS
+- Dynamic April: 4524.85 PASS
+- Dynamic May: 1103.55 PASS
+
+All Safety ON 5M:
+- Fixed April: 1084.46, DirtyAfterCloseSafety=0, PASS_CLEAN
+- Fixed May: 764.79, DirtyAfterCloseSafety=0, PASS_CLEAN
+- Dynamic April: 4480.74, DirtyAfterCloseSafety=0, PASS_CLEAN
+- Dynamic May: 1117.05, DirtyAfterCloseSafety=0, PASS_CLEAN
+
+All Safety ON 15M:
+- Fixed April: 1080.04, StopBlocked=7, DirtyAfterCloseSafety=0, PASS_CLEAN
+- Fixed May: 758.76, StopBlocked=2, DirtyAfterCloseSafety=0, PASS_CLEAN
+- Dynamic April: 4392.14, StopBlocked=7, DirtyAfterCloseSafety=0, PASS_CLEAN
+- Dynamic May: 1108.73, StopBlocked=2, DirtyAfterCloseSafety=0, PASS_CLEAN
+
+Integrity:
+- ReportIntegrityStatus = PASS
+- TradeRowsVsSummaryStatus = PASS
+- CapitalFlowIntegrityStatus = PASS
+- TradeLifecyclePhysicalRows = TotalTrades
+- PaperStateSnapshotWrittenRows = TotalTrades
+- PaperStateSnapshotWriteFailures = 0
+- SafetyOrderSend = 0
+- BrokerModifySent = 0
+- RuntimeSLChanged = 0
+- InvariantBreaches = 0
+- No AUTO_RUNNING in final report names or ToDateTag.
+
+Decision:
+- v0.55.13-fix4 is LOCKED / ACCEPTED.
+- Build next versions only from this package.
+- Do not build from v0.55.13, v0.55.13-fix1, v0.55.13-fix2, or v0.55.13-fix3 except as historical references.

@@ -1,0 +1,35 @@
+JA FalconCore v0.55.13-fix4 LOCKED Static / Report Validation
+
+Code/package identity:
+EA_VERSION_TAG = v0.55.13-fix4
+Build = RecoveryBlockedEntryStateFix
+
+Static safety:
+OrderSend direct calls = 0
+OrderSendAsync direct calls = 0
+PositionModify direct calls = 0
+CTrade Buy/Sell approx = 0
+
+Report validation:
+Regression OFF = PASS
+All Safety ON 5M = PASS_CLEAN
+All Safety ON 15M = PASS_CLEAN
+PaperStateSnapshotWrittenRows = TotalTrades for all tested windows
+PaperStateSnapshotWriteFailures = 0 for all tested windows
+SessionBoundaryDirtyAfterCloseSafetyTrades = 0 in All Safety 5M and 15M
+Blocked entries are not counted as open/recovery-required trades
+No AUTO_RUNNING in extracted report filenames
+No AUTO_RUNNING in Summary ToDateTag
+
+Integrity status across supplied reports:
+ReportIntegrityStatus = PASS
+TradeRowsVsSummaryStatus = PASS
+CapitalFlowIntegrityStatus = PASS
+TradeLifecyclePhysicalRowStatus = PASS
+SafetyOrderSend = 0
+BrokerModifySent = 0
+RuntimeSLChanged = 0
+InvariantBreaches = 0
+
+LOCK decision:
+v0.55.13-fix4 = LOCKED / ACCEPTED

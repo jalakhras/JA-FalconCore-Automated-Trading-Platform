@@ -1,17 +1,43 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.55.12a-fix2 - Broker Session Schedule Close Fix LOCKED |
+//|                     Version: v0.55.13-fix4 - Recovery Blocked Entry State Fix LOCKED |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.558"
+#property version   "1.563"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.55.12a-fix2"
-#define EA_BUILD_TAG   "BrokerSessionScheduleCloseFix"
+#define EA_VERSION_TAG "v0.55.13-fix4"
+#define EA_BUILD_TAG   "RecoveryBlockedEntryStateFix"
 
 #define FALCON_MTF_COUNT       6
+
+// ==================================================================
+// Paper State Persistence / Restart Recovery Foundation - v0.55.13
+// Foundation-only snapshot layer. It writes state audit rows for Paper
+// lifecycle continuity, but it does not restore trades, block entries,
+// modify exits, or change trading results in this candidate.
+// ==================================================================
+#define FALCON_PERSISTENCE_STATUS                  "PAPER_STATE_PERSISTENCE_FOUNDATION"
+#define FALCON_PERSISTENCE_DECISION                "SNAPSHOT_ONLY_NO_RUNTIME_RESTORE_NO_TRADING_CHANGE"
+#define FALCON_PERSISTENCE_RECOVERY_MODE           "FOUNDATION_ONLY_STATE_RESTORE_DISABLED"
+#define FALCON_PERSISTENCE_TRUST_POLICY            "STATE_TRUST_NOT_GRANTED_UNTIL_RESTART_RECONCILIATION_VALIDATED"
+#define FALCON_PERSISTENCE_UNTRUSTED_POLICY        "DISABLE_RUNNER_MOON_PROTECTION_ESCALATION_UNDER_UNTRUSTED_RECOVERY_LATER"
+#define FALCON_PERSISTENCE_NEXT_STEP               "RESTART_RECOVERY_READER_AND_MINIMAL_RECOVERY_MODE_VALIDATION"
+
+// ==================================================================
+// Session Boundary Dynamic Recovery Checkpoint Foundation - v0.55.13-fix4
+// Close/entry safety actions happen before close using user-selected minutes.
+// The recovery checkpoint is derived dynamically from the enabled safety window:
+// default target is 3 minutes before broker close, but it is never scheduled
+// before the corresponding close-safety action. Close time is resolved from
+// broker/server symbol sessions; fallback is 23:58 only when broker sessions are unavailable.
+// ==================================================================
+#define FALCON_SESSION_BOUNDARY_DEFAULT_CHECKPOINT_MINUTES 3
+#define FALCON_SESSION_BOUNDARY_ACTION_TO_CHECKPOINT_GAP_MINUTES 2
+#define FALCON_SESSION_BOUNDARY_CHECKPOINT_MODE    "FOUNDATION_ONLY_NO_RUNTIME_RESTORE"
+#define FALCON_SESSION_BOUNDARY_CHECKPOINT_POLICY  "DYNAMIC_CHECKPOINT_AFTER_USER_CLOSE_SAFETY_BEFORE_BROKER_CLOSE_BLOCKED_ENTRIES_NOT_RECOVERY_OPEN"
 
 // ==================================================================
 // Runtime report period state - v0.18.4
@@ -1441,12 +1467,12 @@ input double DailyLossPercentOfCapital       = 3.0;   // Daily loss limit as per
 // 01a - Session Boundary Safety Overrides / حماية إغلاق السوق
 // ==================================================================
 input group "01a - Close Safety / حماية الإغلاق";
-input bool   StopNewTradesBeforeClose          = false; // Stop new trades before market close.
-input int    StopNewTradesBeforeCloseMinutes   = 3;     // Minutes before close.
-input bool   CloseTradesBeforeDailyClose       = false; // Close open trades before daily close.
-input int    DailyCloseSafetyMinutes           = 3;     // Minutes before daily close.
-input bool   CloseTradesBeforeWeekend          = false; // Close open trades before weekend.
-input int    WeekendCloseSafetyMinutes         = 3;     // Minutes before weekend close.
+input bool   StopNewTradesBeforeClose          = false; // Stop new trades near close.
+input int    StopNewTradesBeforeCloseMinutes   = 5;     // Minutes before close.
+input bool   CloseTradesBeforeDailyClose       = false; // Close trades before daily close.
+input int    DailyCloseSafetyMinutes           = 5;     // Minutes before daily close.
+input bool   CloseTradesBeforeWeekend          = false; // Close trades before weekend.
+input int    WeekendCloseSafetyMinutes         = 5;     // Minutes before weekend close.
 
 // ==================================================================
 // Capital Tier Foundation - v0.53.0 (LOCKED)
@@ -2946,6 +2972,21 @@ struct FalconReportTotals
    double force_close_override_before_net_usd;
    double force_close_override_after_net_usd;
    double force_close_override_impact_usd;
+
+   // v0.55.13: Paper state persistence foundation counters. Snapshot-only; no restore/enforcement yet.
+   int    paper_state_snapshot_evaluated_trades;
+   int    paper_state_snapshot_written_rows;
+   int    paper_state_snapshot_write_failures;
+   int    paper_state_recovery_trusted_trades;
+   int    paper_state_recovery_untrusted_trades;
+
+   // v0.55.13-fix4: dynamic session boundary checkpoint foundation. Measurement-only.
+   int    session_boundary_checkpoint_evaluated_trades;
+   int    session_boundary_recovery_checkpoint_minutes;
+   int    session_boundary_daily_checkpoint_open_trades;
+   int    session_boundary_weekend_checkpoint_open_trades;
+   int    session_boundary_recovery_required_trades;
+   int    session_boundary_dirty_after_close_safety_trades;
 
    double win_rate;
    double loss_rate;
@@ -4575,13 +4616,14 @@ int FalconReportMoveFlags()
 
 int FalconReportNameCount()
 {
-   // v0.55.11: include official event files in period finalization/rename.
-   // They are small, event-only files and must not remain with AUTO_RUNNING tags.
+   // v0.55.13-fix1: PaperStateSnapshot is now an official minimal report.
+   // It must participate in AutoPeriod finalization so no final report remains
+   // with AUTO_RUNNING in its file name.
    if(ReportProfile == FALCON_REPORT_MINIMAL)
-      return 4;
-   if(ReportProfile == FALCON_REPORT_STANDARD)
       return 5;
-   return 22;
+   if(ReportProfile == FALCON_REPORT_STANDARD)
+      return 6;
+   return 23;
 }
 
 string FalconReportNameByIndex(const int index)
@@ -4594,6 +4636,7 @@ string FalconReportNameByIndex(const int index)
          case 1: return "Summary";
          case 2: return "TierTransitions";
          case 3: return "EmergencyTriggers";
+         case 4: return "PaperStateSnapshot";
       }
       return "UnknownReport";
    }
@@ -4607,6 +4650,7 @@ string FalconReportNameByIndex(const int index)
          case 2: return "StrategyRegistryDiagnostics";
          case 3: return "TierTransitions";
          case 4: return "EmergencyTriggers";
+         case 5: return "PaperStateSnapshot";
       }
       return "UnknownReport";
    }
@@ -4635,6 +4679,7 @@ string FalconReportNameByIndex(const int index)
       case 19: return "FvgMicroRuntimeReportAudit";
       case 20: return "TierTransitions";
       case 21: return "EmergencyTriggers";
+      case 22: return "PaperStateSnapshot";
    }
    return "UnknownReport";
 }
@@ -7798,6 +7843,7 @@ private:
    string              m_report_creation_guarantee_file;
    string              m_tier_transitions_file;
    string              m_emergency_triggers_file;
+   string              m_paper_state_snapshot_file;
    FalconSymbolContext m_symbol_context;
    FalconReportTotals  m_totals;
 
@@ -7857,6 +7903,7 @@ public:
       m_report_creation_guarantee_file = FalconBuildReportFileName("ReportCreationGuarantee");
       m_tier_transitions_file = FalconBuildReportFileName("TierTransitions");
       m_emergency_triggers_file = FalconBuildReportFileName("EmergencyTriggers");
+      m_paper_state_snapshot_file = FalconBuildReportFileName("PaperStateSnapshot");
       ResetTotals();
 
       if(EnableMainReport)
@@ -7865,6 +7912,7 @@ public:
          WriteSummaryHeader();
          WriteTierTransitionsHeader();
          WriteEmergencyTriggersHeader();
+         WritePaperStateSnapshotHeader();
       }
 
       if(ForceCreateReportFilesOnInit)
@@ -7902,6 +7950,81 @@ public:
       FileWriteString(handle,
                       "Timestamp,LayerTriggered,TierAtTrigger,Balance,ConsecutiveLossCount,DailyR,DrawdownPct,BlockedEntries,ResolvedAt,AutoResolved\r\n");
       FileClose(handle);
+   }
+
+
+   void WritePaperStateSnapshotHeader()
+   {
+      int handle = FileOpen(m_paper_state_snapshot_file, FalconReportWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not create PaperStateSnapshot event file: %s", m_paper_state_snapshot_file));
+         return;
+      }
+
+      string header = "SnapshotTime,Version,Build,TradeId,StrategyId,EngineId,Direction,EntryTime,ExitTime,EntryPrice,StructuralSL,TP1,TP2,TP3,ActiveLot,CapitalBefore,CapitalAfter,ProtectionState,RunnerState,EmergencyStatus,RecoveryMode,StateTrusted,SessionBoundaryCheckpointType,SessionBoundaryCloseTime,SessionBoundaryRecoveryCheckpointTime,ActiveDuringRecoveryWindow,RequiresRecovery,Notes";
+      FileWriteString(handle, header + "\r\n");
+      FileClose(handle);
+   }
+
+   void AppendPaperStateSnapshotRecord(const FalconTradeLifecycleRecord &record)
+   {
+      m_totals.paper_state_snapshot_evaluated_trades++;
+
+      datetime session_boundary_close_time = 0;
+      datetime session_boundary_checkpoint_time = 0;
+      bool active_during_recovery_window = false;
+      string session_boundary_checkpoint_type = FalconSessionBoundaryCheckpointType(record, session_boundary_close_time, session_boundary_checkpoint_time, active_during_recovery_window);
+      string requires_recovery = (active_during_recovery_window ? "YES" : "NO");
+
+      int handle = FileOpen(m_paper_state_snapshot_file, FalconReportReadWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         WritePaperStateSnapshotHeader();
+         handle = FileOpen(m_paper_state_snapshot_file, FalconReportReadWriteCsvFlags(), ',');
+      }
+      if(handle == INVALID_HANDLE)
+      {
+         m_totals.paper_state_snapshot_write_failures++;
+         CFalconLogger::Warn(StringFormat("Could not append PaperStateSnapshot row: %s", m_paper_state_snapshot_file));
+         return;
+      }
+
+      FileSeek(handle, 0, SEEK_END);
+
+      string row = "";
+      row += FalconCsvSafe(FalconTimeToString(TimeCurrent())) + ",";
+      row += FalconCsvSafe(EA_VERSION_TAG) + ",";
+      row += FalconCsvSafe(EA_BUILD_TAG) + ",";
+      row += FalconCsvSafe(record.trade_id) + ",";
+      row += FalconCsvSafe(record.strategy_id) + ",";
+      row += FalconCsvSafe(record.engine_id) + ",";
+      row += FalconCsvSafe(FalconDirectionToString(record.direction)) + ",";
+      row += FalconCsvSafe(FalconTimeToString(record.entry_time)) + ",";
+      row += FalconCsvSafe(FalconTimeToString(record.exit_time)) + ",";
+      row += DoubleToString(record.entry_price, m_symbol_context.digits) + ",";
+      row += DoubleToString(record.structural_sl, m_symbol_context.digits) + ",";
+      row += DoubleToString(record.tp1, m_symbol_context.digits) + ",";
+      row += DoubleToString(record.tp2, m_symbol_context.digits) + ",";
+      row += DoubleToString(record.tp3, m_symbol_context.digits) + ",";
+      row += DoubleToString(record.falcon_dlm_active_lot, 2) + ",";
+      row += DoubleToString(record.falcon_dynamic_risk_capital_before_trade, 4) + ",";
+      row += DoubleToString(record.falcon_dynamic_risk_capital_after_trade, 4) + ",";
+      row += FalconCsvSafe(record.paper_protection_state) + ",";
+      row += FalconCsvSafe(record.paper_runner_state) + ",";
+      row += FalconCsvSafe(record.falcon_emergency_status) + ",";
+      row += FalconCsvSafe(FALCON_PERSISTENCE_RECOVERY_MODE) + ",";
+      row += FalconCsvSafe("NO") + ",";
+      row += FalconCsvSafe(session_boundary_checkpoint_type) + ",";
+      row += FalconCsvSafe(FalconTimeToString(session_boundary_close_time)) + ",";
+      row += FalconCsvSafe(FalconTimeToString(session_boundary_checkpoint_time)) + ",";
+      row += FalconCsvSafe(active_during_recovery_window ? "YES" : "NO") + ",";
+      row += FalconCsvSafe(requires_recovery) + ",";
+      row += FalconCsvSafe(FalconSessionBoundarySnapshotNotes(record));
+
+      FileWriteString(handle, row + "\r\n");
+      FileClose(handle);
+      m_totals.paper_state_snapshot_written_rows++;
    }
 
    void AppendEmergencyTriggerEvent(const FalconTradeLifecycleRecord &record)
@@ -8216,6 +8339,49 @@ public:
       return FalconClampSessionBoundaryMinutes(WeekendCloseSafetyMinutes);
    }
 
+   int FalconSessionBoundaryDefaultRecoveryCheckpointMinutes()
+   {
+      return FALCON_SESSION_BOUNDARY_DEFAULT_CHECKPOINT_MINUTES;
+   }
+
+   int FalconSessionBoundaryRecoveryCheckpointMinutesForActionWindow(int action_window_minutes)
+   {
+      // v0.55.13-fix4: dynamic relationship between user close-safety window
+      // and recovery checkpoint. The checkpoint must occur after the configured
+      // close/stop action and before the broker close.
+      int default_checkpoint = FalconSessionBoundaryDefaultRecoveryCheckpointMinutes();
+      if(default_checkpoint < 0)
+         default_checkpoint = 0;
+
+      int action_minutes = FalconClampSessionBoundaryMinutes(action_window_minutes);
+      if(action_minutes <= 0)
+         return default_checkpoint;
+
+      int gap = FALCON_SESSION_BOUNDARY_ACTION_TO_CHECKPOINT_GAP_MINUTES;
+      if(gap < 0)
+         gap = 0;
+
+      int dynamic_checkpoint = action_minutes - gap;
+      if(dynamic_checkpoint > default_checkpoint)
+         dynamic_checkpoint = default_checkpoint;
+      if(dynamic_checkpoint < 0)
+         dynamic_checkpoint = 0;
+
+      return dynamic_checkpoint;
+   }
+
+   int FalconSessionBoundaryRecoveryCheckpointMinutesForRecord(const FalconTradeLifecycleRecord &record)
+   {
+      int dow = FalconMarketCloseDayOfWeek(record.entry_time);
+      if(dow == 5 && CloseTradesBeforeWeekend)
+         return FalconSessionBoundaryRecoveryCheckpointMinutesForActionWindow(FalconWeekendForceCloseUserWindowMinutes());
+
+      if(dow >= 1 && dow <= 5 && CloseTradesBeforeDailyClose)
+         return FalconSessionBoundaryRecoveryCheckpointMinutesForActionWindow(FalconDailyForceCloseUserWindowMinutes());
+
+      return FalconSessionBoundaryDefaultRecoveryCheckpointMinutes();
+   }
+
    datetime FalconBoundaryDateAtMinute(datetime t, int minute_of_day)
    {
       if(t <= 0)
@@ -8242,6 +8408,16 @@ public:
       return FalconBoundaryDateAtMinute(t, FalconMarketCloseGuardCloseMinute(t) - FalconWeekendForceCloseUserWindowMinutes());
    }
 
+   datetime FalconSessionBoundaryBrokerCloseTime(datetime t)
+   {
+      return FalconBoundaryDateAtMinute(t, FalconMarketCloseGuardCloseMinute(t));
+   }
+
+   datetime FalconSessionBoundaryRecoveryCheckpointTime(datetime t, int checkpoint_minutes)
+   {
+      return FalconBoundaryDateAtMinute(t, FalconMarketCloseGuardCloseMinute(t) - FalconClampSessionBoundaryMinutes(checkpoint_minutes));
+   }
+
    bool FalconWasTradeOpenAtTime(const FalconTradeLifecycleRecord &record, datetime boundary_time)
    {
       if(boundary_time <= 0 || record.entry_time <= 0)
@@ -8251,6 +8427,17 @@ public:
       if(record.exit_time <= 0)
          return true;
       return (record.exit_time > boundary_time);
+   }
+
+   bool FalconIsSessionBoundaryNoNewEntryBlockedRecord(const FalconTradeLifecycleRecord &record)
+   {
+      // v0.55.13-fix4: a no-new-entry blocked row is a rejected/blocked paper signal,
+      // not an open paper position. It must not be counted as active during recovery checkpoint.
+      if(record.falcon_market_close_blocked == 1)
+         return true;
+      if(record.close_reason == "SESSION_BOUNDARY_USER_NO_NEW_ENTRY_BLOCKED")
+         return true;
+      return false;
    }
 
    bool FalconTryGetBoundaryClosePrice(datetime boundary_time, double &price)
@@ -8295,6 +8482,111 @@ public:
    double FalconForceCloseOverrideNetPoints(const FalconTradeLifecycleRecord &record, double force_close_price)
    {
       return FalconRawIndexPoints(record.direction, record.entry_price, force_close_price);
+   }
+
+   bool FalconWasTradeActiveDuringBoundaryCheckpointWindow(const FalconTradeLifecycleRecord &record, datetime checkpoint_time, datetime close_time)
+   {
+      if(FalconIsSessionBoundaryNoNewEntryBlockedRecord(record))
+         return false;
+      if(checkpoint_time <= 0 || close_time <= 0 || record.entry_time <= 0)
+         return false;
+      if(record.entry_time >= close_time)
+         return false;
+      if(record.exit_time <= 0)
+         return true;
+      return (record.exit_time > checkpoint_time);
+   }
+
+   string FalconSessionBoundaryCheckpointType(const FalconTradeLifecycleRecord &record, datetime &close_time, datetime &checkpoint_time, bool &active_during_checkpoint_window)
+   {
+      close_time = 0;
+      checkpoint_time = 0;
+      active_during_checkpoint_window = false;
+
+      if(record.entry_time <= 0)
+         return "NONE";
+
+      if(FalconIsSessionBoundaryNoNewEntryBlockedRecord(record))
+      {
+         close_time = FalconSessionBoundaryBrokerCloseTime(record.entry_time);
+         checkpoint_time = FalconSessionBoundaryRecoveryCheckpointTime(record.entry_time, FalconSessionBoundaryRecoveryCheckpointMinutesForRecord(record));
+         active_during_checkpoint_window = false;
+         return "BLOCKED_NO_OPEN_POSITION";
+      }
+
+      int dow = FalconMarketCloseDayOfWeek(record.entry_time);
+      if(dow < 1 || dow > 5)
+         return "NONE";
+
+      close_time = FalconSessionBoundaryBrokerCloseTime(record.entry_time);
+      checkpoint_time = FalconSessionBoundaryRecoveryCheckpointTime(record.entry_time, FalconSessionBoundaryRecoveryCheckpointMinutesForRecord(record));
+      if(close_time <= 0 || checkpoint_time <= 0)
+         return "NONE";
+
+      active_during_checkpoint_window = FalconWasTradeActiveDuringBoundaryCheckpointWindow(record, checkpoint_time, close_time);
+
+      if(dow == 5 && active_during_checkpoint_window)
+         return "WEEKEND";
+
+      return "DAILY";
+   }
+
+   void UpdateSessionBoundaryStateCheckpointFoundation(const FalconTradeLifecycleRecord &record)
+   {
+      // v0.55.13-fix4: measurement-only dynamic checkpoint. It verifies whether Paper state
+      // would still need recovery after user-selected close-safety actions and before the broker close.
+      // It does not restore, close, block, or modify any trade.
+      m_totals.session_boundary_checkpoint_evaluated_trades++;
+      m_totals.session_boundary_recovery_checkpoint_minutes = FalconSessionBoundaryDefaultRecoveryCheckpointMinutes();
+
+      datetime close_time = 0;
+      datetime checkpoint_time = 0;
+      bool active_during_checkpoint_window = false;
+      string checkpoint_type = FalconSessionBoundaryCheckpointType(record, close_time, checkpoint_time, active_during_checkpoint_window);
+
+      if(!active_during_checkpoint_window)
+         return;
+
+      m_totals.session_boundary_recovery_required_trades++;
+
+      if(checkpoint_type == "WEEKEND")
+      {
+         m_totals.session_boundary_weekend_checkpoint_open_trades++;
+         if(CloseTradesBeforeWeekend)
+            m_totals.session_boundary_dirty_after_close_safety_trades++;
+      }
+      else if(checkpoint_type == "DAILY")
+      {
+         m_totals.session_boundary_daily_checkpoint_open_trades++;
+         if(CloseTradesBeforeDailyClose)
+            m_totals.session_boundary_dirty_after_close_safety_trades++;
+      }
+   }
+
+   string FalconSessionBoundaryCheckpointStatus()
+   {
+      if(m_totals.session_boundary_checkpoint_evaluated_trades != m_totals.total_trades)
+         return "FAIL_ROW_MISMATCH";
+      if(m_totals.session_boundary_dirty_after_close_safety_trades > 0)
+         return "WARN_DIRTY_AFTER_CLOSE_SAFETY";
+      if(m_totals.session_boundary_recovery_required_trades > 0)
+         return "PASS_RECOVERY_REQUIRED_BY_CARRY";
+      return "PASS_CLEAN";
+   }
+
+   string FalconSessionBoundarySnapshotNotes(const FalconTradeLifecycleRecord &record)
+   {
+      datetime close_time = 0;
+      datetime checkpoint_time = 0;
+      bool active_during_checkpoint_window = false;
+      string checkpoint_type = FalconSessionBoundaryCheckpointType(record, close_time, checkpoint_time, active_during_checkpoint_window);
+      if(checkpoint_type == "NONE")
+         return "No broker close checkpoint for this record.";
+      if(checkpoint_type == "BLOCKED_NO_OPEN_POSITION")
+         return "No recovery needed: session boundary blocked entry, so no open Paper position existed.";
+      if(active_during_checkpoint_window)
+         return StringFormat("%s checkpoint active; recovery checkpoint %s before close %s.", checkpoint_type, FalconTimeToString(checkpoint_time), FalconTimeToString(close_time));
+      return StringFormat("%s checkpoint clean; recovery checkpoint %s before close %s.", checkpoint_type, FalconTimeToString(checkpoint_time), FalconTimeToString(close_time));
    }
 
    void UpdateMarketCloseGuardFoundation(const FalconTradeLifecycleRecord &record)
@@ -9622,6 +9914,8 @@ public:
                                         "Main trade rows report. Must contain Entry/SL/TP/Exit/WinLose/IndexPoints/USD/StrategyName when lifecycle records close.");
       WriteRuntimeReportVerificationRow(handle, trigger, "Summary", m_summary_report_file, EnableMainReport,
                                         "Final summary report. It is rewritten on deinit with WinRate/LoseRate and totals.");
+      WriteRuntimeReportVerificationRow(handle, trigger, "PaperStateSnapshot", m_paper_state_snapshot_file, EnableMainReport,
+                                        "v0.55.13-fix4 snapshot-only Paper state persistence + dynamic session boundary checkpoint foundation + blocked-entry recovery-state fix. No runtime restore or trading change.");
       WriteRuntimeReportVerificationRow(handle, trigger, "MarketDiagnostics", m_market_diagnostics_file, EnableMarketDiagnosticsReport,
                                         "Symbol context diagnostics: digits, point, tick, contract, spread, stops level.");
       WriteRuntimeReportVerificationRow(handle, trigger, "CandleCacheDiagnostics", m_candle_cache_diagnostics_file, EnableCandleCacheDiagnosticsReport,
@@ -9677,6 +9971,7 @@ public:
       ApplyCapitalFlowSourceClassification(record);
       UpdateTotals(record);
       AppendTradeRecord(record);
+      AppendPaperStateSnapshotRecord(record);
    }
 
    int CountPhysicalTradeLifecycleDataRows()
@@ -9761,6 +10056,14 @@ public:
          integrity_breaches++;
       if(m_totals.total_trades != m_totals.force_close_override_evaluated_trades)
          integrity_breaches++;
+      if(m_totals.total_trades != m_totals.paper_state_snapshot_evaluated_trades)
+         integrity_breaches++;
+      if(m_totals.total_trades != m_totals.paper_state_snapshot_written_rows)
+         integrity_breaches++;
+      if(m_totals.total_trades != m_totals.session_boundary_checkpoint_evaluated_trades)
+         integrity_breaches++;
+      if(m_totals.paper_state_snapshot_write_failures > 0)
+         integrity_breaches++;
       if(m_totals.capital_flow_integrity_breaches > 0)
          integrity_breaches++;
       if(physical_trade_rows_status != "PASS")
@@ -9774,6 +10077,10 @@ public:
       string force_close_override_status = (m_totals.total_trades == m_totals.force_close_override_evaluated_trades ? (force_close_override_enabled ? "ENABLED_PASS" : "DISABLED_PASS") : "FAIL");
       if(force_close_override_status == "ENABLED_PASS" && m_totals.force_close_override_missing_price_trades > 0)
          force_close_override_status = "ENABLED_WARN_MISSING_PRICE";
+      string paper_state_snapshot_status = (m_totals.total_trades == m_totals.paper_state_snapshot_evaluated_trades &&
+                                            m_totals.total_trades == m_totals.paper_state_snapshot_written_rows &&
+                                            m_totals.paper_state_snapshot_write_failures == 0 ? "PASS" : "FAIL");
+      string session_boundary_checkpoint_status = FalconSessionBoundaryCheckpointStatus();
       double market_close_avg_duration_minutes = FalconSafeAverageDouble(m_totals.market_close_total_trade_duration_minutes, m_totals.market_close_guard_evaluated_trades);
       string market_close_two_hour_coverage_status = (m_totals.market_close_duration_above_window_trades == 0 ? "PASS_2H_COVERS_ALL_OBSERVED_DURATIONS" : "WARN_SOME_TRADES_EXCEED_2H_DURATION");
       string market_close_timing_recommendation = (m_totals.market_close_duration_above_window_trades == 0 ? "MONITOR_SESSION_BOUNDARY_RISK" : "REVIEW_DAILY_WEEKEND_CLOSE_SAFETY");
@@ -9784,6 +10091,9 @@ public:
                                  m_totals.total_trades == m_totals.market_close_guard_evaluated_trades &&
                                  m_totals.total_trades == m_totals.no_new_entry_override_evaluated_trades &&
                                  m_totals.total_trades == m_totals.force_close_override_evaluated_trades &&
+                                 m_totals.total_trades == m_totals.paper_state_snapshot_evaluated_trades &&
+                                 m_totals.total_trades == m_totals.paper_state_snapshot_written_rows &&
+                                 m_totals.total_trades == m_totals.session_boundary_checkpoint_evaluated_trades &&
                                  physical_trade_rows_status == "PASS" ? "PASS" : "FAIL");
 
       int handle = FileOpen(m_summary_report_file, FalconReportWriteCsvFlags(), ',');
@@ -9859,6 +10169,20 @@ public:
       summary_row += DoubleToString(m_totals.force_close_override_after_net_usd, 2) + ",";
       summary_row += DoubleToString(m_totals.force_close_override_impact_usd, 2) + ",";
       summary_row += FalconCsvSafe(force_close_override_status) + ",";
+      summary_row += IntegerToString(m_totals.paper_state_snapshot_evaluated_trades) + ",";
+      summary_row += IntegerToString(m_totals.paper_state_snapshot_written_rows) + ",";
+      summary_row += IntegerToString(m_totals.paper_state_snapshot_write_failures) + ",";
+      summary_row += FalconCsvSafe(FALCON_PERSISTENCE_RECOVERY_MODE) + ",";
+      summary_row += IntegerToString(m_totals.paper_state_recovery_trusted_trades) + ",";
+      summary_row += IntegerToString(m_totals.paper_state_recovery_untrusted_trades) + ",";
+      summary_row += FalconCsvSafe(paper_state_snapshot_status) + ",";
+      summary_row += IntegerToString(m_totals.session_boundary_checkpoint_evaluated_trades) + ",";
+      summary_row += IntegerToString(m_totals.session_boundary_recovery_checkpoint_minutes) + ",";
+      summary_row += IntegerToString(m_totals.session_boundary_daily_checkpoint_open_trades) + ",";
+      summary_row += IntegerToString(m_totals.session_boundary_weekend_checkpoint_open_trades) + ",";
+      summary_row += IntegerToString(m_totals.session_boundary_recovery_required_trades) + ",";
+      summary_row += IntegerToString(m_totals.session_boundary_dirty_after_close_safety_trades) + ",";
+      summary_row += FalconCsvSafe(session_boundary_checkpoint_status) + ",";
       summary_row += IntegerToString(m_totals.market_close_max_trade_duration_minutes) + ",";
       summary_row += DoubleToString(market_close_avg_duration_minutes, 2) + ",";
       summary_row += IntegerToString(m_totals.market_close_duration_above_window_trades) + ",";
@@ -10956,6 +11280,17 @@ m_totals.total_trades                = 0;
       m_totals.force_close_override_before_net_usd = 0.0;
       m_totals.force_close_override_after_net_usd = 0.0;
       m_totals.force_close_override_impact_usd = 0.0;
+      m_totals.paper_state_snapshot_evaluated_trades = 0;
+      m_totals.paper_state_snapshot_written_rows = 0;
+      m_totals.paper_state_snapshot_write_failures = 0;
+      m_totals.paper_state_recovery_trusted_trades = 0;
+      m_totals.paper_state_recovery_untrusted_trades = 0;
+      m_totals.session_boundary_checkpoint_evaluated_trades = 0;
+      m_totals.session_boundary_recovery_checkpoint_minutes = FalconSessionBoundaryDefaultRecoveryCheckpointMinutes();
+      m_totals.session_boundary_daily_checkpoint_open_trades = 0;
+      m_totals.session_boundary_weekend_checkpoint_open_trades = 0;
+      m_totals.session_boundary_recovery_required_trades = 0;
+      m_totals.session_boundary_dirty_after_close_safety_trades = 0;
       m_totals.win_rate                    = 0.0;
       m_totals.loss_rate                   = 0.0;
 
@@ -11456,6 +11791,7 @@ m_totals.total_trades                = 0;
 
       UpdateWeeklyStabilityFoundation(record);
       UpdateMarketCloseGuardFoundation(record);
+      UpdateSessionBoundaryStateCheckpointFoundation(record);
       m_totals.no_new_entry_override_evaluated_trades++;
       if(record.falcon_market_close_blocked == 1)
       {
@@ -11821,6 +12157,8 @@ m_totals.total_trades                = 0;
       summary_header += "MarketCloseGuardEvaluatedTrades,MarketCloseNearCloseEntryTrades,MarketCloseOpenWeekendRiskTrades,MarketCloseGuardStatus,";
       summary_header += "StopNewTradesBeforeCloseEnabled,StopNewTradesBeforeCloseMinutes,StopNewTradesEvaluatedTrades,StopNewTradesBlockedTrades,StopNewTradesBlockedWinningTrades,StopNewTradesBlockedLosingTrades,StopNewTradesImpactUSD,StopNewTradesStatus,";
       summary_header += "DailyCloseSafetyEnabled,DailyCloseSafetyMinutes,WeekendCloseSafetyEnabled,WeekendCloseSafetyMinutes,CloseSafetyEvaluatedTrades,CloseSafetyClosedTrades,CloseSafetyDailyClosedTrades,CloseSafetyWeekendClosedTrades,CloseSafetyPriceOkTrades,CloseSafetyMissingPriceTrades,CloseSafetyBeforeNetUSD,CloseSafetyAfterNetUSD,CloseSafetyImpactUSD,CloseSafetyStatus,";
+      summary_header += "PaperStateSnapshotEvaluatedTrades,PaperStateSnapshotWrittenRows,PaperStateSnapshotWriteFailures,PaperStateRecoveryMode,PaperStateTrustedTrades,PaperStateUntrustedTrades,PaperStateStatus,";
+      summary_header += "SessionBoundaryCheckpointEvaluatedTrades,SessionBoundaryRecoveryCheckpointMinutes,SessionBoundaryDailyOpenAtCheckpointTrades,SessionBoundaryWeekendOpenAtCheckpointTrades,SessionBoundaryRecoveryRequiredTrades,SessionBoundaryDirtyAfterCloseSafetyTrades,SessionBoundaryCheckpointStatus,";
       summary_header += "MarketCloseMaxTradeDurationMinutes,MarketCloseAvgTradeDurationMinutes,MarketCloseDurationAboveWindowTrades,MarketCloseLongestTradeId,MarketCloseTimingRecommendation,MarketCloseTwoHourCoverageStatus,";
       summary_header += "CapitalFlowEvaluatedTrades,CapitalTradeProfitEvents,CapitalTradeLossEvents,CapitalInjectionEvents,CapitalWithdrawalEvents,ExternalCapitalNetUSD,CapitalFlowIntegrityStatus,";
       summary_header += "EmergencyTriggeredTrades,EmergencyBlockedEntries,";
@@ -11923,7 +12261,7 @@ public:
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.55.12a. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement, SL/TP, Smart TM, Bar-Path, Decision Tree, and Timing diagnostics are reporting-only beyond the controlled Shadow guard.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.55.13. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement, SL/TP, Smart TM, Bar-Path, Decision Tree, and Timing diagnostics are reporting-only beyond the controlled Shadow guard.");
    }
 };
 
