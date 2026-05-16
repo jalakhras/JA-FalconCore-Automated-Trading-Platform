@@ -1,0 +1,5 @@
+mode,window,same_shape,cols_same,key_diffs,total_cell_diffs
+FixedLot,April,True,True,[],0
+FixedLot,May,True,True,[],0
+DynamicLot,April,True,True,[],0
+DynamicLot,May,True,True,[],0

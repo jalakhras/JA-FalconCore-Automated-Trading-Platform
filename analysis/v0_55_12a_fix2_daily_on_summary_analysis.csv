@@ -1,0 +1,5 @@
+key,mode,window,FinalWorkingNetUSD,TotalTrades,TradeLifecyclePhysicalRows,ReportIntegrityStatus,TradeRowsVsSummaryStatus,CapitalFlowIntegrityStatus,SafetyOrderSend,BrokerModifySent,RuntimeSLChanged,InvariantBreaches,CloseSafetyClosedTrades,CloseSafetyDailyClosedTrades,CloseSafetyWeekendClosedTrades,CloseSafetyImpactUSD,CloseSafetyBeforeNetUSD,CloseSafetyAfterNetUSD,CloseSafetyStatus,StopNewTradesBlockedTrades,EmergencyBlockedEntries,EmergencyTriggeredTrades,DailyCloseSafetyEnabled,WeekendCloseSafetyEnabled,DailyCloseSafetyMinutes,WeekendCloseSafetyMinutes,BaselineNetUSD,DeltaVsRegression
+Dynamic_April,Dynamic,April,4441.21,536,536,PASS,PASS,PASS,0,0,0,0,4,4,0,-70.73,67.72,-3.01,ENABLED_PASS,0,1,1,YES,NO,3,3,4524.85,-83.64000000000033
+Dynamic_May,Dynamic,May,1110.21,258,258,PASS,PASS,PASS,0,0,0,0,3,3,0,-4.52,7.48,2.96,ENABLED_PASS,0,0,0,YES,NO,3,3,1103.55,6.660000000000082
+Fixed_April,Fixed,April,1081.61,536,536,PASS,PASS,PASS,0,0,0,0,4,4,0,-20.84,19.97,-0.88,ENABLED_PASS,0,1,1,YES,NO,3,3,1102.45,-20.840000000000146
+Fixed_May,Fixed,May,762.45,258,258,PASS,PASS,PASS,0,0,0,0,3,3,0,3.0,-2.03,0.97,ENABLED_PASS,0,0,0,YES,NO,3,3,759.45,3.0

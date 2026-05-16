@@ -1,0 +1,17 @@
+Scenario,Mode,Window,FinalWorkingNetUSD,BaselineNetUSD,DeltaVsRegression,StopBlocked,CloseSafetyClosed,DailyClosed,WeekendClosed,CloseSafetyImpactUSD,ReportIntegrityStatus,TradeRowsVsSummaryStatus,CapitalFlowIntegrityStatus,PhysicalRowStatus,OrderSend,BrokerModifySent,RuntimeSLChanged,InvariantBreaches,EmergencyTriggeredTrades,EmergencyBlockedEntries
+All Safety ON,FixedLot,May,762.45,759.45,3.0,0,3,2,1,3.0,PASS,PASS,PASS,PASS,0,0,0,0,0,0
+All Safety ON,FixedLot,April,1081.61,1102.45,-20.84,0,4,4,0,-20.84,PASS,PASS,PASS,PASS,0,0,0,0,1,1
+All Safety ON,DynamicLot,May,1110.21,1103.55,6.66,0,3,2,1,-4.52,PASS,PASS,PASS,PASS,0,0,0,0,0,0
+All Safety ON,DynamicLot,April,4441.21,4524.85,-83.64,0,4,4,0,-70.73,PASS,PASS,PASS,PASS,0,0,0,0,1,1
+Daily Close ON,FixedLot,April,1081.61,1102.45,-20.84,0,4,4,0,-20.84,PASS,PASS,PASS,PASS,0,0,0,0,1,1
+Daily Close ON,DynamicLot,May,1110.21,1103.55,6.66,0,3,3,0,-4.52,PASS,PASS,PASS,PASS,0,0,0,0,0,0
+Daily Close ON,DynamicLot,April,4441.21,4524.85,-83.64,0,4,4,0,-70.73,PASS,PASS,PASS,PASS,0,0,0,0,1,1
+Daily Close ON,FixedLot,May,762.45,759.45,3.0,0,3,3,0,3.0,PASS,PASS,PASS,PASS,0,0,0,0,0,0
+Weekend Close ON,DynamicLot,May,1125.11,1103.55,21.56,0,1,0,1,6.01,PASS,PASS,PASS,PASS,0,0,0,0,0,0
+Weekend Close ON,FixedLot,April,1102.45,1102.45,0.0,0,0,0,0,0.0,PASS,PASS,PASS,PASS,0,0,0,0,1,1
+Weekend Close ON,FixedLot,May,765.46,759.45,6.01,0,1,0,1,6.01,PASS,PASS,PASS,PASS,0,0,0,0,0,0
+Weekend Close ON,DynamicLot,April,4524.85,4524.85,0.0,0,0,0,0,0.0,PASS,PASS,PASS,PASS,0,0,0,0,1,1
+Stop New Trades ON,FixedLot,May,759.45,759.45,0.0,0,0,0,0,0.0,PASS,PASS,PASS,PASS,0,0,0,0,0,0
+Stop New Trades ON,FixedLot,April,1102.45,1102.45,0.0,0,0,0,0,0.0,PASS,PASS,PASS,PASS,0,0,0,0,1,1
+Stop New Trades ON,DynamicLot,May,1103.55,1103.55,0.0,0,0,0,0,0.0,PASS,PASS,PASS,PASS,0,0,0,0,0,0
+Stop New Trades ON,DynamicLot,April,4524.85,4524.85,0.0,0,0,0,0,0.0,PASS,PASS,PASS,PASS,0,0,0,0,1,1

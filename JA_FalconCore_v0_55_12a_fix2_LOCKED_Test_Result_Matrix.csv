@@ -1,0 +1,21 @@
+Scenario,Mode,Window,FinalWorkingNetUSD,BaselineNetUSD,DeltaVsBaseline,StopBlocked,DailyClosed,WeekendClosed,CloseSafetyClosed,ReportIntegrityStatus,TradeRowsVsSummaryStatus,CapitalFlowIntegrityStatus,PhysicalRows,TotalTrades,OrderSend,BrokerModifySent,RuntimeSLChanged,InvariantBreaches
+Regression,FixedLot,April,1102.45,1102.45,0.0,0,,,0,PASS,PASS,PASS,536.0,536.0,0,0,0,0
+Regression,FixedLot,May,759.45,759.45,0.0,0,,,0,PASS,PASS,PASS,258.0,258.0,0,0,0,0
+Regression,DynamicLot,April,4524.85,4524.85,0.0,0,,,0,PASS,PASS,PASS,536.0,536.0,0,0,0,0
+Regression,DynamicLot,May,1103.55,1103.55,0.0,0,,,0,PASS,PASS,PASS,258.0,258.0,0,0,0,0
+StopNew_ON,FixedLot,April,1102.45,1102.45,0.0,0,,,0,PASS,PASS,PASS,536.0,536.0,0,0,0,0
+StopNew_ON,FixedLot,May,759.45,759.45,0.0,0,,,0,PASS,PASS,PASS,258.0,258.0,0,0,0,0
+StopNew_ON,DynamicLot,April,4524.85,4524.85,0.0,0,,,0,PASS,PASS,PASS,536.0,536.0,0,0,0,0
+StopNew_ON,DynamicLot,May,1103.55,1103.55,0.0,0,,,0,PASS,PASS,PASS,258.0,258.0,0,0,0,0
+Daily Close ON,FixedLot,April,1081.61,1102.45,-20.84,0,4.0,0.0,4,PASS,PASS,PASS,536.0,536.0,0,0,0,0
+Daily Close ON,FixedLot,May,762.45,759.45,3.0,0,3.0,0.0,3,PASS,PASS,PASS,258.0,258.0,0,0,0,0
+Daily Close ON,DynamicLot,April,4441.21,4524.85,-83.64,0,4.0,0.0,4,PASS,PASS,PASS,536.0,536.0,0,0,0,0
+Daily Close ON,DynamicLot,May,1110.21,1103.55,6.66,0,3.0,0.0,3,PASS,PASS,PASS,258.0,258.0,0,0,0,0
+Weekend Close ON,FixedLot,April,1102.45,1102.45,0.0,0,0.0,0.0,0,PASS,PASS,PASS,536.0,536.0,0,0,0,0
+Weekend Close ON,FixedLot,May,765.46,759.45,6.01,0,0.0,1.0,1,PASS,PASS,PASS,258.0,258.0,0,0,0,0
+Weekend Close ON,DynamicLot,April,4524.85,4524.85,0.0,0,0.0,0.0,0,PASS,PASS,PASS,536.0,536.0,0,0,0,0
+Weekend Close ON,DynamicLot,May,1125.11,1103.55,21.56,0,0.0,1.0,1,PASS,PASS,PASS,258.0,258.0,0,0,0,0
+All Safety ON,FixedLot,April,1081.61,1102.45,-20.84,0,4.0,0.0,4,PASS,PASS,PASS,,,0,0,0,0
+All Safety ON,FixedLot,May,762.45,759.45,3.0,0,2.0,1.0,3,PASS,PASS,PASS,,,0,0,0,0
+All Safety ON,DynamicLot,April,4441.21,4524.85,-83.64,0,4.0,0.0,4,PASS,PASS,PASS,,,0,0,0,0
+All Safety ON,DynamicLot,May,1110.21,1103.55,6.66,0,2.0,1.0,3,PASS,PASS,PASS,,,0,0,0,0

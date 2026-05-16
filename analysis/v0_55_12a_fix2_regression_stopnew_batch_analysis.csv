@@ -1,0 +1,9 @@
+scenario,mode,window,FinalWorkingNetUSD,TotalTrades,TradeLifecyclePhysicalRows,TradeLifecyclePhysicalRowStatus,ReportIntegrityStatus,TradeRowsVsSummaryStatus,CapitalFlowIntegrityStatus,SafetyOrderSend,BrokerModifySent,RuntimeSLChanged,InvariantBreaches,StopNewTradesBeforeCloseEnabled,StopNewTradesBeforeCloseMinutes,StopNewTradesEvaluatedTrades,StopNewTradesBlockedTrades,StopNewTradesBlockedWinningTrades,StopNewTradesBlockedLosingTrades,StopNewTradesImpactUSD,StopNewTradesStatus,CloseSafetyClosedTrades,CloseSafetyStatus,EmergencyBlockedEntries
+Regression,DynamicLot,April,4524.85,536,536,PASS,PASS,PASS,PASS,0,0,0,0,NO,3,536,0,0,0,0.0,DISABLED_PASS,0,DISABLED_PASS,1
+Regression,DynamicLot,May,1103.55,258,258,PASS,PASS,PASS,PASS,0,0,0,0,NO,3,258,0,0,0,0.0,DISABLED_PASS,0,DISABLED_PASS,0
+Regression,FixedLot,April,1102.45,536,536,PASS,PASS,PASS,PASS,0,0,0,0,NO,3,536,0,0,0,0.0,DISABLED_PASS,0,DISABLED_PASS,1
+Regression,FixedLot,May,759.45,258,258,PASS,PASS,PASS,PASS,0,0,0,0,NO,3,258,0,0,0,0.0,DISABLED_PASS,0,DISABLED_PASS,0
+StopNew_ON,DynamicLot,April,4524.85,536,536,PASS,PASS,PASS,PASS,0,0,0,0,YES,3,536,0,0,0,0.0,ENABLED_PASS,0,DISABLED_PASS,1
+StopNew_ON,DynamicLot,May,1103.55,258,258,PASS,PASS,PASS,PASS,0,0,0,0,YES,3,258,0,0,0,0.0,ENABLED_PASS,0,DISABLED_PASS,0
+StopNew_ON,FixedLot,April,1102.45,536,536,PASS,PASS,PASS,PASS,0,0,0,0,YES,3,536,0,0,0,0.0,ENABLED_PASS,0,DISABLED_PASS,1
+StopNew_ON,FixedLot,May,759.45,258,258,PASS,PASS,PASS,PASS,0,0,0,0,YES,3,258,0,0,0,0.0,ENABLED_PASS,0,DISABLED_PASS,0

@@ -1,0 +1,5 @@
+Mode,Window,RegressionNetUSD,WeekendONNetUSD,DeltaVsRegressionUSD,WeekendEnabled,WeekendMinutes,CloseSafetyClosedTrades,CloseSafetyWeekendClosedTrades,CloseSafetyDailyClosedTrades,CloseSafetyBeforeNetUSD,CloseSafetyAfterNetUSD,CloseSafetyImpactUSD,StopNewTradesBlockedTrades,ReportIntegrityStatus,TradeRowsVsSummaryStatus,CapitalFlowIntegrityStatus,Rows,TotalTrades,SafetyOrderSend,BrokerModifySent,RuntimeSLChanged,InvariantBreaches,EmergencyBlockedEntries,MarketCloseOpenWeekendRiskTrades,CloseSafetyStatus
+Fixed,April,1102.45,1102.45,0.0,YES,3,0,0,0,0.0,0.0,0.0,0,PASS,PASS,PASS,536,536,0,0,0,0,1,9,ENABLED_PASS
+Fixed,May,759.45,765.46,6.01,YES,3,1,1,0,-8.01,-2.0,6.01,0,PASS,PASS,PASS,258,258,0,0,0,0,0,3,ENABLED_PASS
+Dynamic,April,4524.85,4524.85,0.0,YES,3,0,0,0,0.0,0.0,0.0,0,PASS,PASS,PASS,536,536,0,0,0,0,1,9,ENABLED_PASS
+Dynamic,May,1103.55,1125.11,21.56,YES,3,1,1,0,-8.01,-2.0,6.01,0,PASS,PASS,PASS,258,258,0,0,0,0,0,3,ENABLED_PASS

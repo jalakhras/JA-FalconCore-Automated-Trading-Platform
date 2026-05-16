@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.55.11e-fix1 - No-New-Entry Clean Decision Lock Compile Fix |
+//|                     Version: v0.55.12a-fix2 - Broker Session Schedule Close Fix LOCKED |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.553"
+#property version   "1.558"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.55.11f"
-#define EA_BUILD_TAG   "SessionBoundaryUserOverrideInputs"
+#define EA_VERSION_TAG "v0.55.12a-fix2"
+#define EA_BUILD_TAG   "BrokerSessionScheduleCloseFix"
 
 #define FALCON_MTF_COUNT       6
 
@@ -1418,6 +1418,12 @@ enum ENUM_FALCON_REPORT_PROFILE
 // ==================================================================
 
 // ==================================================================
+// Session Boundary Broker Session Schedule Fix - v0.55.12a-fix2
+// Temporary Force Close simulation metrics were removed from default reports.
+// Close time is derived from broker/server market data, not from the local PC clock.
+// ==================================================================
+
+// ==================================================================
 // 01 - EA Safety & Risk / إعدادات المستخدم الأساسية
 // ==================================================================
 input group "01 - EA Safety & Risk / إعدادات المستخدم الأساسية";
@@ -1432,11 +1438,15 @@ input double FixedDailyLossAmount            = 100.0; // Fixed daily loss limit 
 input double DailyLossPercentOfCapital       = 3.0;   // Daily loss limit as percent of capital when UseFixedDailyLossAmount=false.
 
 // ==================================================================
-// 01a - Session Boundary User Overrides / حماية إغلاق السوق
+// 01a - Session Boundary Safety Overrides / حماية إغلاق السوق
 // ==================================================================
-input group "01a - Session Boundary User Overrides / حماية إغلاق السوق";
-input bool   EnableNoNewEntriesBeforeClose   = false; // User safety override. If true, Paper blocks new entries inside the last X minutes before daily/session close.
-input int    NoNewEntriesBeforeCloseMinutes  = 1;     // Minutes before close to block new entries when enabled. Default 1 min; calibration showed wider 5-120 min windows hurt profit.
+input group "01a - Close Safety / حماية الإغلاق";
+input bool   StopNewTradesBeforeClose          = false; // Stop new trades before market close.
+input int    StopNewTradesBeforeCloseMinutes   = 3;     // Minutes before close.
+input bool   CloseTradesBeforeDailyClose       = false; // Close open trades before daily close.
+input int    DailyCloseSafetyMinutes           = 3;     // Minutes before daily close.
+input bool   CloseTradesBeforeWeekend          = false; // Close open trades before weekend.
+input int    WeekendCloseSafetyMinutes         = 3;     // Minutes before weekend close.
 
 // ==================================================================
 // Capital Tier Foundation - v0.53.0 (LOCKED)
@@ -2924,6 +2934,18 @@ struct FalconReportTotals
    int    no_new_entry_override_blocked_winners;
    int    no_new_entry_override_blocked_losers;
    double no_new_entry_override_impact_usd;
+
+   // v0.55.12a: Daily / Weekend Force Close User Override. Disabled by default.
+   // When enabled, it changes Paper results before Emergency and Capital Flow.
+   int    force_close_override_evaluated_trades;
+   int    force_close_override_closed_trades;
+   int    force_close_override_daily_closed_trades;
+   int    force_close_override_weekend_closed_trades;
+   int    force_close_override_price_ok_trades;
+   int    force_close_override_missing_price_trades;
+   double force_close_override_before_net_usd;
+   double force_close_override_after_net_usd;
+   double force_close_override_impact_usd;
 
    double win_rate;
    double loss_rate;
@@ -7981,11 +8003,103 @@ public:
       return dt.hour * 60 + dt.min;
    }
 
-   int FalconMarketCloseGuardCloseMinute()
+   datetime FalconSessionBoundaryDateStart(datetime t)
    {
-      // v0.55.11 foundation: conservative Friday/session-end reference in server time.
-      // Enforcement is not active; this is readiness measurement only.
-      return 23 * 60;
+      if(t <= 0)
+         return 0;
+      MqlDateTime dt;
+      TimeToStruct(t, dt);
+      dt.hour = 0;
+      dt.min = 0;
+      dt.sec = 0;
+      return StructToTime(dt);
+   }
+
+   int FalconMarketCloseGuardFallbackCloseMinute()
+   {
+      // Fallback only. Primary logic uses broker/server symbol session schedule.
+      // NAS100/US100 often closes near :58. This fallback does not use the user's PC clock.
+      return 23 * 60 + 58;
+   }
+
+   int FalconSessionScheduleMinuteOfDay(datetime session_time)
+   {
+      if(session_time < 0)
+         return -1;
+
+      long raw_seconds = (long)session_time;
+      int seconds_of_day = (int)(raw_seconds % 86400);
+      if(seconds_of_day < 0)
+         seconds_of_day += 86400;
+
+      // Some brokers encode 24:00 as 86400 seconds. Treat it as the final minute of the day.
+      if(seconds_of_day == 0 && raw_seconds >= 86400)
+         return 1439;
+
+      return seconds_of_day / 60;
+   }
+
+   int FalconResolveCloseMinuteFromBrokerSessions(datetime t)
+   {
+      if(t <= 0)
+         return -1;
+
+      int dow = FalconMarketCloseDayOfWeek(t);
+      if(dow < 0 || dow > 6)
+         return -1;
+
+      string symbols[2];
+      symbols[0] = m_symbol_context.symbol;
+      symbols[1] = _Symbol;
+
+      for(int s = 0; s < 2; s++)
+      {
+         string symbol_name = symbols[s];
+         if(StringLen(symbol_name) <= 0)
+            continue;
+         if(s == 1 && symbol_name == symbols[0])
+            continue;
+
+         int best_close_minute = -1;
+
+         for(uint session_index = 0; session_index < 16; session_index++)
+         {
+            datetime session_from = 0;
+            datetime session_to = 0;
+            if(!SymbolInfoSessionTrade(symbol_name, (ENUM_DAY_OF_WEEK)dow, session_index, session_from, session_to))
+               continue;
+
+            int from_minute = FalconSessionScheduleMinuteOfDay(session_from);
+            int to_minute = FalconSessionScheduleMinuteOfDay(session_to);
+            if(from_minute < 0 || to_minute < 0)
+               continue;
+
+            int close_minute = to_minute;
+
+            // If a broker encodes a session wrapping into the next day, the current day's last tradable minute is end-of-day.
+            if(to_minute <= from_minute)
+               close_minute = 1439;
+
+            if(close_minute > best_close_minute)
+               best_close_minute = close_minute;
+         }
+
+         if(best_close_minute > 0)
+            return best_close_minute;
+      }
+
+      return -1;
+   }
+
+   int FalconMarketCloseGuardCloseMinute(datetime t)
+   {
+      // v0.55.12a-fix2: derive close from broker/server symbol session schedule.
+      // This avoids user's PC time and avoids the incomplete-bar-history issue seen in fix1.
+      int minute = FalconResolveCloseMinuteFromBrokerSessions(t);
+      if(minute > 0)
+         return minute;
+
+      return FalconMarketCloseGuardFallbackCloseMinute();
    }
 
    int FalconMarketCloseGuardBlockWindowMinutes()
@@ -7997,7 +8111,7 @@ public:
 
    int FalconUserNoNewEntryWindowMinutes()
    {
-      int minutes = NoNewEntriesBeforeCloseMinutes;
+      int minutes = StopNewTradesBeforeCloseMinutes;
       if(minutes < 0)
          minutes = 0;
       if(minutes > 240)
@@ -8007,7 +8121,7 @@ public:
 
    bool FalconIsUserNoNewEntryCloseWindow(datetime t)
    {
-      if(!EnableNoNewEntriesBeforeClose)
+      if(!StopNewTradesBeforeClose)
          return false;
 
       int window_minutes = FalconUserNoNewEntryWindowMinutes();
@@ -8022,7 +8136,7 @@ public:
       if(minute < 0)
          return false;
 
-      return (minute >= FalconMarketCloseGuardCloseMinute() - window_minutes);
+      return (minute >= FalconMarketCloseGuardCloseMinute(t) - window_minutes);
    }
 
    bool FalconIsDailyCloseWindow(datetime t)
@@ -8035,7 +8149,7 @@ public:
       int minute = FalconMarketCloseMinuteOfDay(t);
       if(minute < 0)
          return false;
-      return (minute >= FalconMarketCloseGuardCloseMinute() - FalconMarketCloseGuardBlockWindowMinutes());
+      return (minute >= FalconMarketCloseGuardCloseMinute(t) - FalconMarketCloseGuardBlockWindowMinutes());
    }
 
 
@@ -8048,7 +8162,7 @@ public:
       int minute = FalconMarketCloseMinuteOfDay(t);
       if(minute < 0)
          return false;
-      return (minute >= FalconMarketCloseGuardCloseMinute() - FalconMarketCloseGuardBlockWindowMinutes());
+      return (minute >= FalconMarketCloseGuardCloseMinute(t) - FalconMarketCloseGuardBlockWindowMinutes());
    }
 
    bool FalconWouldBeOpenAtWeekendRisk(const FalconTradeLifecycleRecord &record)
@@ -8059,7 +8173,7 @@ public:
          return false;
 
       int entry_minute = FalconMarketCloseMinuteOfDay(record.entry_time);
-      if(entry_minute >= FalconMarketCloseGuardCloseMinute() - FalconMarketCloseGuardBlockWindowMinutes())
+      if(entry_minute >= FalconMarketCloseGuardCloseMinute(record.entry_time) - FalconMarketCloseGuardBlockWindowMinutes())
          return true;
 
       if(record.exit_time <= 0)
@@ -8069,7 +8183,7 @@ public:
       int exit_minute = FalconMarketCloseMinuteOfDay(record.exit_time);
       if(exit_dow != 5 && record.exit_time > record.entry_time)
          return true;
-      if(exit_dow == 5 && exit_minute >= FalconMarketCloseGuardCloseMinute())
+      if(exit_dow == 5 && exit_minute >= FalconMarketCloseGuardCloseMinute(record.exit_time))
          return true;
 
       return false;
@@ -8081,6 +8195,106 @@ public:
          return 0;
       int seconds = (int)(record.exit_time - record.entry_time);
       return (seconds + 59) / 60;
+   }
+
+   int FalconClampSessionBoundaryMinutes(int minutes)
+   {
+      if(minutes < 0)
+         return 0;
+      if(minutes > 240)
+         return 240;
+      return minutes;
+   }
+
+   int FalconDailyForceCloseUserWindowMinutes()
+   {
+      return FalconClampSessionBoundaryMinutes(DailyCloseSafetyMinutes);
+   }
+
+   int FalconWeekendForceCloseUserWindowMinutes()
+   {
+      return FalconClampSessionBoundaryMinutes(WeekendCloseSafetyMinutes);
+   }
+
+   datetime FalconBoundaryDateAtMinute(datetime t, int minute_of_day)
+   {
+      if(t <= 0)
+         return 0;
+      if(minute_of_day < 0)
+         minute_of_day = 0;
+      if(minute_of_day > 1439)
+         minute_of_day = 1439;
+      MqlDateTime dt;
+      TimeToStruct(t, dt);
+      dt.hour = minute_of_day / 60;
+      dt.min = minute_of_day % 60;
+      dt.sec = 0;
+      return StructToTime(dt);
+   }
+
+   datetime FalconDailyForceCloseUserTime(datetime t)
+   {
+      return FalconBoundaryDateAtMinute(t, FalconMarketCloseGuardCloseMinute(t) - FalconDailyForceCloseUserWindowMinutes());
+   }
+
+   datetime FalconWeekendForceCloseUserTime(datetime t)
+   {
+      return FalconBoundaryDateAtMinute(t, FalconMarketCloseGuardCloseMinute(t) - FalconWeekendForceCloseUserWindowMinutes());
+   }
+
+   bool FalconWasTradeOpenAtTime(const FalconTradeLifecycleRecord &record, datetime boundary_time)
+   {
+      if(boundary_time <= 0 || record.entry_time <= 0)
+         return false;
+      if(record.entry_time >= boundary_time)
+         return false;
+      if(record.exit_time <= 0)
+         return true;
+      return (record.exit_time > boundary_time);
+   }
+
+   bool FalconTryGetBoundaryClosePrice(datetime boundary_time, double &price)
+   {
+      price = 0.0;
+      if(boundary_time <= 0)
+         return false;
+
+      int shift = iBarShift(m_symbol_context.symbol, PERIOD_M1, boundary_time, false);
+      if(shift < 0)
+         shift = iBarShift(_Symbol, PERIOD_M1, boundary_time, false);
+      if(shift >= 0)
+      {
+         price = iClose(m_symbol_context.symbol, PERIOD_M1, shift);
+         if(price <= 0.0)
+            price = iClose(_Symbol, PERIOD_M1, shift);
+         if(price > 0.0)
+            return true;
+      }
+
+      shift = iBarShift(m_symbol_context.symbol, PERIOD_M5, boundary_time, false);
+      if(shift < 0)
+         shift = iBarShift(_Symbol, PERIOD_M5, boundary_time, false);
+      if(shift < 0)
+         return false;
+
+      price = iClose(m_symbol_context.symbol, PERIOD_M5, shift);
+      if(price <= 0.0)
+         price = iClose(_Symbol, PERIOD_M5, shift);
+      return (price > 0.0);
+   }
+
+   double FalconForceCloseOverrideNetUsd(const FalconTradeLifecycleRecord &record, double force_close_price)
+   {
+      double active_lot = record.falcon_dlm_active_lot;
+      if(active_lot <= 0.0)
+         active_lot = record.lot_size;
+      double raw_points = FalconRawIndexPoints(record.direction, record.entry_price, force_close_price);
+      return FalconEstimateUsdByRawPoints(raw_points, active_lot, m_symbol_context);
+   }
+
+   double FalconForceCloseOverrideNetPoints(const FalconTradeLifecycleRecord &record, double force_close_price)
+   {
+      return FalconRawIndexPoints(record.direction, record.entry_price, force_close_price);
    }
 
    void UpdateMarketCloseGuardFoundation(const FalconTradeLifecycleRecord &record)
@@ -8113,7 +8327,7 @@ public:
    void ApplyNoNewEntryUserOverridePaperEnforcement(FalconTradeLifecycleRecord &record)
    {
       // v0.55.11f: optional user safety override.
-      // Default is OFF because all calibrated windows from 5 to 120 minutes had negative net benefit.
+      // Default is OFF because calibrated windows reduced profit. The user may enable it only as a safety override.
       // When explicitly enabled, the user accepts the safety trade-off and the Paper result is blocked
       // before Emergency/CapitalFlow read the trade.
       record.falcon_market_close_status = "ALLOWED";
@@ -8123,7 +8337,7 @@ public:
       record.falcon_market_close_after_net_usd = record.falcon_single_trade_loss_cap_after_net_usd;
       record.falcon_market_close_impact_usd = 0.0;
 
-      if(!EnableNoNewEntriesBeforeClose)
+      if(!StopNewTradesBeforeClose)
          return;
 
       if(FalconUserNoNewEntryWindowMinutes() <= 0)
@@ -8150,6 +8364,92 @@ public:
       record.falcon_single_trade_loss_cap_impact_points = record.falcon_single_trade_loss_cap_after_net_points - record.falcon_single_trade_loss_cap_before_net_points;
       record.falcon_single_trade_loss_cap_impact_usd = record.falcon_single_trade_loss_cap_after_net_usd - record.falcon_single_trade_loss_cap_before_net_usd;
       record.close_reason = "SESSION_BOUNDARY_USER_NO_NEW_ENTRY_BLOCKED";
+   }
+
+   void ApplyDailyWeekendForceCloseUserOverridePaperEnforcement(FalconTradeLifecycleRecord &record)
+   {
+      // v0.55.12a: optional user safety override.
+      // Defaults are OFF because validation showed profit reduction. The user may enable this only as a safety override.
+      // When enabled, a qualifying open Paper trade is force-closed before Emergency and Capital Flow.
+      m_totals.force_close_override_evaluated_trades++;
+
+      if(!CloseTradesBeforeDailyClose && !CloseTradesBeforeWeekend)
+         return;
+
+      // If No-New-Entry already blocked the trade, there is no open Paper position to force-close.
+      if(record.falcon_market_close_blocked == 1)
+         return;
+
+      bool use_weekend = false;
+      bool use_daily = false;
+      datetime boundary_time = 0;
+      string reason = "NONE";
+
+      if(CloseTradesBeforeWeekend && FalconWeekendForceCloseUserWindowMinutes() > 0 && FalconMarketCloseDayOfWeek(record.entry_time) == 5)
+      {
+         datetime weekend_boundary = FalconWeekendForceCloseUserTime(record.entry_time);
+         if(FalconWasTradeOpenAtTime(record, weekend_boundary))
+         {
+            use_weekend = true;
+            boundary_time = weekend_boundary;
+            reason = StringFormat("USER_WEEKEND_FORCE_CLOSE_%d_MIN", FalconWeekendForceCloseUserWindowMinutes());
+         }
+      }
+
+      if(!use_weekend && CloseTradesBeforeDailyClose && FalconDailyForceCloseUserWindowMinutes() > 0)
+      {
+         int dow = FalconMarketCloseDayOfWeek(record.entry_time);
+         if(dow >= 1 && dow <= 5)
+         {
+            datetime daily_boundary = FalconDailyForceCloseUserTime(record.entry_time);
+            if(FalconWasTradeOpenAtTime(record, daily_boundary))
+            {
+               use_daily = true;
+               boundary_time = daily_boundary;
+               reason = StringFormat("USER_DAILY_FORCE_CLOSE_%d_MIN", FalconDailyForceCloseUserWindowMinutes());
+            }
+         }
+      }
+
+      if(!use_weekend && !use_daily)
+         return;
+
+      double force_close_price = 0.0;
+      if(!FalconTryGetBoundaryClosePrice(boundary_time, force_close_price))
+      {
+         m_totals.force_close_override_missing_price_trades++;
+         record.falcon_market_close_reason = "FORCE_CLOSE_BOUNDARY_PRICE_MISSING";
+         return;
+      }
+
+      double before_usd = record.falcon_single_trade_loss_cap_after_net_usd;
+      double after_points = FalconForceCloseOverrideNetPoints(record, force_close_price);
+      double after_usd = FalconForceCloseOverrideNetUsd(record, force_close_price);
+
+      record.falcon_market_close_status = "FORCE_CLOSED";
+      record.falcon_market_close_blocked = 0;
+      record.falcon_market_close_reason = reason;
+      record.falcon_market_close_before_net_usd = before_usd;
+      record.falcon_market_close_after_net_usd = after_usd;
+      record.falcon_market_close_impact_usd = after_usd - before_usd;
+
+      record.exit_time = boundary_time;
+      record.exit_price = force_close_price;
+      record.close_reason = (use_weekend ? "SESSION_BOUNDARY_WEEKEND_FORCE_CLOSE_USER_OVERRIDE" : "SESSION_BOUNDARY_DAILY_FORCE_CLOSE_USER_OVERRIDE");
+      record.falcon_single_trade_loss_cap_after_net_points = after_points;
+      record.falcon_single_trade_loss_cap_after_net_usd = after_usd;
+      record.falcon_single_trade_loss_cap_impact_points = after_points - record.falcon_single_trade_loss_cap_before_net_points;
+      record.falcon_single_trade_loss_cap_impact_usd = after_usd - record.falcon_single_trade_loss_cap_before_net_usd;
+
+      m_totals.force_close_override_closed_trades++;
+      if(use_weekend)
+         m_totals.force_close_override_weekend_closed_trades++;
+      else if(use_daily)
+         m_totals.force_close_override_daily_closed_trades++;
+      m_totals.force_close_override_price_ok_trades++;
+      m_totals.force_close_override_before_net_usd += before_usd;
+      m_totals.force_close_override_after_net_usd += after_usd;
+      m_totals.force_close_override_impact_usd += (after_usd - before_usd);
    }
 
    void ResetWeeklyStabilityState()
@@ -9372,6 +9672,7 @@ public:
       ApplyDynamicLotSizingModel(record);
       ApplyCalibratedSingleTradeLossCapEnforcement(record);
       ApplyNoNewEntryUserOverridePaperEnforcement(record);
+      ApplyDailyWeekendForceCloseUserOverridePaperEnforcement(record);
       ApplyThreeLayerEmergencyApplication(record);
       ApplyCapitalFlowSourceClassification(record);
       UpdateTotals(record);
@@ -9458,6 +9759,8 @@ public:
          integrity_breaches++;
       if(m_totals.total_trades != m_totals.no_new_entry_override_evaluated_trades)
          integrity_breaches++;
+      if(m_totals.total_trades != m_totals.force_close_override_evaluated_trades)
+         integrity_breaches++;
       if(m_totals.capital_flow_integrity_breaches > 0)
          integrity_breaches++;
       if(physical_trade_rows_status != "PASS")
@@ -9466,16 +9769,21 @@ public:
       string capital_flow_integrity_status = (m_totals.capital_flow_integrity_breaches == 0 && m_totals.total_trades == m_totals.capital_flow_evaluated_trades ? "PASS" : "FAIL");
       string weekly_stability_status = (m_totals.total_trades == m_totals.weekly_stability_evaluated_trades ? "PASS" : "FAIL");
       string market_close_guard_status = (m_totals.total_trades == m_totals.market_close_guard_evaluated_trades ? "PASS" : "FAIL");
-      string no_new_entry_override_status = (m_totals.total_trades == m_totals.no_new_entry_override_evaluated_trades ? (EnableNoNewEntriesBeforeClose ? "ENABLED_PASS" : "DISABLED_PASS") : "FAIL");
+      string no_new_entry_override_status = (m_totals.total_trades == m_totals.no_new_entry_override_evaluated_trades ? (StopNewTradesBeforeClose ? "ENABLED_PASS" : "DISABLED_PASS") : "FAIL");
+      bool force_close_override_enabled = (CloseTradesBeforeDailyClose || CloseTradesBeforeWeekend);
+      string force_close_override_status = (m_totals.total_trades == m_totals.force_close_override_evaluated_trades ? (force_close_override_enabled ? "ENABLED_PASS" : "DISABLED_PASS") : "FAIL");
+      if(force_close_override_status == "ENABLED_PASS" && m_totals.force_close_override_missing_price_trades > 0)
+         force_close_override_status = "ENABLED_WARN_MISSING_PRICE";
       double market_close_avg_duration_minutes = FalconSafeAverageDouble(m_totals.market_close_total_trade_duration_minutes, m_totals.market_close_guard_evaluated_trades);
       string market_close_two_hour_coverage_status = (m_totals.market_close_duration_above_window_trades == 0 ? "PASS_2H_COVERS_ALL_OBSERVED_DURATIONS" : "WARN_SOME_TRADES_EXCEED_2H_DURATION");
-      string market_close_timing_recommendation = (m_totals.market_close_duration_above_window_trades == 0 ? "KEEP_120_MIN_NO_NEW_ENTRY_CANDIDATE" : "REVIEW_LONGER_WINDOW_OR_FORCE_CLOSE_SIMULATION");
+      string market_close_timing_recommendation = (m_totals.market_close_duration_above_window_trades == 0 ? "MONITOR_SESSION_BOUNDARY_RISK" : "REVIEW_DAILY_WEEKEND_CLOSE_SAFETY");
       string report_integrity_status = (integrity_breaches == 0 ? "PASS" : "FAIL");
       string row_count_status = (m_totals.total_trades == m_totals.dynamic_lotsizing_evaluated_trades &&
                                  m_totals.total_trades == m_totals.capital_flow_evaluated_trades &&
                                  m_totals.total_trades == m_totals.weekly_stability_evaluated_trades &&
                                  m_totals.total_trades == m_totals.market_close_guard_evaluated_trades &&
                                  m_totals.total_trades == m_totals.no_new_entry_override_evaluated_trades &&
+                                 m_totals.total_trades == m_totals.force_close_override_evaluated_trades &&
                                  physical_trade_rows_status == "PASS" ? "PASS" : "FAIL");
 
       int handle = FileOpen(m_summary_report_file, FalconReportWriteCsvFlags(), ',');
@@ -9529,7 +9837,7 @@ public:
       summary_row += IntegerToString(m_totals.market_close_guard_near_close_entry_trades) + ",";
       summary_row += IntegerToString(m_totals.market_close_guard_open_weekend_risk_trades) + ",";
       summary_row += FalconCsvSafe(market_close_guard_status) + ",";
-      summary_row += FalconCsvSafe(FalconBoolToYesNo(EnableNoNewEntriesBeforeClose)) + ",";
+      summary_row += FalconCsvSafe(FalconBoolToYesNo(StopNewTradesBeforeClose)) + ",";
       summary_row += IntegerToString(FalconUserNoNewEntryWindowMinutes()) + ",";
       summary_row += IntegerToString(m_totals.no_new_entry_override_evaluated_trades) + ",";
       summary_row += IntegerToString(m_totals.no_new_entry_override_blocked_trades) + ",";
@@ -9537,6 +9845,20 @@ public:
       summary_row += IntegerToString(m_totals.no_new_entry_override_blocked_losers) + ",";
       summary_row += DoubleToString(m_totals.no_new_entry_override_impact_usd, 2) + ",";
       summary_row += FalconCsvSafe(no_new_entry_override_status) + ",";
+      summary_row += FalconCsvSafe(FalconBoolToYesNo(CloseTradesBeforeDailyClose)) + ",";
+      summary_row += IntegerToString(FalconDailyForceCloseUserWindowMinutes()) + ",";
+      summary_row += FalconCsvSafe(FalconBoolToYesNo(CloseTradesBeforeWeekend)) + ",";
+      summary_row += IntegerToString(FalconWeekendForceCloseUserWindowMinutes()) + ",";
+      summary_row += IntegerToString(m_totals.force_close_override_evaluated_trades) + ",";
+      summary_row += IntegerToString(m_totals.force_close_override_closed_trades) + ",";
+      summary_row += IntegerToString(m_totals.force_close_override_daily_closed_trades) + ",";
+      summary_row += IntegerToString(m_totals.force_close_override_weekend_closed_trades) + ",";
+      summary_row += IntegerToString(m_totals.force_close_override_price_ok_trades) + ",";
+      summary_row += IntegerToString(m_totals.force_close_override_missing_price_trades) + ",";
+      summary_row += DoubleToString(m_totals.force_close_override_before_net_usd, 2) + ",";
+      summary_row += DoubleToString(m_totals.force_close_override_after_net_usd, 2) + ",";
+      summary_row += DoubleToString(m_totals.force_close_override_impact_usd, 2) + ",";
+      summary_row += FalconCsvSafe(force_close_override_status) + ",";
       summary_row += IntegerToString(m_totals.market_close_max_trade_duration_minutes) + ",";
       summary_row += DoubleToString(market_close_avg_duration_minutes, 2) + ",";
       summary_row += IntegerToString(m_totals.market_close_duration_above_window_trades) + ",";
@@ -10625,6 +10947,15 @@ m_totals.total_trades                = 0;
       m_totals.no_new_entry_override_blocked_winners = 0;
       m_totals.no_new_entry_override_blocked_losers = 0;
       m_totals.no_new_entry_override_impact_usd = 0.0;
+      m_totals.force_close_override_evaluated_trades = 0;
+      m_totals.force_close_override_closed_trades = 0;
+      m_totals.force_close_override_daily_closed_trades = 0;
+      m_totals.force_close_override_weekend_closed_trades = 0;
+      m_totals.force_close_override_price_ok_trades = 0;
+      m_totals.force_close_override_missing_price_trades = 0;
+      m_totals.force_close_override_before_net_usd = 0.0;
+      m_totals.force_close_override_after_net_usd = 0.0;
+      m_totals.force_close_override_impact_usd = 0.0;
       m_totals.win_rate                    = 0.0;
       m_totals.loss_rate                   = 0.0;
 
@@ -11488,13 +11819,8 @@ m_totals.total_trades                = 0;
       summary_header += "DynamicLotEvaluatedTrades,DynamicLotFixedModeTrades,DynamicLotDynamicModeTrades,DynamicLotActiveLotAvg,DynamicLotActiveLotMax,";
       summary_header += "WeeklyStabilityEvaluatedTrades,WeeklyStabilityWeeks,WeeklyStabilityPositiveWeeks,WeeklyStabilityNegativeWeeks,WeeklyStabilityBestWeekUSD,WeeklyStabilityWorstWeekUSD,WeeklyStabilityScore,WeeklyStabilityStatus,";
       summary_header += "MarketCloseGuardEvaluatedTrades,MarketCloseNearCloseEntryTrades,MarketCloseOpenWeekendRiskTrades,MarketCloseGuardStatus,";
-      summary_header += "NoNewEntryOverrideEnabled,NoNewEntryOverrideMinutes,NoNewEntryOverrideEvaluatedTrades,NoNewEntryOverrideBlockedTrades,NoNewEntryOverrideBlockedWinningTrades,NoNewEntryOverrideBlockedLosingTrades,NoNewEntryOverrideImpactUSD,NoNewEntryOverrideStatus,";
-      summary_header += "";
-      summary_header += "";
-      summary_header += "";
-      summary_header += "";
-      summary_header += "";
-      summary_header += "";
+      summary_header += "StopNewTradesBeforeCloseEnabled,StopNewTradesBeforeCloseMinutes,StopNewTradesEvaluatedTrades,StopNewTradesBlockedTrades,StopNewTradesBlockedWinningTrades,StopNewTradesBlockedLosingTrades,StopNewTradesImpactUSD,StopNewTradesStatus,";
+      summary_header += "DailyCloseSafetyEnabled,DailyCloseSafetyMinutes,WeekendCloseSafetyEnabled,WeekendCloseSafetyMinutes,CloseSafetyEvaluatedTrades,CloseSafetyClosedTrades,CloseSafetyDailyClosedTrades,CloseSafetyWeekendClosedTrades,CloseSafetyPriceOkTrades,CloseSafetyMissingPriceTrades,CloseSafetyBeforeNetUSD,CloseSafetyAfterNetUSD,CloseSafetyImpactUSD,CloseSafetyStatus,";
       summary_header += "MarketCloseMaxTradeDurationMinutes,MarketCloseAvgTradeDurationMinutes,MarketCloseDurationAboveWindowTrades,MarketCloseLongestTradeId,MarketCloseTimingRecommendation,MarketCloseTwoHourCoverageStatus,";
       summary_header += "CapitalFlowEvaluatedTrades,CapitalTradeProfitEvents,CapitalTradeLossEvents,CapitalInjectionEvents,CapitalWithdrawalEvents,ExternalCapitalNetUSD,CapitalFlowIntegrityStatus,";
       summary_header += "EmergencyTriggeredTrades,EmergencyBlockedEntries,";
@@ -11597,7 +11923,7 @@ public:
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.55.11c. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement, SL/TP, Smart TM, Bar-Path, Decision Tree, and Timing diagnostics are reporting-only beyond the controlled Shadow guard.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.55.12a. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement, SL/TP, Smart TM, Bar-Path, Decision Tree, and Timing diagnostics are reporting-only beyond the controlled Shadow guard.");
    }
 };
 

@@ -1,0 +1,71 @@
+JA FalconCore v0.55.12a-fix2 — Broker Session Schedule Close Fix
+Status: LOCKED / ACCEPTED
+Date: 2026-05-16
+
+Official decision
+v0.55.12a-fix2 is accepted as the new official LOCK after successful behavioral validation across Regression OFF, Stop New Trades ON, Daily Close ON, Weekend Close ON, and All Safety ON.
+
+Baseline
+Previous official LOCK: v0.55.11f — Session Boundary User Override Inputs.
+New official LOCK: v0.55.12a-fix2 — Broker Session Schedule Close Fix.
+
+What changed
+- Added final user-facing close safety controls with simple names:
+  input bool StopNewTradesBeforeClose = false;
+  input int  StopNewTradesBeforeCloseMinutes = 3;
+  input bool CloseTradesBeforeDailyClose = false;
+  input int  DailyCloseSafetyMinutes = 3;
+  input bool CloseTradesBeforeWeekend = false;
+  input int  WeekendCloseSafetyMinutes = 3;
+- All boolean safety options default to false.
+- All safety minute values default to 3.
+- Close-time detection uses broker/server symbol session schedule through SymbolInfoSessionTrade.
+- It does not depend on the user's PC clock, local Jordan time, or incomplete runtime bar history.
+- CopyTime-based close-time inference from fix1 was removed from the session-boundary decision path.
+
+Why fix2 was required
+v0.55.12a-fix1 incorrectly inferred market close from currently available tester bars, causing false-positive blocks and closes at normal intraday times. fix2 resolves this by using broker session schedule data.
+
+Validation summary
+Regression OFF:
+- Fixed April = 1102.45 / PASS
+- Fixed May = 759.45 / PASS
+- Dynamic April = 4524.85 / PASS
+- Dynamic May = 1103.55 / PASS
+
+Stop New Trades ON:
+- No false-positive intraday blocks.
+- No forced closes.
+- TradeLifecycle matched Regression 100%.
+
+Daily Close ON:
+- April: 4 daily closes at 23:56.
+- May: 3 daily closes at 23:56.
+- No random intraday closes.
+
+Weekend Close ON:
+- April: 0 weekend closes.
+- May: 1 weekend close, correctly capturing the Friday-to-Monday risk trade SHD_FVG_MICRO_RETEST_1778281800_163 at 2026.05.08 23:56.
+- No random Friday intraday closes.
+
+All Safety ON:
+- Stop blocked = 0.
+- April: 4 daily closes, 0 weekend closes.
+- May: 2 daily closes, 1 weekend close.
+- No conflict between safety options.
+
+Safety and report integrity
+- ReportIntegrityStatus = PASS.
+- TradeRowsVsSummaryStatus = PASS.
+- CapitalFlowIntegrityStatus = PASS.
+- TradeLifecyclePhysicalRows = TotalTrades.
+- OrderSend = 0.
+- BrokerModifySent = 0.
+- RuntimeSLChanged = 0.
+- InvariantBreaches = 0.
+
+Final interpretation
+The new inputs are User Safety Overrides, not profit optimization defaults. All safety toggles remain OFF by default. Users can enable them manually if they prefer reduced close/weekend exposure even when it may reduce profit.
+
+Next planned work
+After this lock, continue with the next phase only from v0.55.12a-fix2 as baseline. Do not build from v0.55.12a, v0.55.12a-fix1, or older candidate packages.

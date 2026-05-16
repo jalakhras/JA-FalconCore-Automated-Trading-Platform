@@ -1,0 +1,44 @@
+JA FalconCore v0.55.12a-fix2 LOCKED Static Validation
+Generated: 2026-05-16
+Build: BrokerSessionScheduleCloseFix
+Status: LOCKED / ACCEPTED
+
+Purpose
+- Final lock validation for Broker Session Schedule Close Fix.
+- Close-time logic uses broker/server symbol sessions through SymbolInfoSessionTrade.
+- No dependency on user's PC clock or Jordan local time.
+- No CopyTime-based runtime bar inference for close time.
+
+Static checks from code
+EA_VERSION_TAG v0.55.12a-fix2: 1
+EA_BUILD_TAG BrokerSessionScheduleCloseFix: 1
+SymbolInfoSessionTrade refs: 1
+CopyTime refs in close resolver: 0
+StopNewTradesBeforeClose input: 1
+CloseTradesBeforeDailyClose input: 1
+CloseTradesBeforeWeekend input: 1
+OrderSend refs: 28
+OrderSendAsync refs: 0
+PositionModify refs: 0
+Brace balance: 0
+Parentheses balance: 0
+
+MT5 test validation
+Regression OFF: PASS on Fixed/Dynamic April/May.
+Stop New Trades ON: PASS; no false-positive intraday blocks, no forced closes.
+Daily Close ON: PASS; force closes only near 23:56 server/tester time.
+Weekend Close ON: PASS; captures Friday-to-Monday risk trade only, no random Friday intraday closes.
+All Safety ON: PASS; no conflict between the three safety options.
+
+Runtime safety results
+OrderSend = 0
+BrokerModifySent = 0
+RuntimeSLChanged = 0
+InvariantBreaches = 0
+ReportIntegrityStatus = PASS
+TradeRowsVsSummaryStatus = PASS
+CapitalFlowIntegrityStatus = PASS
+TradeLifecyclePhysicalRows = TotalTrades
+
+Manual compile confirmation
+User approved proceeding to lock after LOCK-ready validation. MT5 compile is outside this container environment.
