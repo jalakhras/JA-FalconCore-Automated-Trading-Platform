@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.55.6b - Capital Flow Clean Lock       |
+//|                     Version: v0.55.7c - Tier Scenario Clean Report Lock       |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.5562"
+#property version   "1.557"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.55.6b"
-#define EA_BUILD_TAG   "CapitalFlowCleanLock"
+#define EA_VERSION_TAG "v0.55.7c"
+#define EA_BUILD_TAG   "TierScenarioCleanReportLock"
 
 #define FALCON_MTF_COUNT       6
 
@@ -1392,7 +1392,14 @@ enum ENUM_FALCON_REPORT_PROFILE
 
 
 // ==================================================================
-// Capital Flow Clean Lock - v0.55.6b
+// Tier Scenario Clean Report Lock - v0.55.7c
+// Temporary validation scaffold removed after scenario tests passed.
+// Runtime keeps only locked promotion/demotion policy and no scenario inputs.
+// ==================================================================
+
+
+// ==================================================================
+// Capital Flow Clean Lock - v0.55.7
 // The temporary simulation scaffold was removed after validation.
 // Runtime keeps only real capital-flow classification fields.
 // ==================================================================
@@ -1617,7 +1624,7 @@ double g_falcon_session_start_balance = 0.0;
 
 
 // ==================================================================
-// Capital Flow Source Classification Clean Lock - v0.55.6b
+// Capital Flow Source Classification Clean Lock - v0.55.7
 // Temporary simulation inputs and audit columns were removed after
 // Regression / Injection / Withdrawal / Mixed scenario validation.
 // Runtime keeps true capital-flow classification only, with no test scaffold.
@@ -1628,7 +1635,21 @@ double g_falcon_session_start_balance = 0.0;
 #define FALCON_CFS_SCOPE                          "CAPITAL_FLOW;INJECTION;WITHDRAWAL;MIXED_EVENTS_VALIDATED;SIMULATION_SCAFFOLD_REMOVED;NO_TRADE_LOGIC_CHANGE"
 #define FALCON_CFS_POLICY                         "RUNTIME_CLASSIFIES_TRUE_CAPITAL_FLOW_ONLY;INJECTION_NOT_STRATEGY_PROFIT;WITHDRAWAL_NOT_STRATEGY_LOSS;NO_SIMULATION_INPUTS_IN_LOCK"
 #define FALCON_CFS_ORDER_SEND_POLICY              "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
-#define FALCON_CFS_NEXT_PHASE                     "v0.55.7_NEXT_CAPITAL_OR_EVENT_MODEL_LAYER"
+#define FALCON_CFS_NEXT_PHASE                     "v0.55.7_TierPromotionDemotionScenarioValidation"
+
+// ==================================================================
+// Tier Scenario Clean Report Lock - v0.55.7c
+// Scenario validation passed. Temporary inputs and report audit columns
+// are removed to keep the EA clean. Promotion/Demotion runtime policy
+// remains unchanged: capital-only growth does not auto-promote.
+// ==================================================================
+#define FALCON_TSV_STATUS                         "TIER_SCENARIO_CLEAN_LOCK"
+#define FALCON_TSV_DECISION                       "REMOVE_TEMPORARY_TIER_SCENARIO_INPUTS_AND_REPORT_FIELDS_AFTER_VALIDATION"
+#define FALCON_TSV_RUNTIME_ENFORCED               true
+#define FALCON_TSV_SCOPE                          "CLEAN_LOCK;NO_SCENARIO_INPUTS;NO_SCENARIO_REPORT_FIELDS;NO_TRADE_RESULT_CHANGE;NO_TIER_RUNTIME_CHANGE"
+#define FALCON_TSV_POLICY                         "PROMOTION_MUST_BE_EARNED;CAPITAL_INJECTION_NOT_PROFIT;WITHDRAWAL_NOT_STRATEGY_LOSS;DEMOTION_REMAINS_PROTECTIVE"
+#define FALCON_TSV_ORDER_SEND_POLICY              "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
+#define FALCON_TSV_NEXT_PHASE                     "v0.55.8_NEXT_CAPITAL_OR_RISK_LAYER"
 
 
 // ==================================================================
@@ -1674,6 +1695,7 @@ input bool                       EnableFastRuntimeSmokeMode    = true;
 input int                        RuntimeDiagnosticsEveryNTicks = 1000;
 
 
+
 // Internal report constants. Keep these out of user inputs.
 #define FALCON_ENABLE_REPORT_PERIOD_IN_FILE_NAMES      true
 #define FALCON_AUTO_DETECT_REPORT_PERIOD_TAGS          true
@@ -1706,6 +1728,8 @@ string FalconReportProfileToString()
       return "DEBUG";
    return "STANDARD";
 }
+
+
 
 // Diagnostic report gates. Normal tests should not create diagnostic report spam.
 #define EnableMarketDiagnosticsReport                         (FalconReportProfileIsDebug())
@@ -8929,6 +8953,7 @@ public:
       summary_row += IntegerToString(m_totals.capital_flow_withdrawal_events) + ",";
       summary_row += DoubleToString(m_totals.capital_flow_external_net_usd, 4) + ",";
       summary_row += FalconCsvSafe(capital_flow_integrity_status) + ",";
+
       summary_row += IntegerToString(m_totals.paper_emergency_triggered_trades) + ",";
       summary_row += IntegerToString(m_totals.paper_emergency_blocked_entries) + ",";
       summary_row += "0,0,0,";
@@ -8938,8 +8963,7 @@ public:
       summary_row += FalconCsvSafe(report_integrity_status) + ",";
       summary_row += FalconCsvSafe(row_count_status) + ",";
       summary_row += DoubleToString(final_net_diff, 4) + ",";
-      summary_row += DoubleToString(raw_net_diff, 4) + ",";
-      summary_row += FalconCsvSafe("MINIMAL_REPORT_FINAL_PASS: decision fields only; capital-flow classification clean lock; simulation scaffold removed after validation.");
+      summary_row += DoubleToString(raw_net_diff, 4);
 
       FileWriteString(handle, SlimSummaryHeaderV0555() + "\r\n");
       FileWriteString(handle, summary_row + "\r\n");
@@ -10808,7 +10832,7 @@ private:
 
    string SlimTradeHeaderV0555()
    {
-      // v0.55.6b: final minimal per-trade surface; capital-flow classification retained without simulation scaffold.
+      // v0.55.7: final minimal per-trade surface; capital-flow classification retained without simulation scaffold.
       // Keep only changing trade facts, final USD truth fields, dynamic lot essentials, emergency outcome, and row integrity.
       string trade_header = "TradeId,StrategyId,EngineId,Direction,EntryTime,ExitTime,";
       trade_header += "Stage,Outcome,CloseReason,ActiveLot,";
@@ -10820,7 +10844,7 @@ private:
 
    string SlimSummaryHeaderV0555()
    {
-      // v0.55.6b: final minimal window-level decision surface; simulation test scaffold removed after lock.
+      // v0.55.7c: final minimal window-level decision surface; tier scenario scaffold and stale ReportNotes removed after lock.
       string summary_header = "EAName,Version,Build,Symbol,GeneratedAt,ReportProfile,FromDateTag,ToDateTag,UseFixedLot,FixedLotSize,";
       summary_header += "TotalTrades,WinTrades,LoseTrades,WinRate,";
       summary_header += "RawTotalProfitUSD,RawTotalLossUSD,RawNetUSD,";
@@ -10832,7 +10856,7 @@ private:
       summary_header += "CapitalFlowEvaluatedTrades,CapitalTradeProfitEvents,CapitalTradeLossEvents,CapitalInjectionEvents,CapitalWithdrawalEvents,ExternalCapitalNetUSD,CapitalFlowIntegrityStatus,";
       summary_header += "EmergencyTriggeredTrades,EmergencyBlockedEntries,";
       summary_header += "SafetyOrderSend,BrokerModifySent,RuntimeSLChanged,InvariantBreaches,";
-      summary_header += "VisibleRawNetUSDDiff,VisibleFinalNetUSDDiff,ReportIntegrityStatus,TradeRowsVsSummaryStatus,FinalNetUSDDiff,RawNetUSDDiff,ReportNotes";
+      summary_header += "VisibleRawNetUSDDiff,VisibleFinalNetUSDDiff,ReportIntegrityStatus,TradeRowsVsSummaryStatus,FinalNetUSDDiff,RawNetUSDDiff";
       return summary_header;
    }
 
@@ -10929,7 +10953,7 @@ public:
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.55.6a. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement, SL/TP, Smart TM, Bar-Path, Decision Tree, and Timing diagnostics are reporting-only beyond the controlled Shadow guard.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.55.7. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement, SL/TP, Smart TM, Bar-Path, Decision Tree, and Timing diagnostics are reporting-only beyond the controlled Shadow guard.");
    }
 };
 

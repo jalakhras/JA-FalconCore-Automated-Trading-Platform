@@ -1,0 +1,42 @@
+JA FalconCore v0.55.7c - Tier Scenario Clean Report Lock
+
+Type:
+Reporting Cleanup / No Trading Logic Change
+
+Purpose:
+v0.55.7b functionally passed regression testing, but the Summary report still carried a stale ReportNotes value that referenced temporary Tier Scenario validation. Since the project rule is to clean temporary inputs and reporting fields after LOCK, v0.55.7c removes the stale ReportNotes column/message from the default Summary.
+
+What changed:
+- Removed ReportNotes from the Summary header.
+- Removed the stale TIER_SCENARIO_VALIDATION_CANDIDATE note from Summary rows.
+- Updated version/build tags to v0.55.7c / TierScenarioCleanReportLock.
+- Kept the minimal reporting surface clean:
+  - TradeLifecycle = 30 columns
+  - Summary = 50 columns
+  - AutoPeriodManifest remains metadata-only
+
+What did not change:
+- Entry logic
+- Exit logic
+- SL / TP
+- Protection
+- Runner
+- Emergency
+- Capital Flow logic
+- Dynamic LotSizing
+- Tier runtime logic
+- OrderSend / broker execution
+
+Validation requirement:
+Run regression only:
+- Dynamic: April Full and May Fresh
+- Fixed: April Full and May Fresh if desired
+
+Expected baselines:
+- Fixed April Full: 1102.45
+- Fixed May Fresh: 759.45
+- Dynamic April Full: 4524.85
+- Dynamic May Fresh: 1103.55
+
+Lock decision:
+v0.55.7c should become LOCKED if regression results match v0.55.7b and all integrity/safety invariants remain PASS.

@@ -1,0 +1,45 @@
+JA FalconCore Static Validation
+Version: v0.55.7c
+Build: TierScenarioCleanReportLock
+Type: Reporting Cleanup / No Trading Logic Change
+
+Scope:
+- Removes stale ReportNotes column/message from the default Summary report.
+- Keeps Tier Scenario validation scaffold removed.
+- No trading logic change.
+
+Static Checks:
+OrderSend(...) = 0
+OrderSendAsync(...) = 0
+PositionModify(...) = 0
+CTrade Buy/Sell direct calls = 0
+EnableTierScenarioValidation references = 0
+FALCON_TIER_SCENARIO references = 0
+TierScenarioAuditStatus references = 0
+TIER_SCENARIO_VALIDATION_CANDIDATE references = 0
+ReportNotes column in Summary header = NO
+Braces balance = 688 / 688
+Parentheses balance = 3044 / 3044
+TradeLifecycle columns = 30
+Summary columns = 50
+
+Expected Runtime Regression:
+Fixed Mode:
+- April Full FinalWorkingNetUSD ~= 1102.45
+- May Fresh FinalWorkingNetUSD ~= 759.45
+
+Dynamic Mode:
+- April Full FinalWorkingNetUSD ~= 4524.85
+- May Fresh FinalWorkingNetUSD ~= 1103.55
+
+Required Invariants:
+- ReportIntegrityStatus = PASS
+- TradeRowsVsSummaryStatus = PASS
+- CapitalFlowIntegrityStatus = PASS
+- CapitalInjectionEvents = 0
+- CapitalWithdrawalEvents = 0
+- ExternalCapitalNetUSD ~= 0
+- OrderSend = 0
+- BrokerModifySent = 0
+- RuntimeSLChanged = 0
+- InvariantBreaches = 0
