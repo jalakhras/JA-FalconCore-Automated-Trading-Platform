@@ -1,0 +1,35 @@
+JA FalconCore v0.55.11f — Static Validation
+
+Version:
+#property version = 1.553
+EA_VERSION_TAG = v0.55.11f
+EA_BUILD_TAG = SessionBoundaryUserOverrideInputs
+
+Scope:
+- Add user-controlled No-New-Entry safety override.
+- Default OFF because calibration showed 5/10/15/30/60/90/120 minute windows had negative net benefit.
+- When enabled, Paper blocks entries inside the last user-selected minutes before daily/session close.
+- Default minutes = 1, for minimal user safety override.
+- No Weekend Force Close or Holiday/News enforcement in this version.
+
+Static checks:
+OrderSend = 0
+OrderSendAsync = 0
+PositionModify = 0
+CTrade Buy/Sell = 0
+Braces balance = 0
+Parentheses balance = 0
+NoNewEntryCal refs = 0
+MarketCloseEnforcement refs = 0
+cal*_net_benefit refs = 0
+EnableNoNewEntriesBeforeClose refs = 5
+ApplyNoNewEntryUserOverridePaperEnforcement refs = 2
+
+Summary schema estimate:
+Header columns = 78
+Row fields approx = 78
+Expected parity = PASS if runtime writes cleanly.
+
+Risk:
+- UseFixedLot=false dynamic baseline may change only when EnableNoNewEntriesBeforeClose=true.
+- Default OFF regression should match v0.55.11e-fix1/v0.55.10c baselines.

@@ -1,0 +1,51 @@
+JA FalconCore v0.55.11f — Session Boundary User Override Inputs
+Status: LOCKED / ACCEPTED
+
+Purpose
+- Add a user-controlled optional No-New-Entry guard before daily/session close.
+- Default is OFF to preserve baseline performance.
+- When enabled, the guard applies directly to Paper results before Emergency and Capital Flow.
+- Default user override window: 1 minute.
+
+Inputs Added
+- EnableNoNewEntriesBeforeClose = false
+- NoNewEntriesBeforeCloseMinutes = 1
+
+Validation Summary
+Regression OFF:
+- FixedLot April Full: 1102.45 NetUSD
+- FixedLot May Fresh: 759.45 NetUSD
+- DynamicLot April Full: 4524.85 NetUSD
+- DynamicLot May Fresh: 1103.55 NetUSD
+
+User Override ON, 1 minute:
+- FixedLot April Full: 1053.72 NetUSD, impact -48.73, blocked 23 trades
+- FixedLot May Fresh: 744.86 NetUSD, impact -14.59, blocked 12 trades
+- DynamicLot April Full: 4156.16 NetUSD, impact -170.39, blocked 23 trades
+- DynamicLot May Fresh: 1071.32 NetUSD, impact -31.31, blocked 12 trades
+
+Decision
+- Lock the feature as optional user safety override.
+- Do not enable by default because all tested windows remain negative in net benefit.
+- User may manually enable it for exceptional risk concerns, with a default of 1 minute.
+- This is not a strategy improvement layer; it is a user-controlled operational safety override.
+
+Safety Invariants
+- OrderSend = 0
+- BrokerModifySent = 0
+- RuntimeSLChanged = 0
+- InvariantBreaches = 0
+- ReportIntegrityStatus = PASS
+- TradeRowsVsSummaryStatus = PASS
+- CapitalFlowIntegrityStatus = PASS
+- TradeLifecyclePhysicalRows = TotalTrades
+
+Current Baselines
+- FixedLot April Full: 1102.45
+- FixedLot May Fresh: 759.45
+- DynamicLot April Full: 4524.85
+- DynamicLot May Fresh: 1103.55
+
+Next Recommended Step
+- v0.55.12 — Weekend / Daily Force Close Simulation
+- Reason: No-New-Entry does not solve the bigger risk of positions held over daily/weekend close.
