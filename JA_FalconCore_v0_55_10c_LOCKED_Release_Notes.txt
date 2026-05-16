@@ -1,0 +1,19 @@
+JA FalconCore v0.55.10c — LOCKED / ACCEPTED
+Type: Reporting / Event Logging / No Trading Logic Change
+
+Locked validation windows:
+- April Full FixedLot: FinalWorkingNetUSD = 1102.45
+- April Full DynamicLot: FinalWorkingNetUSD = 4524.85
+- May Fresh FixedLot: FinalWorkingNetUSD = 759.45
+- May Fresh DynamicLot: FinalWorkingNetUSD = 1103.55
+
+Validation:
+- Report filenames include FixedLot/DynamicLot.
+- Final report filenames do not contain AUTO_RUNNING.
+- Summary.ToDateTag uses final actual date tag.
+- TradeLifecyclePhysicalRows = TotalTrades on all checked reports.
+- TierTransitions.csv and EmergencyTriggers.csv are present.
+- ReportIntegrityStatus, TradeRowsVsSummaryStatus, CapitalFlowIntegrityStatus = PASS.
+- SafetyOrderSend = 0, BrokerModifySent = 0, RuntimeSLChanged = 0, InvariantBreaches = 0.
+
+No trading logic changes were introduced.

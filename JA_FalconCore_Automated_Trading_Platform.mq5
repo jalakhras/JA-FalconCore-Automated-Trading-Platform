@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.55.7d - Daily Loss Input Comments Only       |
+//|                     Version: v0.55.10c - Summary Final Date Tag Fix       |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.557"
+#property version   "1.55103"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.55.7d"
-#define EA_BUILD_TAG   "DailyLossInputCommentsOnly"
+#define EA_VERSION_TAG "v0.55.10c"
+#define EA_BUILD_TAG   "SummaryFinalDateTagFix"
 
 #define FALCON_MTF_COUNT       6
 
@@ -1398,6 +1398,19 @@ enum ENUM_FALCON_REPORT_PROFILE
 // ==================================================================
 
 
+
+// ==================================================================
+// Tier/Emergency Event Files - v0.55.10a
+// Official Capital-Aware event logs. Reporting-only. Creates
+// TierTransitions.csv and EmergencyTriggers.csv with small event-only
+// schemas. No entry, exit, lot, emergency, or tier decision changes.
+// ==================================================================
+#define FALCON_EVENT_FILES_STATUS              "TIER_EMERGENCY_EVENT_FILES"
+#define FALCON_EVENT_FILES_DECISION            "REPORTING_ONLY_EVENT_LOGS_NO_TRADING_LOGIC_CHANGE"
+#define FALCON_EVENT_FILES_RUNTIME_ENFORCED    false
+#define FALCON_EVENT_FILES_SCOPE               "TIER_TRANSITIONS_CSV;EMERGENCY_TRIGGERS_CSV;EVENT_ONLY;NO_PER_TRADE_BLOAT"
+#define FALCON_EVENT_FILES_ORDER_SEND_POLICY   "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
+
 // ==================================================================
 // Capital Flow Clean Lock - v0.55.7
 // The temporary simulation scaffold was removed after validation.
@@ -2151,6 +2164,29 @@ double FalconSafeAverageDouble(const double total, const int count)
    return (total / (double)count);
 }
 
+// ==================================================================
+// Weekly Stability Score Foundation - v0.55.9a
+// Summary-only measurement. It does not change entry, exit, lot sizing,
+// emergency, tier, protection, runner, or any Paper trade outcome.
+// ==================================================================
+int FalconWeeklyStabilityWeekKey(const datetime t)
+{
+   if(t <= 0)
+      return 0;
+   MqlDateTime dt;
+   TimeToStruct(t, dt);
+   int week_index = (dt.day_of_year / 7) + 1;
+   return dt.year * 100 + week_index;
+}
+
+double FalconClampDouble(const double value, const double min_value, const double max_value)
+{
+   if(value < min_value) return min_value;
+   if(value > max_value) return max_value;
+   return value;
+}
+
+
 double FalconSafeAverageLongAsDouble(const long total, const int count)
 {
    if(count <= 0)
@@ -2845,6 +2881,15 @@ struct FalconReportTotals
    int    capital_flow_unknown_events;
    int    capital_flow_integrity_breaches;
    double capital_flow_external_net_usd;
+
+   // v0.55.9: Weekly Stability Score Foundation summary-only counters.
+   int    weekly_stability_evaluated_trades;
+   int    weekly_stability_weeks;
+   int    weekly_stability_positive_weeks;
+   int    weekly_stability_negative_weeks;
+   double weekly_stability_best_week_usd;
+   double weekly_stability_worst_week_usd;
+   double weekly_stability_score;
 
    double win_rate;
    double loss_rate;
@@ -4350,6 +4395,30 @@ string FalconEffectiveReportToDateTag()
    return FalconSanitizeFileTag(ReportToDateTag);
 }
 
+string FalconSummaryFinalReportToDateTag()
+{
+   // v0.55.10c: Summary rows must show the final observed ToDateTag, never AUTO_RUNNING.
+   // During OnDeinit the Summary can be written before file finalization/rename, so we derive
+   // the displayed value directly from the last observed tester/live time when auto-detect is used.
+   if(AutoDetectReportPeriodTags && FalconIsAutoPeriodTag(ReportToDateTag))
+   {
+      datetime final_time = g_report_period_last_time;
+      if(final_time <= 0)
+         final_time = TimeCurrent();
+      if(final_time <= 0)
+         final_time = TimeLocal();
+      return FalconDateTagFromTime(final_time);
+   }
+   return FalconEffectiveReportToDateTag();
+}
+
+
+string FalconReportLotModeTag()
+{
+   // v0.55.10b: make report file names self-describing for FixedLot vs DynamicLot test runs.
+   return (UseFixedLot ? "FixedLot" : "DynamicLot");
+}
+
 string FalconBuildReportFileNameWithTags(const string report_name,
                                          const string from_tag,
                                          const string to_tag)
@@ -4363,8 +4432,10 @@ string FalconBuildReportFileNameWithTags(const string report_name,
    string safe_from = FalconSanitizeFileTag(from_tag);
    string safe_to   = FalconSanitizeFileTag(to_tag);
 
-   return StringFormat("JA_FalconCore_%s_%s_%s_From_%s_To_%s.csv",
-                       report_name, version_tag, mode_tag, safe_from, safe_to);
+   string lot_mode_tag = FalconSanitizeFileTag(FalconReportLotModeTag());
+
+   return StringFormat("JA_FalconCore_%s_%s_%s_%s_From_%s_To_%s.csv",
+                       report_name, version_tag, mode_tag, lot_mode_tag, safe_from, safe_to);
 }
 
 string FalconBuildReportFileName(const string report_name)
@@ -4448,11 +4519,13 @@ int FalconReportMoveFlags()
 
 int FalconReportNameCount()
 {
+   // v0.55.10a: include official event files in period finalization/rename.
+   // They are small, event-only files and must not remain with AUTO_RUNNING tags.
    if(ReportProfile == FALCON_REPORT_MINIMAL)
-      return 2;
+      return 4;
    if(ReportProfile == FALCON_REPORT_STANDARD)
-      return 3;
-   return 20;
+      return 5;
+   return 22;
 }
 
 string FalconReportNameByIndex(const int index)
@@ -4463,6 +4536,8 @@ string FalconReportNameByIndex(const int index)
       {
          case 0: return "TradeLifecycle";
          case 1: return "Summary";
+         case 2: return "TierTransitions";
+         case 3: return "EmergencyTriggers";
       }
       return "UnknownReport";
    }
@@ -4474,6 +4549,8 @@ string FalconReportNameByIndex(const int index)
          case 0: return "TradeLifecycle";
          case 1: return "Summary";
          case 2: return "StrategyRegistryDiagnostics";
+         case 3: return "TierTransitions";
+         case 4: return "EmergencyTriggers";
       }
       return "UnknownReport";
    }
@@ -4500,6 +4577,8 @@ string FalconReportNameByIndex(const int index)
       case 17: return "RuntimeReportVerification";
       case 18: return "FvgMicroRuntimeSmokeTest";
       case 19: return "FvgMicroRuntimeReportAudit";
+      case 20: return "TierTransitions";
+      case 21: return "EmergencyTriggers";
    }
    return "UnknownReport";
 }
@@ -7661,6 +7740,8 @@ private:
    string              m_fvg_micro_smoke_test_file;
    string              m_fvg_micro_runtime_report_audit_file;
    string              m_report_creation_guarantee_file;
+   string              m_tier_transitions_file;
+   string              m_emergency_triggers_file;
    FalconSymbolContext m_symbol_context;
    FalconReportTotals  m_totals;
 
@@ -7677,6 +7758,13 @@ private:
    // v0.55.3b: Dynamic lot sizing safety ramp state.
    bool                m_dlm_previous_active_lot_ready;
    double              m_dlm_previous_active_lot;
+
+
+   // v0.55.9: Weekly Stability Score summary-only state.
+   int                 m_wss_week_keys[16];
+   int                 m_wss_week_trades[16];
+   int                 m_wss_week_wins[16];
+   double              m_wss_week_net_usd[16];
 
    // v0.22.2 Lock cleanup: multi-profile summary arrays removed from active report surface.
 
@@ -7711,12 +7799,16 @@ public:
       m_fvg_micro_smoke_test_file = FalconBuildReportFileName("FvgMicroRuntimeSmokeTest");
       m_fvg_micro_runtime_report_audit_file = FalconBuildReportFileName("FvgMicroRuntimeReportAudit");
       m_report_creation_guarantee_file = FalconBuildReportFileName("ReportCreationGuarantee");
+      m_tier_transitions_file = FalconBuildReportFileName("TierTransitions");
+      m_emergency_triggers_file = FalconBuildReportFileName("EmergencyTriggers");
       ResetTotals();
 
       if(EnableMainReport)
       {
          WriteTradeHeader();
          WriteSummaryHeader();
+         WriteTierTransitionsHeader();
+         WriteEmergencyTriggersHeader();
       }
 
       if(ForceCreateReportFilesOnInit)
@@ -7725,6 +7817,216 @@ public:
       m_initialized = true;
       CFalconLogger::Info(StringFormat("ReportWriter initialized. TradeReport=%s | SummaryReport=%s", m_trade_report_file, m_summary_report_file));
       return true;
+   }
+
+
+   void WriteTierTransitionsHeader()
+   {
+      int handle = FileOpen(m_tier_transitions_file, FalconReportWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not create TierTransitions event file: %s", m_tier_transitions_file));
+         return;
+      }
+
+      FileWriteString(handle,
+                      "Timestamp,FromTier,ToTier,Direction,Reason,Balance,TradesInPreviousTier,WinRate,NetR\r\n");
+      FileClose(handle);
+   }
+
+   void WriteEmergencyTriggersHeader()
+   {
+      int handle = FileOpen(m_emergency_triggers_file, FalconReportWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not create EmergencyTriggers event file: %s", m_emergency_triggers_file));
+         return;
+      }
+
+      FileWriteString(handle,
+                      "Timestamp,LayerTriggered,TierAtTrigger,Balance,ConsecutiveLossCount,DailyR,DrawdownPct,BlockedEntries,ResolvedAt,AutoResolved\r\n");
+      FileClose(handle);
+   }
+
+   void AppendEmergencyTriggerEvent(const FalconTradeLifecycleRecord &record)
+   {
+      if(!EnableMainReport)
+         return;
+      if(record.falcon_emergency_status != "TRIGGERED")
+         return;
+
+      int handle = FileOpen(m_emergency_triggers_file, FalconReportReadWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         WriteEmergencyTriggersHeader();
+         handle = FileOpen(m_emergency_triggers_file, FalconReportReadWriteCsvFlags(), ',');
+      }
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not append EmergencyTriggers event row: %s", m_emergency_triggers_file));
+         return;
+      }
+      FileSeek(handle, 0, SEEK_END);
+
+      string layer_name = "LAYER_" + IntegerToString(record.falcon_emergency_triggered_layer);
+      if(record.falcon_emergency_reason != "")
+         layer_name = record.falcon_emergency_reason;
+
+      string row = "";
+      row += FalconCsvSafe(FalconTimeToString(record.exit_time > 0 ? record.exit_time : record.entry_time)) + ",";
+      row += FalconCsvSafe(layer_name) + ",";
+      row += FalconCsvSafe(record.falcon_tier_at_entry) + ",";
+      row += DoubleToString(record.falcon_dynamic_risk_capital_after_trade, 4) + ",";
+      row += IntegerToString(record.falcon_layer1_consecutive_losses) + ",";
+      row += DoubleToString(record.falcon_layer2_daily_r, 4) + ",";
+      row += DoubleToString(record.falcon_layer3_drawdown_pct, 4) + ",";
+      row += IntegerToString(m_totals.paper_emergency_blocked_entries) + ",";
+      row += FalconCsvSafe("PENDING_NEXT_DAY_OR_PEAK_RESET") + ",";
+      row += FalconCsvSafe("NO");
+
+      FileWriteString(handle, row + "\r\n");
+      FileClose(handle);
+   }
+
+   void AppendTierTransitionEvent(const datetime event_time,
+                                  const string from_tier,
+                                  const string to_tier,
+                                  const string direction,
+                                  const string reason,
+                                  const double balance,
+                                  const int trades_in_previous_tier,
+                                  const double win_rate,
+                                  const double net_r)
+   {
+      if(!EnableMainReport)
+         return;
+
+      int handle = FileOpen(m_tier_transitions_file, FalconReportReadWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         WriteTierTransitionsHeader();
+         handle = FileOpen(m_tier_transitions_file, FalconReportReadWriteCsvFlags(), ',');
+      }
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not append TierTransitions event row: %s", m_tier_transitions_file));
+         return;
+      }
+      FileSeek(handle, 0, SEEK_END);
+
+      string row = "";
+      row += FalconCsvSafe(FalconTimeToString(event_time)) + ",";
+      row += FalconCsvSafe(from_tier) + ",";
+      row += FalconCsvSafe(to_tier) + ",";
+      row += FalconCsvSafe(direction) + ",";
+      row += FalconCsvSafe(reason) + ",";
+      row += DoubleToString(balance, 4) + ",";
+      row += IntegerToString(trades_in_previous_tier) + ",";
+      row += DoubleToString(win_rate, 2) + ",";
+      row += DoubleToString(net_r, 4);
+
+      FileWriteString(handle, row + "\r\n");
+      FileClose(handle);
+   }
+
+   void ResetWeeklyStabilityState()
+   {
+      for(int i = 0; i < 16; i++)
+      {
+         m_wss_week_keys[i] = 0;
+         m_wss_week_trades[i] = 0;
+         m_wss_week_wins[i] = 0;
+         m_wss_week_net_usd[i] = 0.0;
+      }
+   }
+
+   int FindOrCreateWeeklyStabilitySlot(const datetime t)
+   {
+      int key = FalconWeeklyStabilityWeekKey(t);
+      if(key <= 0)
+         return -1;
+
+      for(int i = 0; i < 16; i++)
+      {
+         if(m_wss_week_keys[i] == key)
+            return i;
+      }
+
+      for(int j = 0; j < 16; j++)
+      {
+         if(m_wss_week_keys[j] == 0)
+         {
+            m_wss_week_keys[j] = key;
+            return j;
+         }
+      }
+      return -1;
+   }
+
+   void UpdateWeeklyStabilityFoundation(const FalconTradeLifecycleRecord &record)
+   {
+      datetime bucket_time = (record.exit_time > 0 ? record.exit_time : record.entry_time);
+      int slot = FindOrCreateWeeklyStabilitySlot(bucket_time);
+      if(slot < 0)
+         return;
+
+      m_wss_week_trades[slot]++;
+      if(record.falcon_emergency_after_net_usd > 0.0)
+         m_wss_week_wins[slot]++;
+      m_wss_week_net_usd[slot] += record.falcon_emergency_after_net_usd;
+      m_totals.weekly_stability_evaluated_trades++;
+   }
+
+   void FinalizeWeeklyStabilityFoundation()
+   {
+      int week_count = 0;
+      int positive_weeks = 0;
+      int negative_weeks = 0;
+      double best_week = -1.0e100;
+      double worst_week = 1.0e100;
+      int active_trade_weeks = 0;
+
+      for(int i = 0; i < 16; i++)
+      {
+         if(m_wss_week_keys[i] == 0 || m_wss_week_trades[i] <= 0)
+            continue;
+         week_count++;
+         active_trade_weeks++;
+         double week_net = m_wss_week_net_usd[i];
+         if(week_net > 0.0) positive_weeks++;
+         if(week_net < 0.0) negative_weeks++;
+         if(week_net > best_week) best_week = week_net;
+         if(week_net < worst_week) worst_week = week_net;
+      }
+
+      if(week_count <= 0)
+      {
+         m_totals.weekly_stability_weeks = 0;
+         m_totals.weekly_stability_positive_weeks = 0;
+         m_totals.weekly_stability_negative_weeks = 0;
+         m_totals.weekly_stability_best_week_usd = 0.0;
+         m_totals.weekly_stability_worst_week_usd = 0.0;
+         m_totals.weekly_stability_score = 0.0;
+         return;
+      }
+
+      m_totals.weekly_stability_weeks = week_count;
+      m_totals.weekly_stability_positive_weeks = positive_weeks;
+      m_totals.weekly_stability_negative_weeks = negative_weeks;
+      m_totals.weekly_stability_best_week_usd = best_week;
+      m_totals.weekly_stability_worst_week_usd = worst_week;
+
+      double consistency_score = 40.0 * ((double)positive_weeks / (double)week_count);
+      double drawdown_score = 30.0;
+      if(worst_week < 0.0)
+      {
+         double denom = MathMax(MathAbs(m_totals.final_working_net_usd), 1.0);
+         double penalty = FalconClampDouble((MathAbs(worst_week) / denom) * 30.0, 0.0, 30.0);
+         drawdown_score = 30.0 - penalty;
+      }
+      double activity_score = FalconClampDouble(((double)m_totals.total_trades / (double)week_count) / 30.0 * 15.0, 0.0, 15.0);
+      double lot_control_score = (m_totals.dynamic_lotsizing_safety_active_lot_max <= 1.0 ? 15.0 : 7.5);
+      m_totals.weekly_stability_score = FalconClampDouble(consistency_score + drawdown_score + activity_score + lot_control_score, 0.0, 100.0);
    }
 
    void WriteReportCreationGuaranteeFile()
@@ -8852,6 +9154,28 @@ public:
       AppendTradeRecord(record);
    }
 
+   int CountPhysicalTradeLifecycleDataRows()
+   {
+      // v0.55.10a: count actual rows written to TradeLifecycle.csv.
+      // This catches physical file truncation/overwrite even if internal totals look correct.
+      int handle = FileOpen(m_trade_report_file, FILE_READ | FILE_TXT | FILE_ANSI | (UseCommonFilesFolderForReports ? FILE_COMMON : 0));
+      if(handle == INVALID_HANDLE)
+         return -1;
+
+      int line_count = 0;
+      while(!FileIsEnding(handle))
+      {
+         string line = FileReadString(handle);
+         if(StringLen(line) > 0)
+            line_count++;
+      }
+      FileClose(handle);
+
+      if(line_count <= 0)
+         return 0;
+      return line_count - 1; // subtract header
+   }
+
    void WriteFinalSummary()
    {
       if(!m_initialized || !EnableMainReport)
@@ -8867,6 +9191,8 @@ public:
          m_totals.win_rate  = 0.0;
          m_totals.loss_rate = 0.0;
       }
+
+      FinalizeWeeklyStabilityFoundation();
 
       double buy_win_rate = 0.0;
       if(m_totals.buy_trades > 0)
@@ -8887,6 +9213,8 @@ public:
       double raw_net_diff = raw_net_from_profit_loss - m_totals.net_usd;
       double visible_raw_net_diff = m_totals.visible_raw_net_usd_4dp - m_totals.net_usd;
       double visible_final_net_diff = m_totals.visible_final_working_net_usd_4dp - m_totals.final_working_net_usd;
+      int physical_trade_rows = CountPhysicalTradeLifecycleDataRows();
+      string physical_trade_rows_status = (physical_trade_rows == m_totals.total_trades ? "PASS" : "FAIL");
       int integrity_breaches = invariant_breaches;
       if(MathAbs(final_net_diff) > 0.05)
          integrity_breaches++;
@@ -8900,12 +9228,20 @@ public:
          integrity_breaches++;
       if(m_totals.total_trades != m_totals.capital_flow_evaluated_trades)
          integrity_breaches++;
+      if(m_totals.total_trades != m_totals.weekly_stability_evaluated_trades)
+         integrity_breaches++;
       if(m_totals.capital_flow_integrity_breaches > 0)
+         integrity_breaches++;
+      if(physical_trade_rows_status != "PASS")
          integrity_breaches++;
 
       string capital_flow_integrity_status = (m_totals.capital_flow_integrity_breaches == 0 && m_totals.total_trades == m_totals.capital_flow_evaluated_trades ? "PASS" : "FAIL");
+      string weekly_stability_status = (m_totals.total_trades == m_totals.weekly_stability_evaluated_trades ? "PASS" : "FAIL");
       string report_integrity_status = (integrity_breaches == 0 ? "PASS" : "FAIL");
-      string row_count_status = (m_totals.total_trades == m_totals.dynamic_lotsizing_evaluated_trades && m_totals.total_trades == m_totals.capital_flow_evaluated_trades ? "PASS" : "FAIL");
+      string row_count_status = (m_totals.total_trades == m_totals.dynamic_lotsizing_evaluated_trades &&
+                                 m_totals.total_trades == m_totals.capital_flow_evaluated_trades &&
+                                 m_totals.total_trades == m_totals.weekly_stability_evaluated_trades &&
+                                 physical_trade_rows_status == "PASS" ? "PASS" : "FAIL");
 
       int handle = FileOpen(m_summary_report_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
@@ -8922,7 +9258,7 @@ public:
       summary_row += FalconCsvSafe(FalconTimeToString(TimeCurrent())) + ",";
       summary_row += FalconCsvSafe(FalconReportProfileToString()) + ",";
       summary_row += FalconCsvSafe(FalconEffectiveReportFromDateTag()) + ",";
-      summary_row += FalconCsvSafe(FalconEffectiveReportToDateTag()) + ",";
+      summary_row += FalconCsvSafe(FalconSummaryFinalReportToDateTag()) + ",";
       summary_row += FalconCsvSafe(FalconBoolToYesNo(UseFixedLot)) + ",";
       summary_row += DoubleToString(FixedLotSize, 2) + ",";
       summary_row += IntegerToString(m_totals.total_trades) + ",";
@@ -8946,6 +9282,14 @@ public:
       summary_row += IntegerToString(m_totals.dynamic_lotsizing_dynamic_mode_trades) + ",";
       summary_row += DoubleToString(dynamic_active_lot_avg, 2) + ",";
       summary_row += DoubleToString(m_totals.dynamic_lotsizing_safety_active_lot_max, 2) + ",";
+      summary_row += IntegerToString(m_totals.weekly_stability_evaluated_trades) + ",";
+      summary_row += IntegerToString(m_totals.weekly_stability_weeks) + ",";
+      summary_row += IntegerToString(m_totals.weekly_stability_positive_weeks) + ",";
+      summary_row += IntegerToString(m_totals.weekly_stability_negative_weeks) + ",";
+      summary_row += DoubleToString(m_totals.weekly_stability_best_week_usd, 2) + ",";
+      summary_row += DoubleToString(m_totals.weekly_stability_worst_week_usd, 2) + ",";
+      summary_row += DoubleToString(m_totals.weekly_stability_score, 2) + ",";
+      summary_row += FalconCsvSafe(weekly_stability_status) + ",";
       summary_row += IntegerToString(m_totals.capital_flow_evaluated_trades) + ",";
       summary_row += IntegerToString(m_totals.capital_flow_trade_profit_events) + ",";
       summary_row += IntegerToString(m_totals.capital_flow_trade_loss_events) + ",";
@@ -8958,6 +9302,8 @@ public:
       summary_row += IntegerToString(m_totals.paper_emergency_blocked_entries) + ",";
       summary_row += "0,0,0,";
       summary_row += IntegerToString(integrity_breaches) + ",";
+      summary_row += IntegerToString(physical_trade_rows) + ",";
+      summary_row += FalconCsvSafe(physical_trade_rows_status) + ",";
       summary_row += DoubleToString(visible_raw_net_diff, 4) + ",";
       summary_row += DoubleToString(visible_final_net_diff, 4) + ",";
       summary_row += FalconCsvSafe(report_integrity_status) + ",";
@@ -9891,6 +10237,7 @@ private:
       {
          m_tle_emergency_active = true;
          m_tle_emergency_reason = record.falcon_emergency_reason;
+         AppendEmergencyTriggerEvent(record);
       }
    }
 
@@ -9975,7 +10322,9 @@ private:
 
    void ResetTotals()
    {
-      m_totals.total_trades                = 0;
+      
+      ResetWeeklyStabilityState();
+m_totals.total_trades                = 0;
       m_totals.win_trades                  = 0;
       m_totals.loss_trades                 = 0;
       m_totals.breakeven_trades            = 0;
@@ -10004,6 +10353,13 @@ private:
       m_totals.capital_flow_unknown_events = 0;
       m_totals.capital_flow_integrity_breaches = 0;
       m_totals.capital_flow_external_net_usd = 0.0;
+      m_totals.weekly_stability_evaluated_trades = 0;
+      m_totals.weekly_stability_weeks = 0;
+      m_totals.weekly_stability_positive_weeks = 0;
+      m_totals.weekly_stability_negative_weeks = 0;
+      m_totals.weekly_stability_best_week_usd = 0.0;
+      m_totals.weekly_stability_worst_week_usd = 0.0;
+      m_totals.weekly_stability_score = 0.0;
       m_totals.win_rate                    = 0.0;
       m_totals.loss_rate                   = 0.0;
 
@@ -10502,6 +10858,8 @@ private:
       if(record.falcon_dlm_active_risk_pct > m_totals.dynamic_lotsizing_active_risk_pct_max)
          m_totals.dynamic_lotsizing_active_risk_pct_max = record.falcon_dlm_active_risk_pct;
 
+      UpdateWeeklyStabilityFoundation(record);
+
       m_totals.paper_emergency_evaluated_trades++;
       m_totals.paper_emergency_before_net_points += record.falcon_emergency_before_net_points;
       m_totals.paper_emergency_before_net_usd += record.falcon_emergency_before_net_usd;
@@ -10852,10 +11210,11 @@ private:
       summary_header += "BuyTrades,BuyWinRate,SellTrades,SellWinRate,";
       summary_header += "ProtectionActivatedTrades,RunnerActivatedTrades,";
       summary_header += "DynamicLotEvaluatedTrades,DynamicLotFixedModeTrades,DynamicLotDynamicModeTrades,DynamicLotActiveLotAvg,DynamicLotActiveLotMax,";
-      summary_header += "";
+      summary_header += "WeeklyStabilityEvaluatedTrades,WeeklyStabilityWeeks,WeeklyStabilityPositiveWeeks,WeeklyStabilityNegativeWeeks,WeeklyStabilityBestWeekUSD,WeeklyStabilityWorstWeekUSD,WeeklyStabilityScore,WeeklyStabilityStatus,";
       summary_header += "CapitalFlowEvaluatedTrades,CapitalTradeProfitEvents,CapitalTradeLossEvents,CapitalInjectionEvents,CapitalWithdrawalEvents,ExternalCapitalNetUSD,CapitalFlowIntegrityStatus,";
       summary_header += "EmergencyTriggeredTrades,EmergencyBlockedEntries,";
       summary_header += "SafetyOrderSend,BrokerModifySent,RuntimeSLChanged,InvariantBreaches,";
+      summary_header += "TradeLifecyclePhysicalRows,TradeLifecyclePhysicalRowStatus,";
       summary_header += "VisibleRawNetUSDDiff,VisibleFinalNetUSDDiff,ReportIntegrityStatus,TradeRowsVsSummaryStatus,FinalNetUSDDiff,RawNetUSDDiff";
       return summary_header;
    }
@@ -10953,7 +11312,7 @@ public:
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.55.7. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement, SL/TP, Smart TM, Bar-Path, Decision Tree, and Timing diagnostics are reporting-only beyond the controlled Shadow guard.");
+      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.55.10a. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement, SL/TP, Smart TM, Bar-Path, Decision Tree, and Timing diagnostics are reporting-only beyond the controlled Shadow guard.");
    }
 };
 

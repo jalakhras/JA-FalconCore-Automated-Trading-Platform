@@ -1,0 +1,17 @@
+JA FalconCore v0.55.10c Static Validation
+Version: v0.55.10c — Summary Final Date Tag Fix
+Scope: Reporting date-tag fix only; no trading logic change.
+
+OrderSend( = 0
+OrderSendAsync( = 0
+PositionModify( = 0
+trade.Buy( = 0
+trade.Sell( = 0
+Brace balance = 716 / 716 => PASS
+Parentheses balance = 3203 / 3203 => PASS
+FalconSummaryFinalReportToDateTag present = YES
+Summary row uses final ToDateTag helper = YES
+FixedLot/DynamicLot filename tag helper present = YES
+TierTransitions refs = 10
+EmergencyTriggers refs = 10
+Expected regression: no change in FinalWorkingNetUSD vs v0.55.10b/v0.55.9a baselines.
