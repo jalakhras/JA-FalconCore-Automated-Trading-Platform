@@ -1,0 +1,21 @@
+JA FalconCore v0.55.7d Static Validation
+Build: DailyLossInputCommentsOnly
+Type: Input Comment Patch / No Trading Logic Change
+
+OrderSend occurrences: 0
+OrderSendAsync occurrences: 0
+PositionModify occurrences: 0
+CTrade Buy/Sell direct calls: 0
+Brace balance: 0
+Parentheses balance: 0
+TradeLifecycle columns: 30
+Summary columns: 50
+AutoPeriodManifest columns: -1
+Escalation refs: 0
+CapitalFlowSimulation refs: 0
+EnableTierScenarioValidation refs: 0
+Daily loss comments present: True
+
+Expected behavior: identical to v0.55.7c LOCKED. Only comments and version tags changed.
+Expected fixed baselines: April Full 1102.45, May Fresh 759.45.
+Expected dynamic baselines: April Full 4524.85, May Fresh 1103.55.

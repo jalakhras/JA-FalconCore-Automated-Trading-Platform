@@ -1,0 +1,45 @@
+JA FalconCore v0.55.7d — Daily Loss Input Comments Only
+
+Type:
+- Input documentation patch
+- No Trading Logic Change
+- No Reporting Logic Change
+
+Baseline source:
+- v0.55.7c — Tier Scenario Clean Report Lock = LOCKED / ACCEPTED
+
+Purpose:
+Add clear user-facing comments beside the daily loss limit inputs, after rolling back and rejecting the v0.55.8 Escalation series.
+
+Inputs clarified:
+- UseDailyLossLimit
+- UseFixedDailyLossAmount
+- FixedDailyLossAmount
+- DailyLossPercentOfCapital
+
+No behavior changes:
+- No entry change
+- No exit change
+- No SL/TP change
+- No Protection change
+- No Runner change
+- No Emergency change
+- No Dynamic LotSizing change
+- No Capital Flow change
+- No OrderSend
+- No BrokerModify
+- No RuntimeSLChanged
+
+Important rollback decision:
+- v0.55.8 / v0.55.8a / v0.55.8b / v0.55.8c are rejected and not baselines.
+- v0.55.7c remains the official locked baseline.
+- v0.55.7d is only a comment/documentation patch on top of v0.55.7c.
+
+Required regression:
+Fixed Mode:
+- April Full expected FinalWorkingNetUSD = 1102.45
+- May Fresh expected FinalWorkingNetUSD = 759.45
+
+Dynamic Mode:
+- April Full expected FinalWorkingNetUSD = 4524.85
+- May Fresh expected FinalWorkingNetUSD = 1103.55
