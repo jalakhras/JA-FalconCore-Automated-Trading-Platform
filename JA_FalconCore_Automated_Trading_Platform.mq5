@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.55.7c - Tier Scenario Clean Report Lock       |
+//|                     Version: v0.55.7d - Daily Loss Input Comments Only       |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
 #property version   "1.557"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.55.7c"
-#define EA_BUILD_TAG   "TierScenarioCleanReportLock"
+#define EA_VERSION_TAG "v0.55.7d"
+#define EA_BUILD_TAG   "DailyLossInputCommentsOnly"
 
 #define FALCON_MTF_COUNT       6
 
@@ -1413,10 +1413,10 @@ input bool   UseFixedLot                     = true;  // simple user mode: fixed
 input double FixedLotSize                    = 0.01;
 input bool   UseAutoCapitalDetection         = true;  // true = use account balance later; false = ManualCapital.
 input double ManualCapital                   = 10000.0;
-input bool   UseDailyLossLimit               = true;
-input bool   UseFixedDailyLossAmount         = false;
-input double FixedDailyLossAmount            = 100.0;
-input double DailyLossPercentOfCapital       = 3.0;
+input bool   UseDailyLossLimit               = true;  // Daily safety ON/OFF: enables daily loss protection and risk reference.
+input bool   UseFixedDailyLossAmount         = false; // true = use FixedDailyLossAmount USD; false = use DailyLossPercentOfCapital.
+input double FixedDailyLossAmount            = 100.0; // Fixed daily loss limit in USD when UseFixedDailyLossAmount=true.
+input double DailyLossPercentOfCapital       = 3.0;   // Daily loss limit as percent of capital when UseFixedDailyLossAmount=false.
 
 // ==================================================================
 // Capital Tier Foundation - v0.53.0 (LOCKED)
