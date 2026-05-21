@@ -8,8 +8,8 @@
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.57.0"
-#define EA_BUILD_TAG   "LockParityExecutabilityDecomposer"
+#define EA_VERSION_TAG "v0.57.1"
+#define EA_BUILD_TAG   "LockParityProfileAndRunnerExitProbe"
 
 #define FALCON_MTF_COUNT       6
 
@@ -1507,9 +1507,10 @@ int g_fvg_qguard_runtime_rejected_after_pass        = 0;
 // ==================================================================
 enum ENUM_FALCON_REPORT_PROFILE
 {
-   FALCON_REPORT_MINIMAL  = 0, // TradeLifecycle + Summary only
-   FALCON_REPORT_STANDARD = 1, // TradeLifecycle + Summary + StrategyRegistry + PeriodManifest
-   FALCON_REPORT_DEBUG    = 2  // All diagnostic reports
+   FALCON_REPORT_MINIMAL    = 0, // TradeLifecycle + Summary only
+   FALCON_REPORT_STANDARD   = 1, // TradeLifecycle + Summary + StrategyRegistry + PeriodManifest
+   FALCON_REPORT_DEBUG      = 2, // All diagnostic reports
+   FALCON_REPORT_LOCKPARITY = 3  // TradeLifecycle + Summary + LockParity Decomp + Rollup only
 };
 
 
@@ -1839,7 +1840,7 @@ input bool EnableStrategy_GoldenLiquidity5MEntry     = false; // استراتي�
 // ==================================================================
 input group "04 - Reporting / التقارير";
 input bool                       EnableMainReport              = true;
-input ENUM_FALCON_REPORT_PROFILE ReportProfile                 = FALCON_REPORT_MINIMAL;
+input ENUM_FALCON_REPORT_PROFILE ReportProfile                 = FALCON_REPORT_LOCKPARITY;
 input string                     ReportModeTag                 = "EmergencyServerStopEnvelopeLockParityProbe"; // v0.56.9b: safety restoration after v0.56.9 naked-order probe; no broker order may be sent without server SL/TP; filenames include ExecutionON/ExecutionOFF plus lot mode and period tags.
 input bool                       UseCommonFilesFolderForReports = true;
 input bool                       EnableVerboseExpertsLog       = true;
@@ -1872,12 +1873,20 @@ bool FalconReportProfileIsDebug()
    return (ReportProfile == FALCON_REPORT_DEBUG);
 }
 
+// v0.57.1: LOCKPARITY report profile helper.
+bool FalconReportProfileIsLockParity()
+{
+   return (ReportProfile == FALCON_REPORT_LOCKPARITY);
+}
+
 string FalconReportProfileToString()
 {
    if(ReportProfile == FALCON_REPORT_MINIMAL)
       return "MINIMAL";
    if(ReportProfile == FALCON_REPORT_DEBUG)
       return "DEBUG";
+   if(ReportProfile == FALCON_REPORT_LOCKPARITY)
+      return "LOCKPARITY";
    return "STANDARD";
 }
 
@@ -3528,6 +3537,9 @@ struct FalconReportTotals
    double lock_parity_non_executable_adjustment_usd;
    double lock_parity_protection_executable_usd;
    double lock_parity_runner_pending_usd;
+   // v0.57.1: Runner Exit Price Probe buckets.
+   double lock_parity_runner_executable_usd;
+   double lock_parity_runner_non_executable_usd;
    double lock_parity_accounting_only_usd;
 };
 
@@ -5013,6 +5025,7 @@ void FalconWriteAutoPeriodManifest(const string trigger,
                                    const int missing_count,
                                    const int failed_count)
 {
+   if(FalconReportProfileIsLockParity()) return;
    string manifest_name = FalconBuildReportFileNameWithTags("AutoPeriodManifest",
                                                             FalconEffectiveReportFromDateTag(),
                                                             FalconEffectiveReportToDateTag());
@@ -8256,14 +8269,17 @@ public:
       {
          WriteTradeHeader();
          WriteSummaryHeader();
-         WriteTierTransitionsHeader();
-         WriteEmergencyTriggersHeader();
-         WritePaperStateSnapshotHeader();
-         WriteBrokerExecutionLifecycleHeader();
-         WriteBrokerTradeManagementEventTimelineHeader();
-         WriteBrokerRebasedPaperComparisonHeader();
-         WriteBrokerPaperTradeReconciliationHeader();
-         WriteBrokerContractRealityAudit();
+         if(!FalconReportProfileIsLockParity())
+         {
+            WriteTierTransitionsHeader();
+            WriteEmergencyTriggersHeader();
+            WritePaperStateSnapshotHeader();
+            WriteBrokerExecutionLifecycleHeader();
+            WriteBrokerTradeManagementEventTimelineHeader();
+            WriteBrokerRebasedPaperComparisonHeader();
+            WriteBrokerPaperTradeReconciliationHeader();
+            WriteBrokerContractRealityAudit();
+         }
          // v0.57.0: Lock Parity Executability Decomposer header.
          WriteLockParityDecompositionHeader();
       }
@@ -8523,6 +8539,7 @@ public:
 
    void AppendBrokerRebasedPaperComparisonRecord(const FalconTradeLifecycleRecord &record)
    {
+      if(FalconReportProfileIsLockParity()) return;
       int handle = FileOpen(m_broker_rebased_paper_comparison_file, FalconReportReadWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -8597,6 +8614,7 @@ public:
 
    void AppendBrokerExecutionLifecycleAuditRecord(const FalconTradeLifecycleRecord &record)
    {
+      if(FalconReportProfileIsLockParity()) return;
       int handle = FileOpen(m_broker_execution_lifecycle_file, FalconReportReadWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -8839,6 +8857,7 @@ public:
                                                   const string reconciliation_status,
                                                   const string reconciliation_reason)
    {
+      if(FalconReportProfileIsLockParity()) return;
       int handle = FileOpen(m_broker_paper_reconciliation_file, FalconReportReadWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -9096,6 +9115,7 @@ public:
                                                   const string reconciliation_status,
                                                   const string reconciliation_reason)
    {
+      if(FalconReportProfileIsLockParity()) return;
       // v0.56.9: A broker-only trade is a LOCK-parity violation until proven otherwise.
       // These rows make the reconciliation complete even when a broker entry/exit has
       // no matching Paper/TradeLifecycle record. Do not use this as permission to keep
@@ -9263,6 +9283,7 @@ public:
 
    void AppendBrokerTradeManagementTimelineForRecord(const FalconTradeLifecycleRecord &record)
    {
+      if(FalconReportProfileIsLockParity()) return;
       FalconRunnerBarPathStats barpath_stats;
       bool path_ok = FalconBuildRunnerBarPathStats(record, barpath_stats);
       bool tp1_touched = (path_ok && barpath_stats.tp1_touched);
@@ -9516,6 +9537,7 @@ public:
 
    void AppendPaperStateSnapshotRecord(const FalconTradeLifecycleRecord &record)
    {
+      if(FalconReportProfileIsLockParity()) return;
       m_totals.paper_state_snapshot_evaluated_trades++;
 
       datetime session_boundary_close_time = 0;
@@ -9576,6 +9598,7 @@ public:
 
    void AppendEmergencyTriggerEvent(const FalconTradeLifecycleRecord &record)
    {
+      if(FalconReportProfileIsLockParity()) return;
       if(!EnableMainReport)
          return;
       if(record.falcon_emergency_status != "TRIGGERED")
@@ -9624,6 +9647,7 @@ public:
                                   const double win_rate,
                                   const double net_r)
    {
+      if(FalconReportProfileIsLockParity()) return;
       if(!EnableMainReport)
          return;
 
@@ -11518,6 +11542,8 @@ public:
          "L1_GuardNetUSD,L1_GuardDeltaUSD,L1_GuardClass,"
          "L2_ProtectionNetUSD,L2_ProtectionDeltaUSD,L2_ProtectionClass,L2_ProtectionLevel,"
          "L3_RunnerNetUSD,L3_RunnerDeltaUSD,L3_RunnerClass,L3_RunnerAdditionalPoints,"
+         "L3_RunnerCapturedPoints,L3_RunnerExitPriceDerived,L3_RunnerMaxFavorablePoints,"
+         "L3_RunnerExitWithinPath,L3_RunnerVsActualPoints,"
          "L4_LossCapBeforeUSD,L4_LossCapAfterUSD,L4_LossCapDeltaUSD,L4_LossCapClass,L4_LossCapBlocked,"
          "L5_MarketCloseBeforeUSD,L5_MarketCloseAfterUSD,L5_MarketCloseDeltaUSD,L5_MarketCloseClass,"
          "L6_EmergencyBeforeUSD,L6_EmergencyAfterUSD,L6_EmergencyDeltaUSD,L6_EmergencyClass,L6_EmergencyLayer,"
@@ -11531,18 +11557,89 @@ public:
 
    bool LockParityIsExecutableClass(const string class_tag)
    {
-      return (StringFind(class_tag, "EXECUTABLE_") == 0);
+      if(StringFind(class_tag, "EXECUTABLE_") == 0)
+         return true;
+      // v0.57.1: Runner Exit Price Probe — within-path runner exits are executable.
+      if(class_tag == "RUNNER_EXIT_PRICE_WITHIN_MARKET_PATH")
+         return true;
+      return false;
    }
 
    bool LockParityIsNonExecutableClass(const string class_tag)
    {
       if(class_tag == "NON_EXECUTABLE_ACCOUNTING")
          return true;
+      // v0.57.0 legacy tag retained for backward compatibility (no longer produced).
       if(class_tag == "RUNNER_EXTENSION_NEEDS_PRICE_PROOF")
+         return true;
+      // v0.57.1: Runner Exit Price Probe — outside-path or insufficient data is non-executable.
+      if(class_tag == "RUNNER_EXIT_PRICE_OUTSIDE_MARKET_PATH")
+         return true;
+      if(class_tag == "RUNNER_PATH_DATA_INSUFFICIENT")
          return true;
       if(class_tag == "UNATTRIBUTED_NEEDS_REVIEW")
          return true;
       return false;
+   }
+
+   // v0.57.1: Runner Exit Price Probe.
+   // Derives the runner exit price from captured points (already in record),
+   // then tests whether that derived price lies inside the path the market
+   // actually traversed (tp2 .. max-favorable). Read-only by construction;
+   // does NOT modify any trade value or Apply* layer.
+   void FalconRunnerExitPriceProbe(const FalconTradeLifecycleRecord &record,
+                                   double &captured_points_out,
+                                   double &runner_exit_price_out,
+                                   double &max_favorable_points_out,
+                                   bool   &within_path_out,
+                                   double &runner_vs_actual_points_out,
+                                   bool   &path_data_valid_out)
+   {
+      captured_points_out         = record.paper_runner_captured_points;
+      runner_exit_price_out       = 0.0;
+      max_favorable_points_out    = 0.0;
+      within_path_out             = false;
+      runner_vs_actual_points_out = 0.0;
+      path_data_valid_out         = false;
+
+      if(record.entry_price <= 0.0)
+         return;
+
+      if(record.direction == FALCON_DIRECTION_BUY)
+         runner_exit_price_out = record.entry_price + captured_points_out;
+      else if(record.direction == FALCON_DIRECTION_SELL)
+         runner_exit_price_out = record.entry_price - captured_points_out;
+      else
+         return;
+
+      runner_vs_actual_points_out = FalconRawIndexPoints(record.direction,
+                                                        runner_exit_price_out,
+                                                        record.exit_price);
+
+      double risk_points = FalconStructuralRiskPoints(record);
+      if(risk_points <= 0.0 || record.paper_runner_max_r <= 0.0)
+      {
+         path_data_valid_out = false;
+         return;
+      }
+      path_data_valid_out      = true;
+      max_favorable_points_out = record.paper_runner_max_r * risk_points;
+
+      double max_fav_price = 0.0;
+      if(record.direction == FALCON_DIRECTION_BUY)
+         max_fav_price = record.entry_price + max_favorable_points_out;
+      else
+         max_fav_price = record.entry_price - max_favorable_points_out;
+
+      if(record.tp2 <= 0.0)
+      {
+         within_path_out = false;
+         return;
+      }
+
+      double lo = MathMin(record.tp2, max_fav_price);
+      double hi = MathMax(record.tp2, max_fav_price);
+      within_path_out = (runner_exit_price_out >= lo && runner_exit_price_out <= hi);
    }
 
    bool LockParityProtectionLevelTouched(const FalconTradeLifecycleRecord &record)
@@ -11580,13 +11677,44 @@ public:
       return "NON_EXECUTABLE_ACCOUNTING";
    }
 
+   // v0.57.1: Runner classification driven by the Runner Exit Price Probe.
+   // Replaces RUNNER_EXTENSION_NEEDS_PRICE_PROOF with concrete executable /
+   // non-executable verdicts based on whether the derived runner exit price
+   // falls inside the market-touched path (tp2 .. max-favorable).
    string ClassifyLockParityRunner(const FalconTradeLifecycleRecord &record, const double delta_usd)
    {
-      if(record.paper_runner_activated && MathAbs(record.paper_runner_additional_points) > 0.0)
-         return "RUNNER_EXTENSION_NEEDS_PRICE_PROOF";
-      if(MathAbs(delta_usd) < FALCON_LOCK_PARITY_DELTA_EPS)
-         return "NO_ADJUSTMENT";
-      return "NON_EXECUTABLE_ACCOUNTING";
+      if(!record.paper_runner_activated)
+      {
+         if(MathAbs(delta_usd) < FALCON_LOCK_PARITY_DELTA_EPS)
+            return "NO_ADJUSTMENT";
+         return "RUNNER_NOT_ACTIVATED";
+      }
+      if(record.paper_runner_additional_points <= 0.0)
+      {
+         if(MathAbs(delta_usd) < FALCON_LOCK_PARITY_DELTA_EPS)
+            return "NO_ADJUSTMENT";
+         return "RUNNER_NO_ADDITIONAL_CAPTURE";
+      }
+
+      double captured_points = 0.0;
+      double runner_exit_price = 0.0;
+      double max_favorable_points = 0.0;
+      bool   within_path = false;
+      double runner_vs_actual_points = 0.0;
+      bool   path_data_valid = false;
+      FalconRunnerExitPriceProbe(record,
+                                 captured_points,
+                                 runner_exit_price,
+                                 max_favorable_points,
+                                 within_path,
+                                 runner_vs_actual_points,
+                                 path_data_valid);
+
+      if(!path_data_valid)
+         return "RUNNER_PATH_DATA_INSUFFICIENT";
+      if(within_path)
+         return "RUNNER_EXIT_PRICE_WITHIN_MARKET_PATH";
+      return "RUNNER_EXIT_PRICE_OUTSIDE_MARKET_PATH";
    }
 
    string ClassifyLockParityLossCap(const FalconTradeLifecycleRecord &record, const double delta_usd)
@@ -11718,6 +11846,26 @@ public:
       row += FalconCsvSafe(c_runner) + ",";
       row += DoubleToString(record.paper_runner_additional_points, 2) + ",";
 
+      // v0.57.1: Runner Exit Price Probe diagnostic columns.
+      double probe_captured_points = 0.0;
+      double probe_runner_exit_price = 0.0;
+      double probe_max_favorable_points = 0.0;
+      bool   probe_within_path = false;
+      double probe_runner_vs_actual_points = 0.0;
+      bool   probe_path_data_valid = false;
+      FalconRunnerExitPriceProbe(record,
+                                 probe_captured_points,
+                                 probe_runner_exit_price,
+                                 probe_max_favorable_points,
+                                 probe_within_path,
+                                 probe_runner_vs_actual_points,
+                                 probe_path_data_valid);
+      row += DoubleToString(probe_captured_points, 2) + ",";
+      row += DoubleToString(probe_runner_exit_price, m_symbol_context.digits) + ",";
+      row += DoubleToString(probe_max_favorable_points, 2) + ",";
+      row += FalconCsvSafe(probe_within_path ? "YES" : "NO") + ",";
+      row += DoubleToString(probe_runner_vs_actual_points, 2) + ",";
+
       row += DoubleToString(record.falcon_single_trade_loss_cap_before_net_usd, 4) + ",";
       row += DoubleToString(record.falcon_single_trade_loss_cap_after_net_usd, 4) + ",";
       row += DoubleToString(d_losscap, 4) + ",";
@@ -11811,8 +11959,14 @@ public:
       // Class-specific evidence buckets
       if(c_protection == "EXECUTABLE_PROTECTION_CLOSE")
          m_totals.lock_parity_protection_executable_usd += d_protection;
-      if(c_runner == "RUNNER_EXTENSION_NEEDS_PRICE_PROOF")
-         m_totals.lock_parity_runner_pending_usd += d_runner;
+      // v0.57.1: Runner Exit Price Probe — split runner deltas into exec / non-exec.
+      if(c_runner == "RUNNER_EXIT_PRICE_WITHIN_MARKET_PATH")
+         m_totals.lock_parity_runner_executable_usd += d_runner;
+      if(c_runner == "RUNNER_EXIT_PRICE_OUTSIDE_MARKET_PATH" ||
+         c_runner == "RUNNER_PATH_DATA_INSUFFICIENT")
+         m_totals.lock_parity_runner_non_executable_usd += d_runner;
+      // RunnerPendingUSD retained for backward compatibility; now mirrors RunnerNonExecutable.
+      m_totals.lock_parity_runner_pending_usd = m_totals.lock_parity_runner_non_executable_usd;
       if(c_guard == "NON_EXECUTABLE_ACCOUNTING")        m_totals.lock_parity_accounting_only_usd += d_guard;
       if(c_protection == "NON_EXECUTABLE_ACCOUNTING")   m_totals.lock_parity_accounting_only_usd += d_protection;
       if(c_runner == "NON_EXECUTABLE_ACCOUNTING")       m_totals.lock_parity_accounting_only_usd += d_runner;
@@ -11841,7 +11995,7 @@ public:
          "LOCK_NonExecutableAdjustmentUSD,"
          "LOCK_ExecutableTargetUSD,"
          "ExecutableSharePct,"
-         "ProtectionExecutableUSD,RunnerPendingUSD,AccountingOnlyUSD,"
+         "ProtectionExecutableUSD,RunnerExecutableUSD,RunnerNonExecutableUSD,RunnerPendingUSD,AccountingOnlyUSD,"
          "RollupResidualUSD,RollupStatus";
       FileWriteString(handle, header + "\r\n");
 
@@ -11870,6 +12024,8 @@ public:
       row += DoubleToString(executable_target, 4) + ",";
       row += DoubleToString(executable_share_pct, 4) + ",";
       row += DoubleToString(m_totals.lock_parity_protection_executable_usd, 4) + ",";
+      row += DoubleToString(m_totals.lock_parity_runner_executable_usd, 4) + ",";
+      row += DoubleToString(m_totals.lock_parity_runner_non_executable_usd, 4) + ",";
       row += DoubleToString(m_totals.lock_parity_runner_pending_usd, 4) + ",";
       row += DoubleToString(m_totals.lock_parity_accounting_only_usd, 4) + ",";
       row += DoubleToString(rollup_residual, 4) + ",";
@@ -13481,6 +13637,9 @@ m_totals.total_trades                = 0;
       m_totals.lock_parity_non_executable_adjustment_usd = 0.0;
       m_totals.lock_parity_protection_executable_usd = 0.0;
       m_totals.lock_parity_runner_pending_usd = 0.0;
+      // v0.57.1: Runner Exit Price Probe buckets.
+      m_totals.lock_parity_runner_executable_usd = 0.0;
+      m_totals.lock_parity_runner_non_executable_usd = 0.0;
       m_totals.lock_parity_accounting_only_usd = 0.0;
 
       m_tle_emergency_active = false;
