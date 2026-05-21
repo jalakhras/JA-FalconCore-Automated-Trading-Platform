@@ -254,7 +254,9 @@ long   g_fvg_hold_quality_score_total                = 0;
 // skipped lower-quality FVG Micro shadow trades. It never blocks, stages,
 // closes, or modifies a trade. Runtime Guard = OFF.
 // ==================================================================
-#define FALCON_FVG_QGUARD_PROFILE_TAG                 "P03_SIZE250_ONLY"
+// R0.7cd: FALCON_FVG_QGUARD_PROFILE_TAG ("P03_SIZE250_ONLY") moved to
+// Risk/FalconRiskLifecycleProcessorInputs.mqh — needed by the processor's
+// ported copy of Apply #3 (ApplyFvgQualityShadowGuardSimulation).
 #define FALCON_FVG_QGUARD_MIN_SIZE_POINTS             250.00
 #define FALCON_FVG_QGUARD_MAX_SPREAD_POINTS           0
 #define FALCON_FVG_QGUARD_MAX_AGE_BARS                0
@@ -5675,6 +5677,10 @@ CFalconReportWriter      g_report_writer;
 CFalconBrokerEntryBridge g_broker_entry_bridge;
 CFalconExecutionGuard    g_execution_guard;
 CFalconRiskTradeManagementArchitecture g_risk_tm_architecture;
+// R0.7cd: the 12-step Apply* chain owner. Invoked from
+// CFalconReportWriter::RegisterClosedTrade as a single call replacing
+// the 12 inline Apply* calls that used to live there.
+CFalconRiskLifecycleProcessor g_risk_lifecycle_processor;
 bool                     g_is_initialized = false;
 long                     g_runtime_tick_counter = 0;
 datetime                 g_last_processed_m5_closed_candle_time = 0;

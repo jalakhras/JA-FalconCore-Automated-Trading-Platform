@@ -44,4 +44,11 @@
 #define FALCON_DLM_CAPITAL_USD_PER_001_LOT        250.0
 #define FALCON_DLM_MAX_LOT_GROWTH_MULTIPLIER      1.20
 
+// --- FVG quality shadow guard profile tag (moved from main .mq5 L257 in R0.7cd) ---
+// Used by Apply #3 (ApplyFvgQualityShadowGuardSimulation) which now lives in
+// CFalconRiskLifecycleProcessor. The tag value is the active P-profile of the
+// quality guard (size threshold, etc.) — relocated so it's visible at the
+// processor's parse point.
+#define FALCON_FVG_QGUARD_PROFILE_TAG                 "P03_SIZE250_ONLY"
+
 #endif // FALCON_RISK_LIFECYCLE_PROCESSOR_INPUTS_MQH

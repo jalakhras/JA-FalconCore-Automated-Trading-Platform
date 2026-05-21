@@ -602,11 +602,39 @@ private:
    }
 
    //================================================================
-   // The 10 Risk-natural Apply* methods - VERBATIM copies from
-   // CFalconReportWriter, in chain order #1, #2, #4, #5, #6, #7,
-   // #8, #9, #10, #11. Apply #3 and Apply #12 are deferred to R0.7c
-   // and stay in CFalconReportWriter for now.
+   // The 12 Apply* methods - VERBATIM copies from CFalconReportWriter
+   // (R0.7b ported 10; R0.7cd added the remaining #3 and #12). The
+   // chain entry point is ApplyTradeLifecycleChain (defined below
+   // under public:) which calls them in the LOAD-BEARING ACTUAL order
+   // documented inside that method.
    //================================================================
+
+   void ApplyFvgQualityShadowGuardSimulation(FalconTradeLifecycleRecord &record)
+   {
+      string guard_reason = "";
+      bool guard_passed = FalconEvaluateFvgQualityShadowGuard(record.fvg_size_points,
+                                                              record.fvg_spread_points,
+                                                              record.fvg_retest_age_bars,
+                                                              record.fvg_hold_quality_score,
+                                                              guard_reason);
+
+      record.fvg_quality_shadow_guard_profile = FALCON_FVG_QGUARD_PROFILE_TAG;
+      record.fvg_quality_shadow_guard_passed = guard_passed;
+      record.fvg_quality_shadow_guard_reason = guard_reason;
+
+      if(guard_passed)
+      {
+         record.fvg_quality_shadow_guard_decision = "WOULD_KEEP";
+         record.fvg_quality_shadow_guard_sim_net_points = record.net_index_points;
+         record.fvg_quality_shadow_guard_sim_net_usd = record.net_usd;
+      }
+      else
+      {
+         record.fvg_quality_shadow_guard_decision = "WOULD_SKIP";
+         record.fvg_quality_shadow_guard_sim_net_points = 0.0;
+         record.fvg_quality_shadow_guard_sim_net_usd = 0.0;
+      }
+   }
 
    void ApplyNoNewEntryUserOverridePaperEnforcement(FalconTradeLifecycleRecord &record)
    {
@@ -1437,45 +1465,124 @@ private:
       }
    }
 
+   void ApplyCapitalFlowSourceClassification(FalconTradeLifecycleRecord &record)
+   {
+      // v0.55.5: reporting-only classification. It does not modify capital, lot, entry, exit, or emergency state.
+      double before_capital = record.falcon_dynamic_risk_capital_before_trade;
+      double after_capital  = record.falcon_dynamic_risk_capital_after_trade;
+      double final_trade_delta = record.falcon_emergency_after_net_usd;
+
+      record.falcon_capital_flow_source = "UNKNOWN";
+      record.falcon_capital_flow_delta_usd = 0.0;
+      record.falcon_external_capital_delta_usd = 0.0;
+      record.falcon_capital_flow_external_event = 0;
+      record.falcon_capital_flow_status = "PASS";
+      record.falcon_capital_flow_reason = "NOT_EVALUATED";
+
+      if(before_capital <= 0.0 || after_capital <= 0.0)
+      {
+         record.falcon_capital_flow_status = "PASS";
+         record.falcon_capital_flow_source = "UNKNOWN";
+         record.falcon_capital_flow_reason = "CAPITAL_BEFORE_OR_AFTER_NOT_AVAILABLE";
+         return;
+      }
+
+      double capital_delta = after_capital - before_capital;
+      double external_delta = capital_delta - final_trade_delta;
+      record.falcon_capital_flow_delta_usd = capital_delta;
+      record.falcon_external_capital_delta_usd = external_delta;
+
+      double external_tolerance = 0.01;
+      if(MathAbs(external_delta) > external_tolerance)
+      {
+         record.falcon_capital_flow_external_event = 1;
+         if(external_delta > 0.0)
+         {
+            if(final_trade_delta > 0.0001)
+            {
+               record.falcon_capital_flow_source = "MIXED_PROFIT_PLUS_INJECTION";
+               record.falcon_capital_flow_reason = "TRADE_PROFIT_PLUS_POSITIVE_EXTERNAL_CAPITAL_FLOW";
+            }
+            else
+            {
+               record.falcon_capital_flow_source = "INJECTION";
+               record.falcon_capital_flow_reason = "CAPITAL_DELTA_EXCEEDS_TRADE_DELTA_POSITIVE_EXTERNAL_FLOW";
+            }
+         }
+         else
+         {
+            if(final_trade_delta < -0.0001)
+            {
+               record.falcon_capital_flow_source = "MIXED_LOSS_PLUS_WITHDRAWAL";
+               record.falcon_capital_flow_reason = "TRADE_LOSS_PLUS_NEGATIVE_EXTERNAL_CAPITAL_FLOW";
+            }
+            else
+            {
+               record.falcon_capital_flow_source = "WITHDRAWAL";
+               record.falcon_capital_flow_reason = "CAPITAL_DELTA_EXCEEDS_TRADE_DELTA_NEGATIVE_EXTERNAL_FLOW";
+            }
+         }
+         // External capital movement is not a reporting failure; it must be classified and separated from strategy P/L.
+         record.falcon_capital_flow_status = "PASS";
+         return;
+      }
+
+      if(final_trade_delta > 0.0001)
+      {
+         record.falcon_capital_flow_source = "TRADE_PROFIT";
+         record.falcon_capital_flow_reason = "CAPITAL_DELTA_MATCHES_FINAL_WORKING_TRADE_PROFIT";
+      }
+      else if(final_trade_delta < -0.0001)
+      {
+         record.falcon_capital_flow_source = "TRADE_LOSS";
+         record.falcon_capital_flow_reason = "CAPITAL_DELTA_MATCHES_FINAL_WORKING_TRADE_LOSS";
+      }
+      else
+      {
+         record.falcon_capital_flow_source = "FLAT";
+         record.falcon_capital_flow_reason = "NO_FINAL_WORKING_TRADE_DELTA";
+      }
+   }
+
 public:
    //================================================================
    // ApplyTradeLifecycleChain - the public entry point. Calls the
-   // 10 ported Apply* methods on `this` in the LOAD-BEARING ACTUAL
+   // 12 ported Apply* methods on `this` in the LOAD-BEARING ACTUAL
    // order observed inside CFalconReportWriter::RegisterClosedTrade
-   // (Reporting/FalconReportWriter.mqh L4032..L4044). For the 10
-   // methods in this batch (#3 and #12 are out of scope for R0.7b),
-   // the actual order is:
+   // pre-R0.7cd (i.e. how the chain has been firing since v0.55.x):
    //
-   //     #4, #5, #6, #7, #8, #10, #9, #1, #2, #11
+   //     #3, #4, #5, #6, #7, #8, #10, #9, #1, #2, #11, #12
    //
    // ============ ORDER DISCREPANCY NOTE ============
    //
-   // The R0.7b spec prompt and Docs/ReviewNotes/R0_6a_Review_Notes.md
-   // §3.5 documented the chain order as #1, #2, #4, #5, #6, #7, #8,
-   // #9, #10, #11 - i.e. "ascending number order".  That was a
-   // documentation error in R0.6a notes: the ACTUAL call order in
-   // RegisterClosedTrade is the one used below (#4, #5, #6, #7, #8,
-   // #10, #9, #1, #2, #11). The processor must mirror the ACTUAL
-   // order so that R0.7d's call-site replacement preserves behavior
-   // byte-for-byte. Mismatch consequence: if we followed the spec
-   // text instead, R0.7d would silently change Summary numbers
-   // (e.g. the #9/#10 swap matters - DLM reads single-trade-loss-cap
-   // state; #1/#2 sit AFTER LossCap+DLM, not before; #11 reads
-   // market-close state that #1/#2 apply to the record AFTER the
-   // lot was decided).
+   // The R0.7b spec prompt and R0.7cd spec text both list the chain
+   // as "#1..#12 ascending". That ascending listing was a documentation
+   // error originating in Docs/ReviewNotes/R0_6a_Review_Notes.md §3.5.
+   // The processor mirrors the ACTUAL order, NOT the spec's ascending
+   // claim. Reason: R0.7cd's spec §3 also mandates "صفر تغيير سلوك"
+   // (zero behavior change) and "النتيجة المالية تطابق تمامًا" (financial
+   // result matches byte-for-byte). The two requirements are mutually
+   // exclusive when the spec's ascending order differs from the live
+   // working-path order. Behavior-preservation wins.
    //
-   // The discrepancy is flagged in Docs/ReviewNotes/R0_7b_Review_
-   // Notes.md §4. The R0.6a notes will be corrected in a follow-up.
+   // The discrepancy is documented in Docs/ReviewNotes/R0_7b_Review_
+   // Notes.md §2 and again in Docs/ReviewNotes/R0_7cd_Review_Notes.md.
    //
-   // Per spec, this method is NOT called from RegisterClosedTrade
-   // in R0.7b. RegisterClosedTrade still invokes the 10 Apply* on
-   // CFalconReportWriter directly (the duplicate copies that we
-   // intentionally left in place). The chain below is the future
-   // call surface; it will become live in R0.7d when the wiring
-   // changes.
+   // Why the order is load-bearing:
+   //   * #10 reads single-trade-loss-cap state that #9 writes (so #10
+   //     runs BEFORE #9 here, intentionally - swap from the ascending
+   //     reading).
+   //   * #1 / #2 (no-new-entry / force-close user overrides) sit AFTER
+   //     #8 / #10 / #9, not before - they override the lot AFTER it
+   //     was decided.
+   //   * #11 (three-layer emergency) reads the market-close-blocked
+   //     state that #1 / #2 applied.
+   //   * #3 (FVG quality guard sim) is a pre-chain filter - runs first.
+   //   * #12 (capital flow classification) is post-chain annotation.
    //================================================================
    void ApplyTradeLifecycleChain(FalconTradeLifecycleRecord &record)
    {
+      ApplyFvgQualityShadowGuardSimulation(record);                     // #3
       ApplyPaperRuntimeGuardApplication(record);                        // #4
       ApplyPaperRuntimeSmartSLProtectionApplication(record);            // #5
       ApplyPaperRuntimeRunnerApplication(record);                       // #6
@@ -1486,11 +1593,7 @@ public:
       ApplyNoNewEntryUserOverridePaperEnforcement(record);              // #1
       ApplyDailyWeekendForceCloseUserOverridePaperEnforcement(record);  // #2
       ApplyThreeLayerEmergencyApplication(record);                      // #11
-      // #3 (ApplyFvgQualityShadowGuardSimulation, called BEFORE the
-      // chain in RegisterClosedTrade) and #12
-      // (ApplyCapitalFlowSourceClassification, called AFTER the chain)
-      // are deferred to R0.7c. When R0.7d wires this chain in, #3
-      // must be invoked before this call and #12 after.
+      ApplyCapitalFlowSourceClassification(record);                     // #12
    }
 };
 
