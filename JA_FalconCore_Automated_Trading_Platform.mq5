@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.55.13-fix4 - Recovery Blocked Entry State Fix LOCKED |
+//|                     Version: v0.56.9b - Emergency Server Stop Envelope LOCK Parity Probe CANDIDATE |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "1.563"
+#property version   "1.600"
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.55.13-fix4"
-#define EA_BUILD_TAG   "RecoveryBlockedEntryStateFix"
+#define EA_VERSION_TAG "v0.56.9b"
+#define EA_BUILD_TAG   "EmergencyServerStopEnvelopeLockParityProbe"
 
 #define FALCON_MTF_COUNT       6
 
@@ -38,6 +38,92 @@
 #define FALCON_SESSION_BOUNDARY_ACTION_TO_CHECKPOINT_GAP_MINUTES 2
 #define FALCON_SESSION_BOUNDARY_CHECKPOINT_MODE    "FOUNDATION_ONLY_NO_RUNTIME_RESTORE"
 #define FALCON_SESSION_BOUNDARY_CHECKPOINT_POLICY  "DYNAMIC_CHECKPOINT_AFTER_USER_CLOSE_SAFETY_BEFORE_BROKER_CLOSE_BLOCKED_ENTRIES_NOT_RECOVERY_OPEN"
+
+
+// ==================================================================
+// Broker Execution Layer Rebuild Foundation - v0.56.x / Controlled Managed Protection Runner Execution Bridge - v0.56.8
+// Foundation-only, strategy-agnostic broker architecture. This module
+// is deliberately reusable by future strategies: every broker-facing
+// record is keyed by StrategyId + EngineId + TradeId + BrokerPositionTicket.
+// v0.56.9b rejects the unsafe no-server-stop probe observed in v0.56.9 and restores the no-naked-order invariant: every broker/tester OrderSend must include server StructuralSL plus a selected TP3 safety cap. Paper-final managed close remains measured only while the broker position is still open.
+// v0.56.3a/3b proved that entry-only broker orders create orphan/netting close risk and cannot be used as a valid parity stage.
+// ==================================================================
+#define FALCON_BELR_STATUS                            "BROKER_EXECUTION_LAYER_REBUILD_FOUNDATION"
+#define FALCON_BELR_DECISION                          "EMERGENCY_SERVER_STOP_ENVELOPE_LOCK_PARITY_PROBE_DEMO_LIVE_BLOCKED"
+#define FALCON_BELR_REUSABILITY_POLICY                "STRATEGY_AGNOSTIC_TRADEID_ENGINEID_STRATEGYID_CONTRACT"
+#define FALCON_BELR_EXECUTION_POLICY                  "TESTER_ONLY_LOCK_PARITY_WITH_NONZERO_EMERGENCY_SERVER_SL_TP_ENVELOPE_AND_PAPER_FINAL_MANAGED_CLOSE_DEMO_LIVE_BLOCKED"
+#define FALCON_BELR_SOURCE_OF_TRUTH                   "TRADEMANAGEMENT_EVENT_TIMELINE_BEFORE_BROKER_ACTION"
+#define FALCON_BELR_BASELINE_SOURCE                   "v0.55.13-fix4_LOCKED"
+#define FALCON_BELR_DIAGNOSTIC_REFERENCE              "v0.55.26-fix19_DIAGNOSTIC_ONLY_NOT_BASELINE"
+#define FALCON_BELR_NEXT_PHASE                        "v0.57.0_AFTER_LOCK_PARITY_PROBE_IDENTIFIES_TRUE_EXECUTABLE_GAPS"
+#define FALCON_BELR_REPORT_STAGE_TAG                  "BrokerPaperReconciliation"
+#define FALCON_BELR_DEPRECATED_REPORT_STAGE_TAG        "ShadowSmoke"
+#define FALCON_BELR_NO_BROKER_COMPARISON_STATUS       "NOT_COMPARABLE_NO_BROKER_EXECUTION"
+#define FALCON_BELR_REBASED_STATUS                    "BROKER_REBASED_PAPER_COMPARISON_AUDIT_ONLY"
+#define FALCON_BELR_REBASED_NO_ACTUAL_STATUS          "NOT_COMPARABLE_NO_BROKER_EXECUTION_REBASED_ONLY"
+#define FALCON_BELR_REBASE_ORDERCALC_FALLBACK_STATUS  "ORDERCALC_UNAVAILABLE_USING_CONTRACT_SIZE_FALLBACK"
+#define FALCON_BROKER_EXECUTION_LIFECYCLE_REPORT_NAME "BrokerExecutionLifecycle"
+#define FALCON_BROKER_TM_TIMELINE_REPORT_NAME         "BrokerTradeManagementEventTimeline"
+#define FALCON_BROKER_CONTRACT_REALITY_REPORT_NAME    "BrokerContractRealityAudit"
+#define FALCON_BROKER_REBASED_COMPARISON_REPORT_NAME  "BrokerRebasedPaperComparison"
+#define FALCON_BROKER_PAPER_RECONCILIATION_REPORT_NAME "BrokerPaperTradeReconciliation"
+#define FALCON_BROKER_REBUILD_REFERENCE_LOT           0.01
+
+// v0.56.8: Controlled Tester-Only Managed Protection/Runner Execution Bridge + Pre-Entry Broker Lot Authority + Structural SL Risk Guard.
+// v0.56.3a and v0.56.3b proved that entry-only broker orders are unsafe:
+// server-side SL contaminated Paper/DynamicLot in 3a; no-server-stops created
+// orphan positions and netting/opposite-order close risk in 3b. v0.56.4a/b proved
+// exit observation, but reports showed DynamicLot broker orders still used fixed
+// shadow lots and some StructuralSL distances were too large for safe atomic use.
+// Therefore broker lot authority is evaluated before OrderSend for FixedLot and DynamicLot. v0.56.9b restores the no-naked-order safety invariant: broker/tester orders must attach server StructuralSL and selected TP3 safety cap. Paper final lifecycle close remains observed/managed when the broker position is still open, but no OrderSend is allowed with empty SL/TP. This is not Demo/Live permission.
+#define FALCON_BEEB_STATUS                            "LOCK_PARITY_MANAGED_LIFECYCLE_BRIDGE"
+#define FALCON_BEEB_DECISION                          "TESTER_ONLY_ORDER_REQUIRES_NONZERO_EMERGENCY_SERVER_SL_TP_ENVELOPE_NO_NAKED_ORDER_GUARD"
+#define FALCON_BEEB_TESTER_ONLY_POLICY                "MQL_TESTER_REQUIRED_ENABLE_REAL_EXECUTION_REQUIRED_LIVE_BLOCKED_DEMO_BLOCKED"
+#define FALCON_BEEB_ENTRY_DISABLED_STATUS             "ATOMIC_ENTRY_EXIT_BRIDGE_DISABLED_OR_PLAN_INVALID"
+#define FALCON_BEEB_ENTRY_ACCEPTED_STATUS             "ATOMIC_ENTRY_EXIT_ACCEPTED_LINKED_POSITION_TESTER_ONLY"
+#define FALCON_BEEB_ENTRY_BLOCKED_STATUS              "ATOMIC_ENTRY_EXIT_BLOCKED_BY_GUARD_POSITION_DISCIPLINE_OR_INVALID_PLAN"
+#define FALCON_BEEB_NO_BROKER_CLOSE_STATUS            "EMERGENCY_SERVER_SL_TP_ENVELOPE_ATTACHED_WAIT_FOR_PAPER_FINAL_MANAGED_CLOSE_OR_FAILSAFE_EXIT"
+#define FALCON_BEEB_ORDER_COMMENT                     "JAFC569B"
+#define FALCON_BEEB_MAX_OPEN_POSITIONS_PER_ENGINE     1
+#define FALCON_BEEB_MANAGED_EXIT_BRIDGE_READY          true
+#define FALCON_BEEB_DYNAMIC_BROKER_LOT_ALLOWED          true
+#define FALCON_BEEB_MAX_STRUCTURAL_SL_PRICE_DISTANCE    100.0
+#define FALCON_BEEB_MAX_STRUCTURAL_SL_LOSS_USD          25.0
+#define FALCON_BLA_STATUS                               "PRE_ENTRY_BROKER_LOT_AUTHORITY"
+#define FALCON_BLA_DECISION                             "BROKER_LOT_COMPUTED_BEFORE_ORDERSEND_FIXED_AND_DYNAMIC"
+#define FALCON_BLA_FIXED_MODE_STATUS                    "FIXED_LOT_REQUEST_VALIDATED_PREENTRY"
+#define FALCON_BLA_DYNAMIC_MODE_STATUS                  "DYNAMIC_LOT_COMPUTED_PREENTRY_FROM_CAPITAL_RISK_SL_AND_BROKER_CONSTRAINTS"
+#define FALCON_BLA_MAX_MARGIN_USE_PCT                   85.0
+#define FALCON_BPR_STATUS                               "PROTECTION_RUNNER_BROKER_EVENT_BRIDGE_FOUNDATION"
+#define FALCON_BPR_DECISION                             "TP1_AND_TP2_ARE_PROOF_CHECKPOINTS_NOT_DEFAULT_FULL_BROKER_CLOSE"
+#define FALCON_BPR_INITIAL_SERVER_TP_POLICY              "EMERGENCY_TP_ENVELOPE_ONLY_MANAGED_RUNNER_EXIT_BRIDGE_FOUNDATION_NO_BROKERMODIFY_YET"
+#define FALCON_MREB_STATUS                            "EA_MANAGED_PROTECTION_RUNNER_DECISION_BRIDGE_FOUNDATION"
+#define FALCON_MREB_DECISION_POLICY                   "CONTROLLED_TESTER_ONLY_PAPER_FINAL_MANAGED_CLOSE_WITH_EMERGENCY_SERVER_SL_TP_ENVELOPE_NO_NAKED_ORDER"
+#define FALCON_MREB_RUNTIME_MANAGED_CLOSE_READY        true
+#define FALCON_BPR_PROTECTION_RUNNER_RUNTIME_POLICY      "TESTER_ONLY_EA_MANAGED_POSITIONCLOSE_AT_PAPER_FINAL_WITH_EMERGENCY_SERVER_SL_TP_ENVELOPE_NO_RUNTIME_SL_CHANGE_NO_BROKERMODIFY"
+#define FALCON_MREB_CLOSE_COMMENT_PREFIX              "JAFC569BMC"
+#define FALCON_LOCK_PARITY_TESTER_MANAGED_LIFECYCLE_PROBE true
+#define FALCON_LOCK_PARITY_ATTACH_SERVER_SL_TP           true
+#define FALCON_LOCK_PARITY_SERVER_STOP_POLICY            "SERVER_EMERGENCY_ENVELOPE_SL_TP_ATTACHED_VIRTUAL_STRUCTURAL_MANAGED_CLOSE_PROBE_NO_NAKED_ORDER_GUARD"
+#define FALCON_LOCK_PARITY_EMERGENCY_SL_DISTANCE_MULTIPLIER 3.0
+#define FALCON_LOCK_PARITY_EMERGENCY_TP_DISTANCE_MULTIPLIER 2.0
+#define FALCON_LOCK_PARITY_MIN_EMERGENCY_SL_PRICE_DISTANCE 25.0
+#define FALCON_LOCK_PARITY_MAX_EMERGENCY_SL_PRICE_DISTANCE 300.0
+#define FALCON_LOCK_PARITY_MIN_EMERGENCY_TP_PRICE_DISTANCE 25.0
+#define FALCON_LOCK_PARITY_MAX_EMERGENCY_TP_PRICE_DISTANCE 500.0
+#define FALCON_LOCK_PARITY_MAX_EMERGENCY_SL_LOSS_USD       75.0
+
+// v0.56.1: TradeManagement Event Timeline Audit.
+// Audit-only, strategy-agnostic, and deliberately reusable by future strategies.
+// Every row is derived after Paper TradeManagement finalization so broker logic
+// later consumes the same event story that the reports show.
+#define FALCON_TMET_STATUS                            "TRADEMANAGEMENT_EVENT_TIMELINE_AUDIT"
+#define FALCON_TMET_DECISION                          "AUDIT_ONLY_EVENTS_AFTER_PAPER_FINALIZATION_NO_ORDER_SEND_NO_BROKER_CLOSE"
+#define FALCON_TMET_EXECUTION_ELIGIBILITY_AUDIT_ONLY  "EXECUTION_DISABLED_STAGE_AUDIT_ONLY"
+#define FALCON_TMET_ACCOUNTING_ONLY_STATUS            "ACCOUNTING_ONLY_NOT_EXECUTABLE_UNTIL_EXACT_EVENT_TIME_PRICE_EXISTS"
+#define FALCON_TMET_NO_EXACT_TICK_TIME_STATUS         "BAR_PATH_TOUCH_DETECTED_NO_EXACT_TICK_TIME"
+#define FALCON_TMET_EVENT_SOURCE                      "PAPER_TRADEMANAGEMENT_FINALIZED_RECORD"
+#define FALCON_TMET_CLEANUP_GATE                      "REMOVE_TEMP_STAGE_ARTIFACTS_KEEP_OFFICIAL_BROKER_REALITY_TIMELINE_REPORTS"
 
 // ==================================================================
 // Runtime report period state - v0.18.4
@@ -1714,7 +1800,7 @@ double g_falcon_session_start_balance = 0.0;
 input group "02 - Execution Stage / مرحلة التنفيذ";
 input bool   EnableShadowMode                = true;  // Observe only. No real orders.
 input bool   EnablePaperMode                 = false; // Internal simulated trades later.
-input int    FalconMagicNumber               = 20260001;
+// v0.56.0: FalconMagicNumber input intentionally removed. Engine-specific FC_MAGIC_* constants are the only valid broker identity source.
 input int    MaxTradesPerDay                 = 3;
 input int    MaxOpenPositions                = 1;
 
@@ -1744,7 +1830,7 @@ input bool EnableStrategy_GoldenLiquidity5MEntry     = false; // استراتي�
 input group "04 - Reporting / التقارير";
 input bool                       EnableMainReport              = true;
 input ENUM_FALCON_REPORT_PROFILE ReportProfile                 = FALCON_REPORT_MINIMAL;
-input string                     ReportModeTag                 = "ShadowSmoke";
+input string                     ReportModeTag                 = "EmergencyServerStopEnvelopeLockParityProbe"; // v0.56.9b: safety restoration after v0.56.9 naked-order probe; no broker order may be sent without server SL/TP; filenames include ExecutionON/ExecutionOFF plus lot mode and period tags.
 input bool                       UseCommonFilesFolderForReports = true;
 input bool                       EnableVerboseExpertsLog       = true;
 input bool                       EnableFastRuntimeSmokeMode    = true;
@@ -2893,6 +2979,169 @@ struct FalconShadowTradeRecord
    bool                             quality_profile_strict_combo_passed;
 
    bool                             is_closed;
+};
+
+
+// ==================================================================
+// Strategy-agnostic broker execution contracts - v0.56.0 foundation
+// These records are intentionally not FVG-specific. Future strategies
+// must publish the same StrategyId/EngineId/TradeId contract into the
+// broker layer before any real broker action is allowed.
+// ==================================================================
+enum ENUM_FALCON_BROKER_TM_EVENT_TYPE
+{
+   FALCON_BTM_EVENT_ENTRY_PLANNED = 0,
+   FALCON_BTM_EVENT_ENTRY_ACCEPTED_PAPER = 1,
+   FALCON_BTM_EVENT_TP1_TOUCH = 2,
+   FALCON_BTM_EVENT_TP2_TOUCH = 3,
+   FALCON_BTM_EVENT_PROTECTION_ARMED = 4,
+   FALCON_BTM_EVENT_PROTECTION_TRIGGERED = 5,
+   FALCON_BTM_EVENT_RUNNER_ARMED = 6,
+   FALCON_BTM_EVENT_RUNNER_EXIT = 7,
+   FALCON_BTM_EVENT_RAW_SL_HIT = 8,
+   FALCON_BTM_EVENT_TIMEOUT_CLOSE = 9,
+   FALCON_BTM_EVENT_FINAL_CLOSE = 10,
+   FALCON_BTM_EVENT_ACCOUNTING_ONLY_ADJUSTMENT = 11,
+   FALCON_BTM_EVENT_BAR_ORDER_AMBIGUOUS = 12,
+   FALCON_BTM_EVENT_FOUNDATION_NO_RUNTIME_EVENT = 13,
+   FALCON_BTM_EVENT_EVENT_TIMELINE_AUDIT = 14,
+   FALCON_BTM_EVENT_BROKER_ENTRY_ATTEMPTED = 15,
+   FALCON_BTM_EVENT_BROKER_ENTRY_ACCEPTED = 16,
+   FALCON_BTM_EVENT_BROKER_ENTRY_REJECTED = 17
+};
+
+string FalconBrokerTmEventTypeToString(const ENUM_FALCON_BROKER_TM_EVENT_TYPE event_type)
+{
+   switch(event_type)
+   {
+      case FALCON_BTM_EVENT_ENTRY_PLANNED: return "ENTRY_PLANNED";
+      case FALCON_BTM_EVENT_ENTRY_ACCEPTED_PAPER: return "ENTRY_ACCEPTED_PAPER";
+      case FALCON_BTM_EVENT_TP1_TOUCH: return "TP1_TOUCH";
+      case FALCON_BTM_EVENT_TP2_TOUCH: return "TP2_TOUCH";
+      case FALCON_BTM_EVENT_PROTECTION_ARMED: return "PROTECTION_ARMED";
+      case FALCON_BTM_EVENT_PROTECTION_TRIGGERED: return "PROTECTION_TRIGGERED";
+      case FALCON_BTM_EVENT_RUNNER_ARMED: return "RUNNER_ARMED";
+      case FALCON_BTM_EVENT_RUNNER_EXIT: return "RUNNER_EXIT";
+      case FALCON_BTM_EVENT_RAW_SL_HIT: return "RAW_SL_HIT";
+      case FALCON_BTM_EVENT_TIMEOUT_CLOSE: return "TIMEOUT_CLOSE";
+      case FALCON_BTM_EVENT_FINAL_CLOSE: return "FINAL_CLOSE";
+      case FALCON_BTM_EVENT_ACCOUNTING_ONLY_ADJUSTMENT: return "ACCOUNTING_ONLY_ADJUSTMENT";
+      case FALCON_BTM_EVENT_BAR_ORDER_AMBIGUOUS: return "BAR_ORDER_AMBIGUOUS";
+      case FALCON_BTM_EVENT_FOUNDATION_NO_RUNTIME_EVENT: return "FOUNDATION_NO_RUNTIME_EVENT";
+      case FALCON_BTM_EVENT_EVENT_TIMELINE_AUDIT: return "EVENT_TIMELINE_AUDIT";
+      case FALCON_BTM_EVENT_BROKER_ENTRY_ATTEMPTED: return "BROKER_ENTRY_ATTEMPTED";
+      case FALCON_BTM_EVENT_BROKER_ENTRY_ACCEPTED: return "BROKER_ENTRY_ACCEPTED";
+      case FALCON_BTM_EVENT_BROKER_ENTRY_REJECTED: return "BROKER_ENTRY_REJECTED";
+   }
+
+   return "UNKNOWN_BROKER_TM_EVENT";
+}
+
+uint FalconFnv1a32Hash(const string text)
+{
+   uint hash = (uint)2166136261;
+   int len = StringLen(text);
+   for(int i = 0; i < len; i++)
+   {
+      hash ^= (uint)StringGetCharacter(text, i);
+      hash *= 16777619;
+   }
+   return hash;
+}
+
+string FalconTradeIdShortHash(const string trade_id)
+{
+   if(StringLen(trade_id) <= 0)
+      return "00000000";
+   return StringFormat("%08X", FalconFnv1a32Hash(trade_id));
+}
+
+string FalconBuildBrokerCommentWithHash(const string prefix, const string trade_id)
+{
+   string h = FalconTradeIdShortHash(trade_id);
+   string comment = prefix + "|" + h;
+   if(StringLen(comment) > 31)
+      comment = prefix;
+   return comment;
+}
+
+string FalconExtractCommentHash(const string comment)
+{
+   int p = StringFind(comment, "|");
+   if(p < 0)
+      return "";
+   return StringSubstr(comment, p + 1);
+}
+
+struct FalconBrokerTradeLink
+{
+
+   string                    trade_id;
+   string                    trade_id_short;
+   string                    strategy_id;
+   string                    engine_id;
+   ENUM_FALCON_DIRECTION     direction;
+   long                      broker_magic;
+   ulong                     broker_position_ticket;
+   ulong                     broker_position_identifier;
+   ulong                     broker_order_ticket;
+   ulong                     broker_deal_ticket;
+   ulong                     broker_close_order_ticket;
+   ulong                     broker_close_deal_ticket;
+   double                    requested_lot;
+   double                    accepted_lot;
+   double                    planned_entry_price;
+   double                    broker_entry_price;
+   double                    broker_sl;
+   double                    broker_tp;
+   double                    broker_close_price;
+   double                    broker_close_volume;
+   double                    broker_actual_balance_delta;
+   datetime                  planned_entry_time;
+   datetime                  broker_entry_time;
+   datetime                  broker_close_time;
+   bool                      broker_entry_attempted;
+   bool                      broker_entry_accepted;
+   bool                      broker_close_attempted;
+   bool                      broker_close_accepted;
+   bool                      broker_exit_observed;
+   bool                      managed_close_attempted;
+   bool                      managed_close_accepted;
+   string                    entry_comment;
+   string                    managed_close_comment;
+   string                    broker_exit_status;
+   string                    broker_exit_reason;
+   string                    status;
+   string                    reason;
+};
+
+struct FalconBrokerTradeManagementEvent
+{
+   string                              trade_id;
+   string                              strategy_id;
+   string                              engine_id;
+   ENUM_FALCON_DIRECTION               direction;
+   ENUM_FALCON_BROKER_TM_EVENT_TYPE    event_type;
+   datetime                            event_time;
+   double                              event_price;
+   bool                                event_executable;
+   string                              execution_eligibility;
+   ulong                               broker_position_ticket;
+   bool                                tp1_touched;
+   bool                                tp2_touched;
+   bool                                protection_activated;
+   bool                                runner_activated;
+   string                              protection_state;
+   string                              runner_state;
+   double                              paper_raw_trade_usd;
+   double                              paper_final_working_trade_usd;
+   double                              paper_protection_net_usd;
+   double                              paper_runner_net_usd;
+   double                              paper_raw_index_points;
+   double                              paper_final_working_index_points;
+   string                              event_source;
+   string                              status;
+   string                              reason;
 };
 
 struct FalconReportTotals
@@ -4516,6 +4765,28 @@ string FalconReportLotModeTag()
    return (UseFixedLot ? "FixedLot" : "DynamicLot");
 }
 
+string FalconReportExecutionStateTag()
+{
+   // v0.56.8: make report file names self-describing for EnableRealExecution ON/OFF test runs.
+   // This is naming-only; it does not change trading logic or report period detection.
+   return (EnableRealExecution ? "ExecutionON" : "ExecutionOFF");
+}
+
+string FalconEffectiveReportModeTag()
+{
+   // v0.56.2 cleanup gate: old tester presets may still pass ShadowSmoke even after
+   // the default input changed. Normalize only report file naming/stage metadata; do
+   // not change trading logic, Paper results, or report period tags.
+   string raw_tag = FalconSanitizeFileTag(ReportModeTag);
+   if(raw_tag == "" ||
+      raw_tag == FALCON_BELR_DEPRECATED_REPORT_STAGE_TAG ||
+      raw_tag == "BrokerExitObservation" ||
+      raw_tag == "ProtectionRunnerBridge" ||
+      raw_tag == "ManagedRunnerBridge")
+      return FALCON_BELR_REPORT_STAGE_TAG;
+   return raw_tag;
+}
+
 string FalconBuildReportFileNameWithTags(const string report_name,
                                          const string from_tag,
                                          const string to_tag)
@@ -4525,14 +4796,15 @@ string FalconBuildReportFileNameWithTags(const string report_name,
    if(!EnableReportPeriodInFileNames)
       return StringFormat("JA_FalconCore_%s_%s.csv", report_name, version_tag);
 
-   string mode_tag = FalconSanitizeFileTag(ReportModeTag);
+   string mode_tag = FalconSanitizeFileTag(FalconEffectiveReportModeTag());
    string safe_from = FalconSanitizeFileTag(from_tag);
    string safe_to   = FalconSanitizeFileTag(to_tag);
 
    string lot_mode_tag = FalconSanitizeFileTag(FalconReportLotModeTag());
+   string execution_state_tag = FalconSanitizeFileTag(FalconReportExecutionStateTag());
 
-   return StringFormat("JA_FalconCore_%s_%s_%s_%s_From_%s_To_%s.csv",
-                       report_name, version_tag, mode_tag, lot_mode_tag, safe_from, safe_to);
+   return StringFormat("JA_FalconCore_%s_%s_%s_%s_%s_From_%s_To_%s.csv",
+                       report_name, version_tag, mode_tag, execution_state_tag, lot_mode_tag, safe_from, safe_to);
 }
 
 string FalconBuildReportFileName(const string report_name)
@@ -4596,7 +4868,7 @@ void FalconWriteStartupBootstrapFile()
 
    FileWrite(handle, "EAName", "Version", "Build", "GeneratedAt", "StorageMode", "ModeTag", "FromDateTag", "ToDateTag", "OnInitReached", "Note");
    FileWrite(handle, EA_NAME, EA_VERSION_TAG, EA_BUILD_TAG, TimeToString(TimeCurrent(), TIME_DATE | TIME_SECONDS),
-             FalconReportStorageMode(), ReportModeTag, FalconEffectiveReportFromDateTag(), FalconEffectiveReportToDateTag(), "YES",
+             FalconReportStorageMode(), FalconEffectiveReportModeTag(), FalconEffectiveReportFromDateTag(), FalconEffectiveReportToDateTag(), "YES",
              "This file is created at the very start of OnInit before market-context initialization.");
    FileClose(handle);
 }
@@ -4616,14 +4888,14 @@ int FalconReportMoveFlags()
 
 int FalconReportNameCount()
 {
-   // v0.55.13-fix1: PaperStateSnapshot is now an official minimal report.
-   // It must participate in AutoPeriod finalization so no final report remains
-   // with AUTO_RUNNING in its file name.
+   // v0.56.9: every official report created during OnInit must participate in
+   // AutoPeriod finalization/rename. BrokerPaperTradeReconciliation is now included
+   // so it must not remain with To_AUTO_RUNNING in final report files.
    if(ReportProfile == FALCON_REPORT_MINIMAL)
-      return 5;
+      return 10;
    if(ReportProfile == FALCON_REPORT_STANDARD)
-      return 6;
-   return 23;
+      return 11;
+   return 28;
 }
 
 string FalconReportNameByIndex(const int index)
@@ -4637,6 +4909,11 @@ string FalconReportNameByIndex(const int index)
          case 2: return "TierTransitions";
          case 3: return "EmergencyTriggers";
          case 4: return "PaperStateSnapshot";
+         case 5: return FALCON_BROKER_EXECUTION_LIFECYCLE_REPORT_NAME;
+         case 6: return FALCON_BROKER_TM_TIMELINE_REPORT_NAME;
+         case 7: return FALCON_BROKER_CONTRACT_REALITY_REPORT_NAME;
+         case 8: return FALCON_BROKER_REBASED_COMPARISON_REPORT_NAME;
+         case 9: return FALCON_BROKER_PAPER_RECONCILIATION_REPORT_NAME;
       }
       return "UnknownReport";
    }
@@ -4651,6 +4928,11 @@ string FalconReportNameByIndex(const int index)
          case 3: return "TierTransitions";
          case 4: return "EmergencyTriggers";
          case 5: return "PaperStateSnapshot";
+         case 6: return FALCON_BROKER_EXECUTION_LIFECYCLE_REPORT_NAME;
+         case 7: return FALCON_BROKER_TM_TIMELINE_REPORT_NAME;
+         case 8: return FALCON_BROKER_CONTRACT_REALITY_REPORT_NAME;
+         case 9: return FALCON_BROKER_REBASED_COMPARISON_REPORT_NAME;
+         case 10: return FALCON_BROKER_PAPER_RECONCILIATION_REPORT_NAME;
       }
       return "UnknownReport";
    }
@@ -4680,6 +4962,11 @@ string FalconReportNameByIndex(const int index)
       case 20: return "TierTransitions";
       case 21: return "EmergencyTriggers";
       case 22: return "PaperStateSnapshot";
+      case 23: return FALCON_BROKER_EXECUTION_LIFECYCLE_REPORT_NAME;
+      case 24: return FALCON_BROKER_TM_TIMELINE_REPORT_NAME;
+      case 25: return FALCON_BROKER_CONTRACT_REALITY_REPORT_NAME;
+      case 26: return FALCON_BROKER_REBASED_COMPARISON_REPORT_NAME;
+      case 27: return FALCON_BROKER_PAPER_RECONCILIATION_REPORT_NAME;
    }
    return "UnknownReport";
 }
@@ -5368,9 +5655,12 @@ class CFalconRiskFoundation
 public:
    bool ValidateInputs(const FalconSymbolContext &symbol_context)
    {
-      if(EnableRealExecution)
+      // v0.56.4: EnableRealExecution=true is allowed only for the MT5 Strategy Tester
+      // Atomic Entry+Exit validation lane. Demo/Live remain blocked here before
+      // initialization continues, while still preserving the central execution safety switch.
+      if(EnableRealExecution && !MQLInfoInteger(MQL_TESTER))
       {
-         CFalconLogger::Error("HARD SAFETY BLOCK: EnableRealExecution must remain false in v0.13.1.");
+         CFalconLogger::Error("HARD SAFETY BLOCK: EnableRealExecution=true is allowed only inside MT5 Strategy Tester in v0.56.4b. Demo/Live remain blocked.");
          return false;
       }
 
@@ -7844,6 +8134,11 @@ private:
    string              m_tier_transitions_file;
    string              m_emergency_triggers_file;
    string              m_paper_state_snapshot_file;
+   string              m_broker_execution_lifecycle_file;
+   string              m_broker_tm_timeline_file;
+   string              m_broker_contract_reality_audit_file;
+   string              m_broker_rebased_paper_comparison_file;
+   string              m_broker_paper_reconciliation_file;
    FalconSymbolContext m_symbol_context;
    FalconReportTotals  m_totals;
 
@@ -7871,17 +8166,20 @@ private:
    // v0.22.2 Lock cleanup: multi-profile summary arrays removed from active report surface.
 
    bool                m_initialized;
+   int                 m_broker_entry_bridge_order_send_attempts;
 
 public:
    CFalconReportWriter()
    {
       m_initialized = false;
+      m_broker_entry_bridge_order_send_attempts = 0;
       ResetTotals();
    }
 
    bool Initialize(const FalconSymbolContext &symbol_context)
    {
       m_symbol_context     = symbol_context;
+      m_broker_entry_bridge_order_send_attempts = 0;
       m_trade_report_file  = FalconBuildReportFileName("TradeLifecycle");
       m_summary_report_file= FalconBuildReportFileName("Summary");
       m_market_diagnostics_file = FalconBuildReportFileName("MarketDiagnostics");
@@ -7904,6 +8202,11 @@ public:
       m_tier_transitions_file = FalconBuildReportFileName("TierTransitions");
       m_emergency_triggers_file = FalconBuildReportFileName("EmergencyTriggers");
       m_paper_state_snapshot_file = FalconBuildReportFileName("PaperStateSnapshot");
+      m_broker_execution_lifecycle_file = FalconBuildReportFileName(FALCON_BROKER_EXECUTION_LIFECYCLE_REPORT_NAME);
+      m_broker_tm_timeline_file = FalconBuildReportFileName(FALCON_BROKER_TM_TIMELINE_REPORT_NAME);
+      m_broker_contract_reality_audit_file = FalconBuildReportFileName(FALCON_BROKER_CONTRACT_REALITY_REPORT_NAME);
+      m_broker_rebased_paper_comparison_file = FalconBuildReportFileName(FALCON_BROKER_REBASED_COMPARISON_REPORT_NAME);
+      m_broker_paper_reconciliation_file = FalconBuildReportFileName(FALCON_BROKER_PAPER_RECONCILIATION_REPORT_NAME);
       ResetTotals();
 
       if(EnableMainReport)
@@ -7913,6 +8216,11 @@ public:
          WriteTierTransitionsHeader();
          WriteEmergencyTriggersHeader();
          WritePaperStateSnapshotHeader();
+         WriteBrokerExecutionLifecycleHeader();
+         WriteBrokerTradeManagementEventTimelineHeader();
+         WriteBrokerRebasedPaperComparisonHeader();
+         WriteBrokerPaperTradeReconciliationHeader();
+         WriteBrokerContractRealityAudit();
       }
 
       if(ForceCreateReportFilesOnInit)
@@ -7964,6 +8272,1200 @@ public:
 
       string header = "SnapshotTime,Version,Build,TradeId,StrategyId,EngineId,Direction,EntryTime,ExitTime,EntryPrice,StructuralSL,TP1,TP2,TP3,ActiveLot,CapitalBefore,CapitalAfter,ProtectionState,RunnerState,EmergencyStatus,RecoveryMode,StateTrusted,SessionBoundaryCheckpointType,SessionBoundaryCloseTime,SessionBoundaryRecoveryCheckpointTime,ActiveDuringRecoveryWindow,RequiresRecovery,Notes";
       FileWriteString(handle, header + "\r\n");
+      FileClose(handle);
+   }
+
+
+   void WriteBrokerExecutionLifecycleHeader()
+   {
+      int handle = FileOpen(m_broker_execution_lifecycle_file, FalconReportWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not create BrokerExecutionLifecycle foundation report: %s", m_broker_execution_lifecycle_file));
+         return;
+      }
+
+      string header = "EventKind,TradeId,StrategyId,EngineId,Direction,EventTime,PlannedEntryPrice,BrokerEntryPrice,LotSize,";
+      header += "BrokerEntryAttempted,BrokerEntryAccepted,BrokerCloseAttempted,BrokerCloseAccepted,";
+      header += "BrokerPositionTicket,BrokerOrderTicket,BrokerDealTicket,BrokerMagic,";
+      header += "PaperRawTradeUSD,PaperFinalWorkingTradeUSD,PaperRawIndexPoints,PaperFinalWorkingIndexPoints,";
+      header += "BrokerRebasedRawUSD,BrokerRebasedFinalUSD,BrokerActualBalanceDelta,BrokerVsPaperFinalDelta,BrokerVsPaperFinalDeltaStatus,";
+      header += "ExecutionPolicy,Status,Reason";
+      FileWriteString(handle, header + "\r\n");
+      FileClose(handle);
+   }
+
+
+   void WriteBrokerPaperTradeReconciliationHeader()
+   {
+      int handle = FileOpen(m_broker_paper_reconciliation_file, FalconReportWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not create BrokerPaperTradeReconciliation report: %s", m_broker_paper_reconciliation_file));
+         return;
+      }
+
+      string header = "ReconciliationEvent,TradeId,TradeIdShort,StrategyId,EngineId,Direction,";
+      header += "PaperEntryTime,BrokerEntryTime,EntryTimeDeltaSeconds,PaperExitTime,BrokerExitTime,ExitTimeDeltaSeconds,";
+      header += "PaperEntryPrice,BrokerEntryPrice,EntryPriceDelta,StructuralSL,BrokerSL,SLDelta,TP1,TP2,TP3,BrokerTP,TPDelta,";
+      header += "PaperExitPrice,BrokerClosePrice,ClosePriceDelta,BrokerActualPoints,BrokerActualPointsMinusPaperFinalPoints,";
+      header += "ExpectedBrokerUSDFromPaperFinalPointsAtExecutedLot,BrokerActualMinusExpectedBrokerFinalUSD,ServerStopAttachPolicy,";
+      header += "PaperRawUSD,PaperFinalWorkingUSD,BrokerActualUSD,BrokerMinusPaperFinalUSD,";
+      header += "PaperRawPoints,PaperFinalWorkingPoints,";
+      header += "BrokerPositionTicket,BrokerPositionIdentifier,BrokerOrderTicket,BrokerEntryDealTicket,BrokerCloseOrderTicket,BrokerCloseDealTicket,";
+      header += "BrokerExitType,ManagedCloseAttempted,ManagedCloseObserved,ServerSLHit,ServerTPHit,NotOpenedReason,";
+      header += "LotRequested,LotAuthorized,LotExecuted,LotDelta,";
+      header += "ReconciliationRowRole,IsFinalReconciliationRow,LockParityGapCategory,LockParityGapPrimaryCause,LockParityGapUSD,LockParityRecommendedAction,";
+      header += "Status,Reason";
+      FileWriteString(handle, header + "\r\n");
+      FileClose(handle);
+   }
+
+   void WriteBrokerTradeManagementEventTimelineHeader()
+   {
+      int handle = FileOpen(m_broker_tm_timeline_file, FalconReportWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not create BrokerTradeManagementEventTimeline foundation report: %s", m_broker_tm_timeline_file));
+         return;
+      }
+
+      string header = "TradeId,StrategyId,EngineId,Direction,EventType,EventTime,EventPrice,EventExecutable,ExecutionEligibility,";
+      header += "BrokerPositionTicket,TP1Touched,TP2Touched,ProtectionActivated,RunnerActivated,ProtectionState,RunnerState,";
+      header += "PaperRawTradeUSD,PaperFinalWorkingTradeUSD,PaperProtectionNetUSD,PaperRunnerNetUSD,";
+      header += "PaperRawIndexPoints,PaperFinalWorkingIndexPoints,EventSource,Status,Reason";
+      FileWriteString(handle, header + "\r\n");
+      FileClose(handle);
+   }
+
+
+
+
+   void WriteBrokerRebasedPaperComparisonHeader()
+   {
+      int handle = FileOpen(m_broker_rebased_paper_comparison_file, FalconReportWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not create BrokerRebasedPaperComparison audit report: %s", m_broker_rebased_paper_comparison_file));
+         return;
+      }
+
+      string header = "TradeId,StrategyId,EngineId,Direction,EntryTime,ExitTime,LotSize,ActiveLot,";
+      header += "LegacyPaperRawUSD,LegacyPaperFinalUSD,PaperRawPoints,PaperFinalPoints,PaperLegacyUsdPerIndexPoint,";
+      header += "ContractSize,VolumeMin,VolumeStep,ReferenceLot,BrokerUsdPerIndexPointAtOneLot,BrokerUsdPerIndexPointAtActiveLot,";
+      header += "BrokerRebasedRawUSD,BrokerRebasedFinalUSD,BrokerActualUSD,BrokerActualVsRebasedFinalUSD,BrokerActualVsRebasedFinalStatus,";
+      header += "RequiredParityLot,BrokerMinLot,ParityLotBelowMin,OrderCalcProfitAvailable,RebaseStatus,ExecutionPolicy,Reason";
+      FileWriteString(handle, header + "\r\n");
+      FileClose(handle);
+   }
+
+   double FalconTimelineFinalWorkingTradeUsd(const FalconTradeLifecycleRecord &record)
+   {
+      return record.falcon_emergency_after_net_usd;
+   }
+
+   double FalconTimelineFinalWorkingTradePoints(const FalconTradeLifecycleRecord &record)
+   {
+      return record.falcon_emergency_after_net_points;
+   }
+
+
+
+   double FalconRebaseActiveLotForRecord(const FalconTradeLifecycleRecord &record)
+   {
+      if(record.falcon_dlm_active_lot > 0.0)
+         return record.falcon_dlm_active_lot;
+      if(record.lot_size > 0.0)
+         return record.lot_size;
+      return FALCON_BROKER_REBUILD_REFERENCE_LOT;
+   }
+
+   double FalconPaperUsdPerIndexPointForRecord(const FalconTradeLifecycleRecord &record)
+   {
+      if(MathAbs(record.net_index_points) > 0.0000001)
+         return MathAbs(record.net_usd / record.net_index_points);
+      double active_lot = FalconRebaseActiveLotForRecord(record);
+      if(m_symbol_context.contract_size > 0.0 && active_lot > 0.0)
+         return MathAbs(m_symbol_context.contract_size * active_lot);
+      return 0.0;
+   }
+
+   bool FalconBrokerUsdPerIndexPointByOrderCalc(const FalconTradeLifecycleRecord &record,
+                                                const double lot,
+                                                double &value_per_index_point)
+   {
+      value_per_index_point = 0.0;
+      if(lot <= 0.0)
+         return false;
+
+      double open_price = record.entry_price;
+      if(open_price <= 0.0)
+      {
+         double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+         double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+         open_price = (ask > 0.0 ? ask : bid);
+      }
+      if(open_price <= 0.0)
+         return false;
+
+      ENUM_ORDER_TYPE order_type = ORDER_TYPE_BUY;
+      double close_price = open_price + 1.0;
+      if(record.direction == FALCON_DIRECTION_SELL)
+      {
+         order_type = ORDER_TYPE_SELL;
+         close_price = open_price - 1.0;
+      }
+
+      double profit = 0.0;
+      if(!OrderCalcProfit(order_type, _Symbol, lot, open_price, close_price, profit))
+         return false;
+
+      value_per_index_point = MathAbs(profit);
+      return (value_per_index_point > 0.0);
+   }
+
+   double FalconBrokerUsdPerIndexPointFallback(const double lot)
+   {
+      if(m_symbol_context.contract_size > 0.0 && lot > 0.0)
+         return MathAbs(m_symbol_context.contract_size * lot);
+      return 0.0;
+   }
+
+   void FalconBrokerRebaseValuesForRecord(const FalconTradeLifecycleRecord &record,
+                                          double &broker_value_one_lot,
+                                          double &broker_value_active_lot,
+                                          bool &ordercalc_available)
+   {
+      double value_one_lot = 0.0;
+      bool ordercalc_one = FalconBrokerUsdPerIndexPointByOrderCalc(record, 1.0, value_one_lot);
+      if(!ordercalc_one)
+         value_one_lot = FalconBrokerUsdPerIndexPointFallback(1.0);
+
+      double active_lot = FalconRebaseActiveLotForRecord(record);
+      double value_active = 0.0;
+      bool ordercalc_active = FalconBrokerUsdPerIndexPointByOrderCalc(record, active_lot, value_active);
+      if(!ordercalc_active)
+         value_active = FalconBrokerUsdPerIndexPointFallback(active_lot);
+
+      broker_value_one_lot = value_one_lot;
+      broker_value_active_lot = value_active;
+      ordercalc_available = (ordercalc_one && ordercalc_active);
+   }
+
+   datetime FalconTimelineSafeEventTime(const FalconTradeLifecycleRecord &record, const bool prefer_entry)
+   {
+      if(prefer_entry && record.entry_time > 0)
+         return record.entry_time;
+      if(!prefer_entry && record.exit_time > 0)
+         return record.exit_time;
+      if(record.exit_time > 0)
+         return record.exit_time;
+      return record.entry_time;
+   }
+
+   string FalconTimelineCloseReasonEventStatus(const FalconTradeLifecycleRecord &record)
+   {
+      if(FalconClosedAtStop(record))
+         return "RAW_STOP_CLOSE_RECORDED";
+      if(FalconClosedByTimeout(record))
+         return "RAW_TIMEOUT_CLOSE_RECORDED";
+      if(FalconClosedAtTp1(record))
+         return "RAW_TP1_CLOSE_RECORDED";
+      return "RAW_FINAL_CLOSE_RECORDED";
+   }
+
+
+
+   void AppendBrokerRebasedPaperComparisonRecord(const FalconTradeLifecycleRecord &record)
+   {
+      int handle = FileOpen(m_broker_rebased_paper_comparison_file, FalconReportReadWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         WriteBrokerRebasedPaperComparisonHeader();
+         handle = FileOpen(m_broker_rebased_paper_comparison_file, FalconReportReadWriteCsvFlags(), ',');
+      }
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not append BrokerRebasedPaperComparison row: %s", m_broker_rebased_paper_comparison_file));
+         return;
+      }
+
+      FileSeek(handle, 0, SEEK_END);
+
+      double active_lot = FalconRebaseActiveLotForRecord(record);
+      double final_usd = FalconTimelineFinalWorkingTradeUsd(record);
+      double final_points = FalconTimelineFinalWorkingTradePoints(record);
+      double paper_usd_per_index_point = FalconPaperUsdPerIndexPointForRecord(record);
+      double broker_value_one_lot = 0.0;
+      double broker_value_active_lot = 0.0;
+      bool ordercalc_available = false;
+      FalconBrokerRebaseValuesForRecord(record, broker_value_one_lot, broker_value_active_lot, ordercalc_available);
+
+      double broker_rebased_raw_usd = record.net_index_points * broker_value_active_lot;
+      double broker_rebased_final_usd = final_points * broker_value_active_lot;
+      double broker_actual_usd = 0.0;
+      double broker_actual_vs_rebased_final = 0.0;
+      double required_parity_lot = 0.0;
+      if(broker_value_one_lot > 0.0 && paper_usd_per_index_point > 0.0)
+         required_parity_lot = paper_usd_per_index_point / broker_value_one_lot;
+      bool parity_lot_below_min = (required_parity_lot > 0.0 && m_symbol_context.min_lot > 0.0 && required_parity_lot < m_symbol_context.min_lot);
+      string rebase_status = FALCON_BELR_REBASED_STATUS;
+      if(!ordercalc_available)
+         rebase_status = FALCON_BELR_REBASE_ORDERCALC_FALLBACK_STATUS;
+
+      string row = "";
+      row += FalconCsvSafe(record.trade_id) + ",";
+      row += FalconCsvSafe(record.strategy_id) + ",";
+      row += FalconCsvSafe(record.engine_id) + ",";
+      row += FalconCsvSafe(FalconDirectionToString(record.direction)) + ",";
+      row += FalconCsvSafe(FalconTimeToString(record.entry_time)) + ",";
+      row += FalconCsvSafe(FalconTimeToString(record.exit_time)) + ",";
+      row += DoubleToString(record.lot_size, 4) + ",";
+      row += DoubleToString(active_lot, 4) + ",";
+      row += DoubleToString(record.net_usd, 4) + ",";
+      row += DoubleToString(final_usd, 4) + ",";
+      row += DoubleToString(record.net_index_points, 2) + ",";
+      row += DoubleToString(final_points, 2) + ",";
+      row += DoubleToString(paper_usd_per_index_point, 6) + ",";
+      row += DoubleToString(m_symbol_context.contract_size, 6) + ",";
+      row += DoubleToString(m_symbol_context.min_lot, 4) + ",";
+      row += DoubleToString(m_symbol_context.lot_step, 4) + ",";
+      row += DoubleToString(FALCON_BROKER_REBUILD_REFERENCE_LOT, 4) + ",";
+      row += DoubleToString(broker_value_one_lot, 6) + ",";
+      row += DoubleToString(broker_value_active_lot, 6) + ",";
+      row += DoubleToString(broker_rebased_raw_usd, 4) + ",";
+      row += DoubleToString(broker_rebased_final_usd, 4) + ",";
+      row += DoubleToString(broker_actual_usd, 4) + ",";
+      row += DoubleToString(broker_actual_vs_rebased_final, 4) + ",";
+      row += FalconCsvSafe(FALCON_BELR_REBASED_NO_ACTUAL_STATUS) + ",";
+      row += DoubleToString(required_parity_lot, 6) + ",";
+      row += DoubleToString(m_symbol_context.min_lot, 4) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(parity_lot_below_min)) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(ordercalc_available)) + ",";
+      row += FalconCsvSafe(rebase_status) + ",";
+      row += FalconCsvSafe(FALCON_BELR_EXECUTION_POLICY) + ",";
+      row += FalconCsvSafe("AUDIT_ONLY_REBASES_PAPER_POINTS_TO_BROKER_CONTRACT_VALUE_NO_ORDER_SEND_NO_BROKER_CLOSE");
+
+      FileWriteString(handle, row + "\r\n");
+      FileClose(handle);
+   }
+
+   void AppendBrokerExecutionLifecycleAuditRecord(const FalconTradeLifecycleRecord &record)
+   {
+      int handle = FileOpen(m_broker_execution_lifecycle_file, FalconReportReadWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         WriteBrokerExecutionLifecycleHeader();
+         handle = FileOpen(m_broker_execution_lifecycle_file, FalconReportReadWriteCsvFlags(), ',');
+      }
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not append BrokerExecutionLifecycle audit row: %s", m_broker_execution_lifecycle_file));
+         return;
+      }
+
+      FileSeek(handle, 0, SEEK_END);
+      double final_usd = FalconTimelineFinalWorkingTradeUsd(record);
+      double final_points = FalconTimelineFinalWorkingTradePoints(record);
+      double broker_value_one_lot = 0.0;
+      double broker_value_active_lot = 0.0;
+      bool ordercalc_available = false;
+      FalconBrokerRebaseValuesForRecord(record, broker_value_one_lot, broker_value_active_lot, ordercalc_available);
+      double broker_rebased_raw_usd = record.net_index_points * broker_value_active_lot;
+      double broker_rebased_final_usd = final_points * broker_value_active_lot;
+      string row = "";
+      row += FalconCsvSafe("TRADEMANAGEMENT_TIMELINE_AUDIT") + ",";
+      row += FalconCsvSafe(record.trade_id) + ",";
+      row += FalconCsvSafe(record.strategy_id) + ",";
+      row += FalconCsvSafe(record.engine_id) + ",";
+      row += FalconCsvSafe(FalconDirectionToString(record.direction)) + ",";
+      row += FalconCsvSafe(FalconTimeToString(FalconTimelineSafeEventTime(record, false))) + ",";
+      row += DoubleToString(record.entry_price, _Digits) + ",";
+      row += DoubleToString(0.0, _Digits) + ",";
+      row += DoubleToString(record.falcon_dlm_active_lot, 2) + ",";
+      row += FalconCsvSafe("NO") + ",";
+      row += FalconCsvSafe("NO") + ",";
+      row += FalconCsvSafe("NO") + ",";
+      row += FalconCsvSafe("NO") + ",";
+      row += IntegerToString(0) + ",";
+      row += IntegerToString(0) + ",";
+      row += IntegerToString(0) + ",";
+      row += IntegerToString(FC_MAGIC_FVG_MICRO) + ",";
+      row += DoubleToString(record.net_usd, 4) + ",";
+      row += DoubleToString(final_usd, 4) + ",";
+      row += DoubleToString(record.net_index_points, 2) + ",";
+      row += DoubleToString(final_points, 2) + ",";
+      row += DoubleToString(broker_rebased_raw_usd, 4) + ",";
+      row += DoubleToString(broker_rebased_final_usd, 4) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += FalconCsvSafe(FALCON_BELR_NO_BROKER_COMPARISON_STATUS) + ",";
+      row += FalconCsvSafe(FALCON_BELR_EXECUTION_POLICY) + ",";
+      row += FalconCsvSafe(FALCON_TMET_STATUS) + ",";
+      row += FalconCsvSafe("AUDIT_ONLY_NO_BROKER_ACTION_TIMELINE_ROW_WRITTEN_AFTER_PAPER_FINALIZATION");
+      FileWriteString(handle, row + "\r\n");
+      FileClose(handle);
+   }
+
+   void AppendBrokerEntryBridgeLifecycleRecord(const FalconBrokerTradeLink &link)
+   {
+      int handle = FileOpen(m_broker_execution_lifecycle_file, FalconReportReadWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         WriteBrokerExecutionLifecycleHeader();
+         handle = FileOpen(m_broker_execution_lifecycle_file, FalconReportReadWriteCsvFlags(), ',');
+      }
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not append BrokerExecutionLifecycle entry-bridge row: %s", m_broker_execution_lifecycle_file));
+         return;
+      }
+
+      FileSeek(handle, 0, SEEK_END);
+      if(link.broker_entry_attempted)
+         m_broker_entry_bridge_order_send_attempts++;
+      string event_kind = "BROKER_ENTRY_BRIDGE_TESTER_ONLY";
+      string row = "";
+      row += FalconCsvSafe(event_kind) + ",";
+      row += FalconCsvSafe(link.trade_id) + ",";
+      row += FalconCsvSafe(link.strategy_id) + ",";
+      row += FalconCsvSafe(link.engine_id) + ",";
+      row += FalconCsvSafe(FalconDirectionToString(link.direction)) + ",";
+      row += FalconCsvSafe(FalconTimeToString(link.broker_entry_time > 0 ? link.broker_entry_time : TimeCurrent())) + ",";
+      row += DoubleToString(link.planned_entry_price, _Digits) + ",";
+      row += DoubleToString(link.broker_entry_price, _Digits) + ",";
+      row += DoubleToString(link.accepted_lot > 0.0 ? link.accepted_lot : link.requested_lot, 4) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(link.broker_entry_attempted)) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(link.broker_entry_accepted)) + ",";
+      row += FalconCsvSafe("NO") + ",";
+      row += FalconCsvSafe("NO") + ",";
+      row += IntegerToString((long)link.broker_position_ticket) + ",";
+      row += IntegerToString((long)link.broker_order_ticket) + ",";
+      row += IntegerToString((long)link.broker_deal_ticket) + ",";
+      row += IntegerToString((int)link.broker_magic) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += DoubleToString(0.0, 2) + ",";
+      row += DoubleToString(0.0, 2) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += FalconCsvSafe("NOT_COMPARABLE_ENTRY_ONLY_NO_BROKER_CLOSE") + ",";
+      row += FalconCsvSafe(FALCON_BELR_EXECUTION_POLICY) + ",";
+      row += FalconCsvSafe(link.status) + ",";
+      row += FalconCsvSafe(link.reason);
+      FileWriteString(handle, row + "\r\n");
+      FileClose(handle);
+   }
+
+   void AppendBrokerExitObservationLifecycleRecord(const FalconBrokerTradeLink &link,
+                                                    const ulong close_deal_ticket,
+                                                    const ulong close_order_ticket,
+                                                    const double close_price,
+                                                    const double close_volume,
+                                                    const double actual_balance_delta,
+                                                    const datetime close_time,
+                                                    const string exit_status,
+                                                    const string exit_reason)
+   {
+      int handle = FileOpen(m_broker_execution_lifecycle_file, FalconReportReadWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         WriteBrokerExecutionLifecycleHeader();
+         handle = FileOpen(m_broker_execution_lifecycle_file, FalconReportReadWriteCsvFlags(), ',');
+      }
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not append BrokerExecutionLifecycle exit observation row: %s", m_broker_execution_lifecycle_file));
+         return;
+      }
+
+      FileSeek(handle, 0, SEEK_END);
+      bool open_at_deinit = (StringFind(exit_status, "OPEN_POSITION_AT_DEINIT") >= 0);
+      string reason = exit_reason + "; closeDeal=" + IntegerToString((long)close_deal_ticket) +
+                      "; closeOrder=" + IntegerToString((long)close_order_ticket) +
+                      "; closePrice=" + DoubleToString(close_price, _Digits) +
+                      "; closeVolume=" + DoubleToString(close_volume, 4) +
+                      "; actualDelta=" + DoubleToString(actual_balance_delta, 4);
+
+      string row = "";
+      row += FalconCsvSafe(open_at_deinit ? "BROKER_POSITION_OPEN_AT_DEINIT" : "BROKER_EXIT_OBSERVED_ON_TRADE_TRANSACTION") + ",";
+      row += FalconCsvSafe(link.trade_id) + ",";
+      row += FalconCsvSafe(link.strategy_id) + ",";
+      row += FalconCsvSafe(link.engine_id) + ",";
+      row += FalconCsvSafe(FalconDirectionToString(link.direction)) + ",";
+      row += FalconCsvSafe(FalconTimeToString(close_time > 0 ? close_time : TimeCurrent())) + ",";
+      row += DoubleToString(link.planned_entry_price, _Digits) + ",";
+      row += DoubleToString(link.broker_entry_price, _Digits) + ",";
+      row += DoubleToString(link.accepted_lot > 0.0 ? link.accepted_lot : link.requested_lot, 4) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(link.broker_entry_attempted)) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(link.broker_entry_accepted)) + ",";
+      row += FalconCsvSafe(open_at_deinit ? "NO" : "YES") + ",";
+      row += FalconCsvSafe(open_at_deinit ? "NO" : "YES") + ",";
+      row += IntegerToString((long)link.broker_position_ticket) + ",";
+      row += IntegerToString((long)link.broker_order_ticket) + ",";
+      row += IntegerToString((long)close_deal_ticket) + ",";
+      row += IntegerToString((int)link.broker_magic) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += DoubleToString(0.0, 2) + ",";
+      row += DoubleToString(0.0, 2) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += DoubleToString(actual_balance_delta, 4) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += FalconCsvSafe(open_at_deinit ? "BROKER_POSITION_STILL_OPEN_AT_DEINIT_NOT_COMPARABLE" : "BROKER_EXIT_OBSERVED_PAPER_FINAL_MATCH_PENDING") + ",";
+      row += FalconCsvSafe(FALCON_BELR_EXECUTION_POLICY) + ",";
+      row += FalconCsvSafe(exit_status) + ",";
+      row += FalconCsvSafe(reason);
+      FileWriteString(handle, row + "\r\n");
+      FileClose(handle);
+   }
+
+   void AppendBrokerManagedCloseLifecycleRecord(const FalconBrokerTradeLink &link,
+                                               const bool close_attempted,
+                                               const bool close_accepted,
+                                               const ulong close_order_ticket,
+                                               const ulong close_deal_ticket,
+                                               const double close_price,
+                                               const double close_volume,
+                                               const datetime close_time,
+                                               const string close_status,
+                                               const string close_reason)
+   {
+      int handle = FileOpen(m_broker_execution_lifecycle_file, FalconReportReadWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         WriteBrokerExecutionLifecycleHeader();
+         handle = FileOpen(m_broker_execution_lifecycle_file, FalconReportReadWriteCsvFlags(), ',');
+      }
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not append BrokerExecutionLifecycle managed close row: %s", m_broker_execution_lifecycle_file));
+         return;
+      }
+
+      FileSeek(handle, 0, SEEK_END);
+      string reason = close_reason + "; closeOrder=" + IntegerToString((long)close_order_ticket) +
+                      "; closeDeal=" + IntegerToString((long)close_deal_ticket) +
+                      "; closePrice=" + DoubleToString(close_price, _Digits) +
+                      "; closeVolume=" + DoubleToString(close_volume, 4) +
+                      "; policy=" + FALCON_MREB_DECISION_POLICY;
+
+      string row = "";
+      row += FalconCsvSafe("EA_MANAGED_PROTECTION_RUNNER_CLOSE_REQUEST") + ",";
+      row += FalconCsvSafe(link.trade_id) + ",";
+      row += FalconCsvSafe(link.strategy_id) + ",";
+      row += FalconCsvSafe(link.engine_id) + ",";
+      row += FalconCsvSafe(FalconDirectionToString(link.direction)) + ",";
+      row += FalconCsvSafe(FalconTimeToString(close_time > 0 ? close_time : TimeCurrent())) + ",";
+      row += DoubleToString(link.planned_entry_price, _Digits) + ",";
+      row += DoubleToString(link.broker_entry_price, _Digits) + ",";
+      row += DoubleToString(close_volume > 0.0 ? close_volume : (link.accepted_lot > 0.0 ? link.accepted_lot : link.requested_lot), 4) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(link.broker_entry_attempted)) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(link.broker_entry_accepted)) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(close_attempted)) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(close_accepted)) + ",";
+      row += IntegerToString((long)link.broker_position_ticket) + ",";
+      row += IntegerToString((long)link.broker_order_ticket) + ",";
+      row += IntegerToString((long)close_deal_ticket) + ",";
+      row += IntegerToString((int)link.broker_magic) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += DoubleToString(0.0, 2) + ",";
+      row += DoubleToString(0.0, 2) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += FalconCsvSafe(close_accepted ? "EA_MANAGED_CLOSE_REQUEST_ACCEPTED_ACTUAL_DELTA_PENDING_ON_TRADE_TRANSACTION" : "EA_MANAGED_CLOSE_REQUEST_REJECTED_OR_NOT_SENT") + ",";
+      row += FalconCsvSafe(FALCON_BELR_EXECUTION_POLICY) + ",";
+      row += FalconCsvSafe(close_status) + ",";
+      row += FalconCsvSafe(reason);
+      FileWriteString(handle, row + "\r\n");
+      FileClose(handle);
+   }
+
+
+   void AppendBrokerPaperTradeReconciliationRecord(const FalconTradeLifecycleRecord &record,
+                                                  const FalconBrokerTradeLink &link,
+                                                  const string reconciliation_event,
+                                                  const string reconciliation_status,
+                                                  const string reconciliation_reason)
+   {
+      int handle = FileOpen(m_broker_paper_reconciliation_file, FalconReportReadWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         WriteBrokerPaperTradeReconciliationHeader();
+         handle = FileOpen(m_broker_paper_reconciliation_file, FalconReportReadWriteCsvFlags(), ',');
+      }
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not append BrokerPaperTradeReconciliation row: %s", m_broker_paper_reconciliation_file));
+         return;
+      }
+
+      FileSeek(handle, 0, SEEK_END);
+      double paper_final_usd = FalconTimelineFinalWorkingTradeUsd(record);
+      double paper_final_points = FalconTimelineFinalWorkingTradePoints(record);
+      double entry_delta = 0.0;
+      if(link.broker_entry_price > 0.0 && record.entry_price > 0.0)
+         entry_delta = link.broker_entry_price - record.entry_price;
+      double sl_delta = 0.0;
+      if(link.broker_sl > 0.0 && record.structural_sl > 0.0)
+         sl_delta = link.broker_sl - record.structural_sl;
+      double tp_delta = 0.0;
+      if(link.broker_tp > 0.0 && record.tp3 > 0.0)
+         tp_delta = link.broker_tp - record.tp3;
+      int entry_time_delta = 0;
+      if(link.broker_entry_time > 0 && record.entry_time > 0)
+         entry_time_delta = (int)(link.broker_entry_time - record.entry_time);
+      int exit_time_delta = 0;
+      if(link.broker_close_time > 0 && record.exit_time > 0)
+         exit_time_delta = (int)(link.broker_close_time - record.exit_time);
+      string not_opened_reason = "";
+      if(!link.broker_entry_accepted)
+         not_opened_reason = link.status + ": " + link.reason;
+      bool server_sl_hit = (StringFind(link.broker_exit_status, "SL") >= 0);
+      bool server_tp_hit = (StringFind(link.broker_exit_status, "TP") >= 0);
+      bool managed_close_observed = (link.broker_exit_observed && StringFind(link.broker_exit_status, "EXPERT") >= 0);
+      double lot_executed = (link.accepted_lot > 0.0 ? link.accepted_lot : 0.0);
+      double lot_delta = lot_executed - record.falcon_dlm_active_lot;
+      double paper_exit_price = record.exit_price;
+      double broker_close_price = link.broker_close_price;
+      double close_price_delta = 0.0;
+      if(broker_close_price > 0.0 && paper_exit_price > 0.0)
+         close_price_delta = broker_close_price - paper_exit_price;
+      double broker_actual_points = 0.0;
+      if(link.broker_entry_price > 0.0 && broker_close_price > 0.0)
+         broker_actual_points = FalconRawIndexPoints(record.direction, link.broker_entry_price, broker_close_price);
+      double broker_actual_points_minus_paper_final = broker_actual_points - paper_final_points;
+      double broker_value_at_executed_lot = 0.0;
+      bool broker_value_available = false;
+      if(lot_executed > 0.0)
+      {
+         broker_value_available = FalconBrokerUsdPerIndexPointByOrderCalc(record, lot_executed, broker_value_at_executed_lot);
+         if(!broker_value_available)
+            broker_value_at_executed_lot = FalconBrokerUsdPerIndexPointFallback(lot_executed);
+      }
+      double expected_broker_usd_from_paper_final = paper_final_points * broker_value_at_executed_lot;
+      double broker_actual_minus_expected_broker_final = link.broker_actual_balance_delta - expected_broker_usd_from_paper_final;
+      string server_stop_attach_policy = (FALCON_LOCK_PARITY_ATTACH_SERVER_SL_TP ? "SERVER_SL_TP_ATTACHED" : FALCON_LOCK_PARITY_SERVER_STOP_POLICY);
+
+      string reconciliation_row_role = "FINAL_OUTCOME";
+      bool is_final_reconciliation_row = true;
+      if(reconciliation_event == "PAPER_FINAL_ACTIVE_BROKER_LINK_FOUND_BEFORE_MANAGED_CLOSE" ||
+         reconciliation_event == "EA_MANAGED_CLOSE_REQUEST_SENT")
+      {
+         reconciliation_row_role = "INTERMEDIATE_TRACE";
+         is_final_reconciliation_row = false;
+      }
+
+      string lock_gap_category = "MATCHED_OR_PENDING_RECONCILIATION";
+      string lock_gap_primary_cause = "MATCHED_BROKER_AND_PAPER_OR_AWAITING_EXIT";
+      double lock_gap_usd = link.broker_actual_balance_delta - paper_final_usd;
+      string lock_gap_action = "KEEP_REPORTING_ONLY_UNTIL_NEXT_PARITY_STAGE";
+
+      if(!is_final_reconciliation_row)
+      {
+         // v0.56.9: Do not count trace rows in LOCK gap totals.
+         // Earlier v0.56.8d rows such as ACTIVE_LINK_FOUND and MANAGED_CLOSE_REQUEST
+         // repeated the same TradeId before the final exit row and inflated gap sums.
+         lock_gap_category = "INTERMEDIATE_TRACE_NOT_COUNTED_IN_LOCK_GAP";
+         lock_gap_primary_cause = reconciliation_event;
+         lock_gap_usd = 0.0;
+         lock_gap_action = "IGNORE_IN_FINAL_LOCK_GAP_ROLLUP_WAIT_FOR_EXIT_OR_FINAL_ROW";
+      }
+      else if(StringFind(reconciliation_status, "BROKER_ONLY") >= 0 || StringFind(reconciliation_event, "WITHOUT_PAPER") >= 0)
+      {
+         lock_gap_category = "BROKER_ONLY_TRADE_NOT_IN_LOCK";
+         lock_gap_primary_cause = "BROKER_ENTRY_HAS_NO_PAPER_FINAL_LIFECYCLE";
+         lock_gap_usd = link.broker_actual_balance_delta;
+         lock_gap_action = "ELIMINATE_BROKER_ONLY_ENTRY_BEFORE_PROFIT_PARITY";
+      }
+      else if(!link.broker_entry_accepted)
+      {
+         lock_gap_category = "PAPER_TRADE_NOT_OPENED_ON_BROKER";
+         lock_gap_usd = -paper_final_usd;
+         if(StringFind(link.reason, "EXISTING_FALCON_POSITION") >= 0)
+         {
+            lock_gap_primary_cause = "POSITION_SERIALIZATION_MAX_OPEN_POSITIONS_GATE";
+            lock_gap_action = "DESIGN_LOCK_PARITY_ENTRY_QUEUE_OR_FASTER_MANAGED_EXIT_BEFORE_RELAXING_SAFETY";
+         }
+         else if(StringFind(link.reason, "STRUCTURAL_SL_DISTANCE") >= 0)
+         {
+            lock_gap_primary_cause = "STRUCTURAL_SL_DISTANCE_RISK_GUARD";
+            lock_gap_action = "MEASURE_LOCK_GAIN_LOST_TO_SL_DISTANCE_GUARD_BEFORE_ANY_THRESHOLD_CHANGE";
+         }
+         else if(StringFind(link.reason, "SL_LOSS_TOO_LARGE") >= 0)
+         {
+            lock_gap_primary_cause = "STRUCTURAL_SL_LOSS_RISK_GUARD";
+            lock_gap_action = "MEASURE_LOCK_GAIN_LOST_TO_SL_LOSS_GUARD_BEFORE_ANY_THRESHOLD_CHANGE";
+         }
+         else if(StringFind(link.reason, "LOT_AUTHORITY") >= 0)
+         {
+            lock_gap_primary_cause = "LOT_AUTHORITY_OR_CAPITAL_RISK_GATE";
+            lock_gap_action = "COMPARE_PAPER_LOT_VS_BROKER_AUTHORIZED_LOT_AND_CAPITAL_REQUIREMENTS";
+         }
+         else if(StringFind(link.reason, "MARGIN") >= 0)
+         {
+            lock_gap_primary_cause = "BROKER_MARGIN_GATE";
+            lock_gap_action = "VERIFY_SYMBOL_LEVERAGE_MARGIN_AND_MIN_LOT_CONDITIONS";
+         }
+         else
+         {
+            lock_gap_primary_cause = "ENTRY_BLOCKED_OR_NO_AUDIT_LINK";
+            lock_gap_action = "INSPECT_NOT_OPENED_REASON_AND_BROKER_ENTRY_LIFECYCLE";
+         }
+      }
+      else if(server_sl_hit)
+      {
+         lock_gap_category = "EXIT_LIFECYCLE_GAP_SERVER_SL_BEFORE_LOCK_FINAL";
+         lock_gap_primary_cause = "SERVER_STRUCTURAL_SL_CLOSED_BEFORE_PAPER_PROTECTION_RUNNER";
+         lock_gap_action = "BUILD_MANAGED_PROTECTION_RUNNER_EXECUTION_BEFORE_ANY_DEMO_LIVE";
+      }
+      else if(server_tp_hit)
+      {
+         lock_gap_category = "EXIT_LIFECYCLE_GAP_TP3_SAFETY_CAP";
+         lock_gap_primary_cause = "TP3_SERVER_SAFETY_CAP_IS_NOT_TRUE_LOCK_RUNNER";
+         lock_gap_action = "REPLACE_TP3_CAP_WITH_CONTROLLED_MANAGED_RUNNER_POLICY_LATER";
+      }
+      else if(managed_close_observed)
+      {
+         if(MathAbs(lock_gap_usd) <= 0.05)
+         {
+            lock_gap_category = "LOCK_PARITY_MATCH_WITHIN_TOLERANCE";
+            lock_gap_primary_cause = "EA_MANAGED_CLOSE_OBSERVED_AND_ACCOUNT_DELTA_MATCHES_LOCK_FINAL";
+            lock_gap_action = "KEEP_AS_PARITY_REFERENCE_SAMPLE";
+         }
+         else if(MathAbs(lot_delta) > 0.00001)
+         {
+            lock_gap_category = "LOT_EXPOSURE_GAP_ON_MATCHED_MANAGED_CLOSE";
+            lock_gap_primary_cause = "BROKER_EXECUTED_LOT_DIFFERS_FROM_LOCK_PAPER_ACTIVE_LOT";
+            lock_gap_action = "ALIGN_DYNAMIC_LOT_EXPOSURE_OR_EXPLAIN_ACCOUNT_EQUIVALENCE_LIMIT";
+         }
+         else if(MathAbs(broker_actual_points_minus_paper_final) > 2.0)
+         {
+            lock_gap_category = "MANAGED_CLOSE_PRICE_POINTS_GAP_ON_MATCHED_CLOSE";
+            lock_gap_primary_cause = "BROKER_ENTRY_OR_CLOSE_PRICE_PATH_DIFFERS_FROM_LOCK_FINAL_POINTS";
+            lock_gap_action = "COMPARE_PAPER_EXIT_PRICE_BROKER_CLOSE_PRICE_AND_ENTRY_FILL_BEFORE_RUNNER_CHANGES";
+         }
+         else if(MathAbs(entry_delta) > 2.0)
+         {
+            lock_gap_category = "ENTRY_FILL_DELTA_ON_MATCHED_MANAGED_CLOSE";
+            lock_gap_primary_cause = "BID_ASK_SPREAD_OR_MARKET_FILL_DIFFERENCE_ON_MANAGED_CLOSE_SAMPLE";
+            lock_gap_action = "MEASURE_FILL_DELTA_DISTRIBUTION_BEFORE_EXECUTION_OPTIMIZATION";
+         }
+         else
+         {
+            lock_gap_category = "MANAGED_CLOSE_ACCOUNTING_GAP_AFTER_PRICE_POINTS_MATCH";
+            lock_gap_primary_cause = "EA_MANAGED_CLOSE_OBSERVED_BUT_ACCOUNT_DELTA_DIFFERS_AFTER_PRICE_POINTS_CHECK";
+            lock_gap_action = "COMPARE_ORDERCALC_POINT_VALUE_COMMISSION_SWAP_AND_CONTRACT_MULTIPLIER";
+         }
+      }
+      else if(link.broker_entry_accepted && !link.broker_exit_observed)
+      {
+         lock_gap_category = "OPEN_OR_UNOBSERVED_BROKER_EXIT";
+         lock_gap_primary_cause = "BROKER_EXIT_NOT_YET_OBSERVED_IN_TRANSACTION_HISTORY";
+         lock_gap_action = "KEEP_HISTORY_RECOVERY_AND_DEINIT_FLUSH_ACTIVE";
+      }
+
+      if(is_final_reconciliation_row && link.broker_entry_accepted && MathAbs(entry_delta) > 2.0 && lock_gap_category == "MATCHED_OR_PENDING_RECONCILIATION")
+      {
+         lock_gap_category = "ENTRY_FILL_DELTA_GAP";
+         lock_gap_primary_cause = "BID_ASK_SPREAD_OR_MARKET_FILL_DIFFERENCE";
+         lock_gap_action = "MEASURE_FILL_DELTA_DISTRIBUTION_BEFORE_EXECUTION_OPTIMIZATION";
+      }
+
+      string row = "";
+      row += FalconCsvSafe(reconciliation_event) + ",";
+      row += FalconCsvSafe(record.trade_id) + ",";
+      row += FalconCsvSafe(StringLen(link.trade_id_short) > 0 ? link.trade_id_short : FalconTradeIdShortHash(record.trade_id)) + ",";
+      row += FalconCsvSafe(record.strategy_id) + ",";
+      row += FalconCsvSafe(record.engine_id) + ",";
+      row += FalconCsvSafe(FalconDirectionToString(record.direction)) + ",";
+      row += FalconCsvSafe(FalconTimeToString(record.entry_time)) + ",";
+      row += FalconCsvSafe(FalconTimeToString(link.broker_entry_time)) + ",";
+      row += IntegerToString(entry_time_delta) + ",";
+      row += FalconCsvSafe(FalconTimeToString(record.exit_time)) + ",";
+      row += FalconCsvSafe(FalconTimeToString(link.broker_close_time)) + ",";
+      row += IntegerToString(exit_time_delta) + ",";
+      row += DoubleToString(record.entry_price, _Digits) + ",";
+      row += DoubleToString(link.broker_entry_price, _Digits) + ",";
+      row += DoubleToString(entry_delta, _Digits) + ",";
+      row += DoubleToString(record.structural_sl, _Digits) + ",";
+      row += DoubleToString(link.broker_sl, _Digits) + ",";
+      row += DoubleToString(sl_delta, _Digits) + ",";
+      row += DoubleToString(record.tp1, _Digits) + ",";
+      row += DoubleToString(record.tp2, _Digits) + ",";
+      row += DoubleToString(record.tp3, _Digits) + ",";
+      row += DoubleToString(link.broker_tp, _Digits) + ",";
+      row += DoubleToString(tp_delta, _Digits) + ",";
+      row += DoubleToString(paper_exit_price, _Digits) + ",";
+      row += DoubleToString(broker_close_price, _Digits) + ",";
+      row += DoubleToString(close_price_delta, _Digits) + ",";
+      row += DoubleToString(broker_actual_points, 2) + ",";
+      row += DoubleToString(broker_actual_points_minus_paper_final, 2) + ",";
+      row += DoubleToString(expected_broker_usd_from_paper_final, 4) + ",";
+      row += DoubleToString(broker_actual_minus_expected_broker_final, 4) + ",";
+      row += FalconCsvSafe(server_stop_attach_policy) + ",";
+      row += DoubleToString(record.net_usd, 4) + ",";
+      row += DoubleToString(paper_final_usd, 4) + ",";
+      row += DoubleToString(link.broker_actual_balance_delta, 4) + ",";
+      row += DoubleToString(link.broker_actual_balance_delta - paper_final_usd, 4) + ",";
+      row += DoubleToString(record.net_index_points, 2) + ",";
+      row += DoubleToString(paper_final_points, 2) + ",";
+      row += IntegerToString((long)link.broker_position_ticket) + ",";
+      row += IntegerToString((long)link.broker_position_identifier) + ",";
+      row += IntegerToString((long)link.broker_order_ticket) + ",";
+      row += IntegerToString((long)link.broker_deal_ticket) + ",";
+      row += IntegerToString((long)link.broker_close_order_ticket) + ",";
+      row += IntegerToString((long)link.broker_close_deal_ticket) + ",";
+      row += FalconCsvSafe(link.broker_exit_status) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(link.managed_close_attempted || link.broker_close_attempted)) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(managed_close_observed)) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(server_sl_hit)) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(server_tp_hit)) + ",";
+      row += FalconCsvSafe(not_opened_reason) + ",";
+      row += DoubleToString(link.requested_lot, 4) + ",";
+      row += DoubleToString(link.accepted_lot, 4) + ",";
+      row += DoubleToString(lot_executed, 4) + ",";
+      row += DoubleToString(lot_delta, 4) + ",";
+      row += FalconCsvSafe(reconciliation_row_role) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(is_final_reconciliation_row)) + ",";
+      row += FalconCsvSafe(lock_gap_category) + ",";
+      row += FalconCsvSafe(lock_gap_primary_cause) + ",";
+      row += DoubleToString(lock_gap_usd, 4) + ",";
+      row += FalconCsvSafe(lock_gap_action) + ",";
+      row += FalconCsvSafe(reconciliation_status) + ",";
+      row += FalconCsvSafe(reconciliation_reason);
+      FileWriteString(handle, row + "\r\n");
+      FileClose(handle);
+   }
+
+
+
+   void AppendBrokerOnlyTradeReconciliationRecord(const FalconBrokerTradeLink &link,
+                                                  const string reconciliation_event,
+                                                  const string reconciliation_status,
+                                                  const string reconciliation_reason)
+   {
+      // v0.56.9: A broker-only trade is a LOCK-parity violation until proven otherwise.
+      // These rows make the reconciliation complete even when a broker entry/exit has
+      // no matching Paper/TradeLifecycle record. Do not use this as permission to keep
+      // broker-only trades; it is a diagnostic gate for the next anti-orphan entry fix.
+      int handle = FileOpen(m_broker_paper_reconciliation_file, FalconReportReadWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         WriteBrokerPaperTradeReconciliationHeader();
+         handle = FileOpen(m_broker_paper_reconciliation_file, FalconReportReadWriteCsvFlags(), ',');
+      }
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not append broker-only BrokerPaperTradeReconciliation row: %s", m_broker_paper_reconciliation_file));
+         return;
+      }
+
+      FileSeek(handle, 0, SEEK_END);
+      bool server_sl_hit = (StringFind(link.broker_exit_status, "SL") >= 0);
+      bool server_tp_hit = (StringFind(link.broker_exit_status, "TP") >= 0);
+      bool managed_close_observed = (link.broker_exit_observed && StringFind(link.broker_exit_status, "EXPERT") >= 0);
+      double lot_executed = (link.accepted_lot > 0.0 ? link.accepted_lot : 0.0);
+      double entry_delta = 0.0;
+      double sl_delta = 0.0;
+      double tp_delta = 0.0;
+      int entry_time_delta = 0;
+      int exit_time_delta = 0;
+      string not_opened_reason = "BROKER_ONLY_TRADE_NOT_FOUND_IN_PAPER_TRADE_LIFECYCLE_LOCK_PARITY_VIOLATION";
+      string lock_gap_category = "BROKER_ONLY_TRADE_NOT_IN_LOCK";
+      string lock_gap_primary_cause = "BROKER_ENTRY_HAS_NO_PAPER_FINAL_LIFECYCLE";
+      double lock_gap_usd = link.broker_actual_balance_delta;
+      string lock_gap_action = "ELIMINATE_BROKER_ONLY_ENTRY_BEFORE_PROFIT_PARITY";
+      if(server_sl_hit)
+         lock_gap_primary_cause = "BROKER_ONLY_SERVER_SL_EXIT";
+      else if(server_tp_hit)
+         lock_gap_primary_cause = "BROKER_ONLY_TP3_SAFETY_CAP_EXIT";
+      else if(managed_close_observed)
+         lock_gap_primary_cause = "BROKER_ONLY_EXPERT_MANAGED_CLOSE_EXIT";
+
+      string reconciliation_row_role = "FINAL_OUTCOME";
+      bool is_final_reconciliation_row = true;
+
+      string row = "";
+      row += FalconCsvSafe(reconciliation_event) + ",";
+      row += FalconCsvSafe(link.trade_id) + ",";
+      row += FalconCsvSafe(StringLen(link.trade_id_short) > 0 ? link.trade_id_short : FalconTradeIdShortHash(link.trade_id)) + ",";
+      row += FalconCsvSafe(link.strategy_id) + ",";
+      row += FalconCsvSafe(link.engine_id) + ",";
+      row += FalconCsvSafe(FalconDirectionToString(link.direction)) + ",";
+      row += FalconCsvSafe("") + ","; // PaperEntryTime unavailable: no Paper final record exists.
+      row += FalconCsvSafe(FalconTimeToString(link.broker_entry_time)) + ",";
+      row += IntegerToString(entry_time_delta) + ",";
+      row += FalconCsvSafe("") + ","; // PaperExitTime unavailable.
+      row += FalconCsvSafe(FalconTimeToString(link.broker_close_time)) + ",";
+      row += IntegerToString(exit_time_delta) + ",";
+      row += DoubleToString(0.0, _Digits) + ",";
+      row += DoubleToString(link.broker_entry_price, _Digits) + ",";
+      row += DoubleToString(entry_delta, _Digits) + ",";
+      row += DoubleToString(0.0, _Digits) + ",";
+      row += DoubleToString(link.broker_sl, _Digits) + ",";
+      row += DoubleToString(sl_delta, _Digits) + ",";
+      row += DoubleToString(0.0, _Digits) + ",";
+      row += DoubleToString(0.0, _Digits) + ",";
+      row += DoubleToString(0.0, _Digits) + ",";
+      row += DoubleToString(link.broker_tp, _Digits) + ",";
+      row += DoubleToString(tp_delta, _Digits) + ",";
+      row += DoubleToString(0.0, _Digits) + ",";
+      row += DoubleToString(link.broker_close_price, _Digits) + ",";
+      row += DoubleToString(0.0, _Digits) + ",";
+      row += DoubleToString(0.0, 2) + ",";
+      row += DoubleToString(0.0, 2) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += DoubleToString(link.broker_actual_balance_delta, 4) + ",";
+      row += FalconCsvSafe(FALCON_LOCK_PARITY_ATTACH_SERVER_SL_TP ? "SERVER_SL_TP_ATTACHED" : FALCON_LOCK_PARITY_SERVER_STOP_POLICY) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += DoubleToString(0.0, 4) + ",";
+      row += DoubleToString(link.broker_actual_balance_delta, 4) + ",";
+      row += DoubleToString(link.broker_actual_balance_delta, 4) + ",";
+      row += DoubleToString(0.0, 2) + ",";
+      row += DoubleToString(0.0, 2) + ",";
+      row += IntegerToString((long)link.broker_position_ticket) + ",";
+      row += IntegerToString((long)link.broker_position_identifier) + ",";
+      row += IntegerToString((long)link.broker_order_ticket) + ",";
+      row += IntegerToString((long)link.broker_deal_ticket) + ",";
+      row += IntegerToString((long)link.broker_close_order_ticket) + ",";
+      row += IntegerToString((long)link.broker_close_deal_ticket) + ",";
+      row += FalconCsvSafe(link.broker_exit_status) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(link.managed_close_attempted || link.broker_close_attempted)) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(managed_close_observed)) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(server_sl_hit)) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(server_tp_hit)) + ",";
+      row += FalconCsvSafe(not_opened_reason) + ",";
+      row += DoubleToString(link.requested_lot, 4) + ",";
+      row += DoubleToString(link.accepted_lot, 4) + ",";
+      row += DoubleToString(lot_executed, 4) + ",";
+      row += DoubleToString(lot_executed, 4) + ",";
+      row += FalconCsvSafe(reconciliation_row_role) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(is_final_reconciliation_row)) + ",";
+      row += FalconCsvSafe(lock_gap_category) + ",";
+      row += FalconCsvSafe(lock_gap_primary_cause) + ",";
+      row += DoubleToString(lock_gap_usd, 4) + ",";
+      row += FalconCsvSafe(lock_gap_action) + ",";
+      row += FalconCsvSafe(reconciliation_status) + ",";
+      row += FalconCsvSafe(reconciliation_reason);
+      FileWriteString(handle, row + "\r\n");
+      FileClose(handle);
+   }
+
+   void AppendBrokerTradeManagementTimelineEvent(const FalconTradeLifecycleRecord &record,
+                                                 const ENUM_FALCON_BROKER_TM_EVENT_TYPE event_type,
+                                                 const datetime event_time,
+                                                 const double event_price,
+                                                 const bool event_executable,
+                                                 const string execution_eligibility,
+                                                 const bool tp1_touched,
+                                                 const bool tp2_touched,
+                                                 const string status,
+                                                 const string reason)
+   {
+      int handle = FileOpen(m_broker_tm_timeline_file, FalconReportReadWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         WriteBrokerTradeManagementEventTimelineHeader();
+         handle = FileOpen(m_broker_tm_timeline_file, FalconReportReadWriteCsvFlags(), ',');
+      }
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not append BrokerTradeManagementEventTimeline row: %s", m_broker_tm_timeline_file));
+         return;
+      }
+
+      FileSeek(handle, 0, SEEK_END);
+      double final_usd = FalconTimelineFinalWorkingTradeUsd(record);
+      double final_points = FalconTimelineFinalWorkingTradePoints(record);
+
+      string row = "";
+      row += FalconCsvSafe(record.trade_id) + ",";
+      row += FalconCsvSafe(record.strategy_id) + ",";
+      row += FalconCsvSafe(record.engine_id) + ",";
+      row += FalconCsvSafe(FalconDirectionToString(record.direction)) + ",";
+      row += FalconCsvSafe(FalconBrokerTmEventTypeToString(event_type)) + ",";
+      row += FalconCsvSafe(FalconTimeToString(event_time)) + ",";
+      row += DoubleToString(event_price, _Digits) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(event_executable)) + ",";
+      row += FalconCsvSafe(execution_eligibility) + ",";
+      row += IntegerToString(0) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(tp1_touched)) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(tp2_touched)) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(record.paper_protection_activated)) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(record.paper_runner_activated)) + ",";
+      row += FalconCsvSafe(record.paper_protection_state) + ",";
+      row += FalconCsvSafe(record.paper_runner_state) + ",";
+      row += DoubleToString(record.net_usd, 4) + ",";
+      row += DoubleToString(final_usd, 4) + ",";
+      row += DoubleToString(record.paper_protection_net_usd, 4) + ",";
+      row += DoubleToString(record.paper_runner_net_usd, 4) + ",";
+      row += DoubleToString(record.net_index_points, 2) + ",";
+      row += DoubleToString(final_points, 2) + ",";
+      row += FalconCsvSafe(FALCON_TMET_EVENT_SOURCE) + ",";
+      row += FalconCsvSafe(status) + ",";
+      row += FalconCsvSafe(reason);
+
+      FileWriteString(handle, row + "\r\n");
+      FileClose(handle);
+   }
+
+   void AppendBrokerTradeManagementTimelineForRecord(const FalconTradeLifecycleRecord &record)
+   {
+      FalconRunnerBarPathStats barpath_stats;
+      bool path_ok = FalconBuildRunnerBarPathStats(record, barpath_stats);
+      bool tp1_touched = (path_ok && barpath_stats.tp1_touched);
+      bool tp2_touched = (path_ok && barpath_stats.tp2_touched);
+
+      string audit_only = FALCON_TMET_EXECUTION_ELIGIBILITY_AUDIT_ONLY;
+      datetime entry_time = FalconTimelineSafeEventTime(record, true);
+      datetime exit_time = FalconTimelineSafeEventTime(record, false);
+
+      AppendBrokerTradeManagementTimelineEvent(record,
+                                               FALCON_BTM_EVENT_ENTRY_PLANNED,
+                                               entry_time,
+                                               record.entry_price,
+                                               false,
+                                               audit_only,
+                                               tp1_touched,
+                                               tp2_touched,
+                                               "PAPER_ENTRY_PLAN_AUDIT_ONLY",
+                                               "Strategy-agnostic planned entry captured after Paper finalization; v0.56.4b broker order is allowed only when StructuralSL + bridge initial TP are valid and tester-only guards pass; exits are observed through OnTradeTransaction.");
+
+      AppendBrokerTradeManagementTimelineEvent(record,
+                                               FALCON_BTM_EVENT_ENTRY_ACCEPTED_PAPER,
+                                               entry_time,
+                                               record.entry_price,
+                                               false,
+                                               audit_only,
+                                               tp1_touched,
+                                               tp2_touched,
+                                               "PAPER_ENTRY_ACCEPTED_AUDIT_ONLY",
+                                               "Paper/Shadow lifecycle accepted the trade; broker bridge remains disabled.");
+
+      if(tp1_touched)
+      {
+         AppendBrokerTradeManagementTimelineEvent(record,
+                                                  FALCON_BTM_EVENT_TP1_TOUCH,
+                                                  exit_time,
+                                                  record.tp1,
+                                                  false,
+                                                  FALCON_TMET_NO_EXACT_TICK_TIME_STATUS,
+                                                  tp1_touched,
+                                                  tp2_touched,
+                                                  "TP1_TOUCH_AUDIT_DETECTED",
+                                                  "Bar-path scan detected TP1 touch, but exact tick-time/order is not yet available in v0.56.4b timeline audit.");
+      }
+
+      if(tp2_touched)
+      {
+         AppendBrokerTradeManagementTimelineEvent(record,
+                                                  FALCON_BTM_EVENT_TP2_TOUCH,
+                                                  exit_time,
+                                                  record.tp2,
+                                                  false,
+                                                  FALCON_TMET_NO_EXACT_TICK_TIME_STATUS,
+                                                  tp1_touched,
+                                                  tp2_touched,
+                                                  "TP2_TOUCH_AUDIT_DETECTED",
+                                                  "Bar-path scan detected TP2 touch, but exact tick-time/order is not yet available in v0.56.4b timeline audit.");
+      }
+
+      if(record.paper_protection_activated)
+      {
+         AppendBrokerTradeManagementTimelineEvent(record,
+                                                  FALCON_BTM_EVENT_PROTECTION_ARMED,
+                                                  exit_time,
+                                                  record.paper_protection_level,
+                                                  false,
+                                                  audit_only,
+                                                  tp1_touched,
+                                                  tp2_touched,
+                                                  "PROTECTION_ARMED_AFTER_PAPER_FINALIZATION",
+                                                  record.paper_protection_trigger);
+      }
+
+      if(record.paper_virtual_sl_hit)
+      {
+         AppendBrokerTradeManagementTimelineEvent(record,
+                                                  FALCON_BTM_EVENT_PROTECTION_TRIGGERED,
+                                                  exit_time,
+                                                  record.paper_protection_level,
+                                                  false,
+                                                  FALCON_TMET_NO_EXACT_TICK_TIME_STATUS,
+                                                  tp1_touched,
+                                                  tp2_touched,
+                                                  "PROTECTION_TRIGGERED_ACCOUNTING_AUDIT",
+                                                  "Paper virtual SL hit is known after finalization; exact broker-executable trigger time is not yet established.");
+      }
+
+      if(record.paper_runner_activated)
+      {
+         AppendBrokerTradeManagementTimelineEvent(record,
+                                                  FALCON_BTM_EVENT_RUNNER_ARMED,
+                                                  exit_time,
+                                                  record.tp2,
+                                                  false,
+                                                  audit_only,
+                                                  tp1_touched,
+                                                  tp2_touched,
+                                                  "RUNNER_ARMED_AFTER_PAPER_FINALIZATION",
+                                                  "Runner was activated by Paper proof logic; broker bridge remains disabled.");
+
+         AppendBrokerTradeManagementTimelineEvent(record,
+                                                  FALCON_BTM_EVENT_RUNNER_EXIT,
+                                                  exit_time,
+                                                  record.exit_price,
+                                                  false,
+                                                  FALCON_TMET_NO_EXACT_TICK_TIME_STATUS,
+                                                  tp1_touched,
+                                                  tp2_touched,
+                                                  "RUNNER_EXIT_ACCOUNTING_AUDIT",
+                                                  record.paper_runner_exit_reason);
+      }
+
+      if(FalconClosedAtStop(record))
+      {
+         AppendBrokerTradeManagementTimelineEvent(record,
+                                                  FALCON_BTM_EVENT_RAW_SL_HIT,
+                                                  exit_time,
+                                                  record.exit_price,
+                                                  false,
+                                                  audit_only,
+                                                  tp1_touched,
+                                                  tp2_touched,
+                                                  "RAW_SL_CLOSE_AUDIT_ONLY",
+                                                  record.close_reason);
+      }
+      else if(FalconClosedByTimeout(record))
+      {
+         AppendBrokerTradeManagementTimelineEvent(record,
+                                                  FALCON_BTM_EVENT_TIMEOUT_CLOSE,
+                                                  exit_time,
+                                                  record.exit_price,
+                                                  false,
+                                                  audit_only,
+                                                  tp1_touched,
+                                                  tp2_touched,
+                                                  "RAW_TIMEOUT_CLOSE_AUDIT_ONLY",
+                                                  record.close_reason);
+      }
+
+      if(MathAbs(FalconTimelineFinalWorkingTradeUsd(record) - record.net_usd) > 0.00005)
+      {
+         AppendBrokerTradeManagementTimelineEvent(record,
+                                                  FALCON_BTM_EVENT_ACCOUNTING_ONLY_ADJUSTMENT,
+                                                  exit_time,
+                                                  record.exit_price,
+                                                  false,
+                                                  FALCON_TMET_ACCOUNTING_ONLY_STATUS,
+                                                  tp1_touched,
+                                                  tp2_touched,
+                                                  "FINAL_WORKING_DIFF_REQUIRES_EXECUTABLE_EVENT_PROOF",
+                                                  "Paper final-working differs from raw trade USD; this row marks the gap that must be proven broker-executable before parity.");
+      }
+
+      AppendBrokerTradeManagementTimelineEvent(record,
+                                               FALCON_BTM_EVENT_FINAL_CLOSE,
+                                               exit_time,
+                                               record.exit_price,
+                                               false,
+                                               audit_only,
+                                               tp1_touched,
+                                               tp2_touched,
+                                               FalconTimelineCloseReasonEventStatus(record),
+                                               record.paper_final_exit_reason);
+   }
+
+   void WriteBrokerContractRealityAudit()
+   {
+      int handle = FileOpen(m_broker_contract_reality_audit_file, FalconReportWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not create BrokerContractRealityAudit foundation report: %s", m_broker_contract_reality_audit_file));
+         return;
+      }
+
+      double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+      double tick_size = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+      double tick_value = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+      double contract_size = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_CONTRACT_SIZE);
+      double volume_min = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+      double volume_max = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+      double volume_step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+      double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      double reference_lot = FALCON_BROKER_REBUILD_REFERENCE_LOT;
+      double paper_usd_per_index_point_reference = MathAbs(contract_size * reference_lot);
+
+      FalconTradeLifecycleRecord probe_record;
+      probe_record.direction = FALCON_DIRECTION_BUY;
+      probe_record.entry_price = (ask > 0.0 ? ask : bid);
+      double broker_value_one_lot = 0.0;
+      double broker_value_reference_lot = 0.0;
+      double broker_value_min_lot = 0.0;
+      bool ordercalc_one = FalconBrokerUsdPerIndexPointByOrderCalc(probe_record, 1.0, broker_value_one_lot);
+      bool ordercalc_ref = FalconBrokerUsdPerIndexPointByOrderCalc(probe_record, reference_lot, broker_value_reference_lot);
+      bool ordercalc_min = FalconBrokerUsdPerIndexPointByOrderCalc(probe_record, volume_min, broker_value_min_lot);
+      if(!ordercalc_one)
+         broker_value_one_lot = FalconBrokerUsdPerIndexPointFallback(1.0);
+      if(!ordercalc_ref)
+         broker_value_reference_lot = FalconBrokerUsdPerIndexPointFallback(reference_lot);
+      if(!ordercalc_min)
+         broker_value_min_lot = FalconBrokerUsdPerIndexPointFallback(volume_min);
+
+      bool ordercalc_available = (ordercalc_one && ordercalc_ref && ordercalc_min);
+      double required_parity_lot_reference = 0.0;
+      if(broker_value_one_lot > 0.0 && paper_usd_per_index_point_reference > 0.0)
+         required_parity_lot_reference = paper_usd_per_index_point_reference / broker_value_one_lot;
+      bool parity_lot_below_min = (required_parity_lot_reference > 0.0 && volume_min > 0.0 && required_parity_lot_reference < volume_min);
+      string decision = "BROKER_CONTRACT_REBASED_COMPARISON_AUDIT_ONLY_NO_BROKER_EXECUTION";
+      string recommendation = "NEXT_BUILD_MAY_ADD_TESTER_ONLY_ENTRY_BRIDGE_ONLY_AFTER_REBASED_AUDIT_AND_EVENT_TIMELINE_PASS";
+
+      string header = "EAName,Version,Build,GeneratedAt,Symbol,Digits,Point,TickSize,TickValue,ContractSize,";
+      header += "VolumeMin,VolumeMax,VolumeStep,ReferenceLot,Ask,Bid,PaperUsdPerIndexPointAtReferenceLot,";
+      header += "BrokerUsdPerIndexPointAtOneLot,BrokerUsdPerIndexPointAtReferenceLot,BrokerUsdPerIndexPointAtMinLot,";
+      header += "RequiredParityLotAtReference,BrokerMinLot,ParityLotBelowMin,OrderCalcProfitAvailable,";
+      header += "ExecutionPolicy,ReusabilityPolicy,Decision,Recommendation";
+      FileWriteString(handle, header + "\r\n");
+
+      string row = "";
+      row += FalconCsvSafe(EA_NAME) + ",";
+      row += FalconCsvSafe(EA_VERSION_TAG) + ",";
+      row += FalconCsvSafe(EA_BUILD_TAG) + ",";
+      row += FalconCsvSafe(TimeToString(TimeCurrent(), TIME_DATE | TIME_SECONDS)) + ",";
+      row += FalconCsvSafe(_Symbol) + ",";
+      row += IntegerToString(_Digits) + ",";
+      row += DoubleToString(point, 10) + ",";
+      row += DoubleToString(tick_size, 10) + ",";
+      row += DoubleToString(tick_value, 6) + ",";
+      row += DoubleToString(contract_size, 6) + ",";
+      row += DoubleToString(volume_min, 4) + ",";
+      row += DoubleToString(volume_max, 4) + ",";
+      row += DoubleToString(volume_step, 4) + ",";
+      row += DoubleToString(reference_lot, 4) + ",";
+      row += DoubleToString(ask, _Digits) + ",";
+      row += DoubleToString(bid, _Digits) + ",";
+      row += DoubleToString(paper_usd_per_index_point_reference, 6) + ",";
+      row += DoubleToString(broker_value_one_lot, 6) + ",";
+      row += DoubleToString(broker_value_reference_lot, 6) + ",";
+      row += DoubleToString(broker_value_min_lot, 6) + ",";
+      row += DoubleToString(required_parity_lot_reference, 6) + ",";
+      row += DoubleToString(volume_min, 4) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(parity_lot_below_min)) + ",";
+      row += FalconCsvSafe(FalconBoolToYesNo(ordercalc_available)) + ",";
+      row += FalconCsvSafe(FALCON_BELR_EXECUTION_POLICY) + ",";
+      row += FalconCsvSafe(FALCON_BELR_REUSABILITY_POLICY) + ",";
+      row += FalconCsvSafe(decision) + ",";
+      row += FalconCsvSafe(recommendation);
+
+      FileWriteString(handle, row + "\r\n");
       FileClose(handle);
    }
 
@@ -8866,7 +10368,7 @@ public:
 
       FileWrite(handle,
                 EA_NAME, EA_VERSION_TAG, EA_BUILD_TAG, TimeToString(TimeCurrent(), TIME_DATE | TIME_SECONDS),
-                FalconReportStorageMode(), ReportModeTag, FalconEffectiveReportFromDateTag(), FalconEffectiveReportToDateTag(),
+                FalconReportStorageMode(), FalconEffectiveReportModeTag(), FalconEffectiveReportFromDateTag(), FalconEffectiveReportToDateTag(),
                 FalconBoolToYesNo(ForceCreateReportFilesOnInit),
                 m_trade_report_file, m_summary_report_file, m_market_diagnostics_file,
                 m_candle_cache_diagnostics_file, m_evidence_diagnostics_file, m_shadow_diagnostics_file,
@@ -9741,7 +11243,7 @@ public:
                 "ExecutionSafety",
                 "PASS",
                 "NO_REAL_EXECUTION",
-                "Execution guard remains active. OrderSend is not used in this build.");
+                "Execution guard remains active. v0.56.4b uses tester-only atomic entry+exit bridge plus exit observation when EnableRealExecution=true; Demo/Live and BrokerModify remain disabled.");
 
       FileWrite(handle,
                 EA_NAME,
@@ -9972,6 +11474,9 @@ public:
       UpdateTotals(record);
       AppendTradeRecord(record);
       AppendPaperStateSnapshotRecord(record);
+      AppendBrokerExecutionLifecycleAuditRecord(record);
+      AppendBrokerRebasedPaperComparisonRecord(record);
+      AppendBrokerTradeManagementTimelineForRecord(record);
    }
 
    int CountPhysicalTradeLifecycleDataRows()
@@ -10199,7 +11704,7 @@ public:
 
       summary_row += IntegerToString(m_totals.paper_emergency_triggered_trades) + ",";
       summary_row += IntegerToString(m_totals.paper_emergency_blocked_entries) + ",";
-      summary_row += "0,0,0,";
+      summary_row += IntegerToString(m_broker_entry_bridge_order_send_attempts) + ",0,0,";
       summary_row += IntegerToString(integrity_breaches) + ",";
       summary_row += IntegerToString(physical_trade_rows) + ",";
       summary_row += FalconCsvSafe(physical_trade_rows_status) + ",";
@@ -12261,7 +13766,7 @@ public:
 
    void AssertNoExecution()
    {
-      CFalconLogger::Info("ExecutionGuard active: OrderSend / real trade execution is intentionally disabled in v0.55.13. SIZE250 can only block Shadow staging; FalconGuard, TradeManagement, SL/TP, Smart TM, Bar-Path, Decision Tree, and Timing diagnostics are reporting-only beyond the controlled Shadow guard.");
+      CFalconLogger::Info("ExecutionGuard active: Demo/Live, BrokerModify, and runtime SL changes remain blocked in v0.56.9b. Tester-only broker OrderSend requires mandatory server SL/TP and EA-side managed close is allowed only through the guarded broker bridge when EnableRealExecution=true inside MT5 Strategy Tester.");
    }
 };
 
@@ -12344,6 +13849,2008 @@ public:
 };
 
 // ==================================================================
+// Strategy-agnostic Emergency Server Stop Envelope LOCK Parity Probe - v0.56.9b
+// Controlled tester-only probe with validated StructuralSL/TP plan but no server SL/TP attachment. This bridge remains reusable by future strategies because it
+// consumes FalconShadowTradeRecord / TradeId / StrategyId / EngineId instead of
+// FVG-specific state. It deliberately blocks OrderSend until the broker-facing
+// managed exit lifecycle exists, because every broker trade must have a TP/SL
+// and later Protection/Runner state that can match the reports.
+// ==================================================================
+class CFalconBrokerEntryBridge
+{
+private:
+   bool m_initialized;
+   int  m_entry_attempts;
+   int  m_entry_accepted;
+   int  m_entry_blocked;
+   double m_previous_broker_authority_lot;
+   bool   m_previous_broker_authority_lot_ready;
+   FalconBrokerTradeLink m_active_links[];
+   FalconBrokerTradeLink m_link_audit_history[];
+   FalconTradeLifecycleRecord m_paper_final_records[];
+
+   string BrokerDealReasonToObservationStatus(const long deal_reason)
+   {
+      if(deal_reason == DEAL_REASON_TP)
+         return "SERVER_TP_EXIT";
+      if(deal_reason == DEAL_REASON_SL)
+         return "SERVER_SL_EXIT";
+      if(deal_reason == DEAL_REASON_SO)
+         return "SERVER_STOP_OUT_EXIT";
+      if(deal_reason == DEAL_REASON_CLIENT)
+         return "CLIENT_OR_TESTER_CLOSE_EXIT";
+      if(deal_reason == DEAL_REASON_EXPERT)
+         return "EXPERT_CLOSE_EXIT";
+      return "BROKER_EXIT_OBSERVED_REASON_" + IntegerToString((int)deal_reason);
+   }
+
+   string BrokerDealEntryToString(const long deal_entry)
+   {
+      if(deal_entry == DEAL_ENTRY_IN)
+         return "DEAL_ENTRY_IN";
+      if(deal_entry == DEAL_ENTRY_OUT)
+         return "DEAL_ENTRY_OUT";
+      if(deal_entry == DEAL_ENTRY_INOUT)
+         return "DEAL_ENTRY_INOUT";
+      if(deal_entry == DEAL_ENTRY_OUT_BY)
+         return "DEAL_ENTRY_OUT_BY";
+      return "DEAL_ENTRY_" + IntegerToString((int)deal_entry);
+   }
+
+   void StoreAcceptedLink(const FalconBrokerTradeLink &link)
+   {
+      if(!link.broker_entry_accepted)
+         return;
+      int n = ArraySize(m_active_links);
+      ArrayResize(m_active_links, n + 1);
+      m_active_links[n] = link;
+   }
+
+   void StoreOrUpdateAuditLink(const FalconBrokerTradeLink &link)
+   {
+      if(StringLen(link.trade_id) <= 0)
+         return;
+      int n = ArraySize(m_link_audit_history);
+      for(int i = n - 1; i >= 0; i--)
+      {
+         if(m_link_audit_history[i].trade_id == link.trade_id)
+         {
+            m_link_audit_history[i] = link;
+            return;
+         }
+      }
+      ArrayResize(m_link_audit_history, n + 1);
+      m_link_audit_history[n] = link;
+   }
+
+   bool FindAuditLinkByTradeId(const string trade_id, FalconBrokerTradeLink &link)
+   {
+      if(StringLen(trade_id) <= 0)
+         return false;
+      int n = ArraySize(m_link_audit_history);
+      for(int i = n - 1; i >= 0; i--)
+      {
+         if(m_link_audit_history[i].trade_id == trade_id)
+         {
+            link = m_link_audit_history[i];
+            return true;
+         }
+      }
+      return false;
+   }
+
+   bool FindAuditLinkByTradeHash(const string trade_hash, FalconBrokerTradeLink &link)
+   {
+      if(StringLen(trade_hash) <= 0)
+         return false;
+      int n = ArraySize(m_link_audit_history);
+      for(int i = n - 1; i >= 0; i--)
+      {
+         if(m_link_audit_history[i].trade_id_short == trade_hash)
+         {
+            link = m_link_audit_history[i];
+            return true;
+         }
+      }
+      return false;
+   }
+
+   void StorePaperFinalRecord(const FalconTradeLifecycleRecord &record)
+   {
+      if(StringLen(record.trade_id) <= 0)
+         return;
+      int n = ArraySize(m_paper_final_records);
+      for(int i = n - 1; i >= 0; i--)
+      {
+         if(m_paper_final_records[i].trade_id == record.trade_id)
+         {
+            m_paper_final_records[i] = record;
+            return;
+         }
+      }
+      ArrayResize(m_paper_final_records, n + 1);
+      m_paper_final_records[n] = record;
+   }
+
+   bool FindPaperFinalRecord(const string trade_id, FalconTradeLifecycleRecord &record)
+   {
+      if(StringLen(trade_id) <= 0)
+         return false;
+      int n = ArraySize(m_paper_final_records);
+      for(int i = n - 1; i >= 0; i--)
+      {
+         if(m_paper_final_records[i].trade_id == trade_id)
+         {
+            record = m_paper_final_records[i];
+            return true;
+         }
+      }
+      return false;
+   }
+
+   bool UpdateAuditLinkManagedCloseRequest(const string trade_id,
+                                           const bool attempted,
+                                           const bool accepted,
+                                           const ulong close_order_ticket,
+                                           const ulong close_deal_ticket,
+                                           const string close_comment)
+   {
+      if(StringLen(trade_id) <= 0)
+         return false;
+      int n = ArraySize(m_link_audit_history);
+      for(int i = n - 1; i >= 0; i--)
+      {
+         if(m_link_audit_history[i].trade_id == trade_id)
+         {
+            m_link_audit_history[i].broker_close_attempted = attempted;
+            m_link_audit_history[i].broker_close_accepted = accepted;
+            m_link_audit_history[i].managed_close_attempted = attempted;
+            m_link_audit_history[i].managed_close_accepted = accepted;
+            m_link_audit_history[i].broker_close_order_ticket = close_order_ticket;
+            m_link_audit_history[i].broker_close_deal_ticket = close_deal_ticket;
+            m_link_audit_history[i].managed_close_comment = close_comment;
+            return true;
+         }
+      }
+      return false;
+   }
+
+   void UpdateLinkCloseObservation(FalconBrokerTradeLink &link,
+                                   const ulong close_order_ticket,
+                                   const ulong close_deal_ticket,
+                                   const double close_price,
+                                   const double close_volume,
+                                   const double actual_balance_delta,
+                                   const datetime close_time,
+                                   const string exit_status,
+                                   const string exit_reason)
+   {
+      link.broker_close_order_ticket = close_order_ticket;
+      link.broker_close_deal_ticket = close_deal_ticket;
+      link.broker_close_price = close_price;
+      link.broker_close_volume = close_volume;
+      link.broker_actual_balance_delta = actual_balance_delta;
+      link.broker_close_time = close_time;
+      link.broker_exit_observed = true;
+      link.broker_exit_status = exit_status;
+      link.broker_exit_reason = exit_reason;
+      link.broker_close_attempted = true;
+      link.broker_close_accepted = true;
+      if(exit_status == "EXPERT_CLOSE_EXIT")
+      {
+         link.managed_close_attempted = true;
+         link.managed_close_accepted = true;
+      }
+      StoreOrUpdateAuditLink(link);
+   }
+
+   bool FindActiveLinkByPosition(const ulong position_ticket, FalconBrokerTradeLink &link)
+   {
+      int n = ArraySize(m_active_links);
+      for(int i = n - 1; i >= 0; i--)
+      {
+         if(m_active_links[i].broker_position_ticket == position_ticket && position_ticket > 0)
+         {
+            link = m_active_links[i];
+            return true;
+         }
+      }
+      return false;
+   }
+
+   bool FindActiveLinkByPositionIdentifier(const ulong position_identifier, FalconBrokerTradeLink &link)
+   {
+      int n = ArraySize(m_active_links);
+      for(int i = n - 1; i >= 0; i--)
+      {
+         if(m_active_links[i].broker_position_identifier == position_identifier && position_identifier > 0)
+         {
+            link = m_active_links[i];
+            return true;
+         }
+      }
+      return false;
+   }
+
+   bool FindActiveLinkByOrderOrDeal(const ulong order_ticket, const ulong deal_ticket, FalconBrokerTradeLink &link)
+   {
+      int n = ArraySize(m_active_links);
+      for(int i = n - 1; i >= 0; i--)
+      {
+         if((order_ticket > 0 && m_active_links[i].broker_order_ticket == order_ticket) ||
+            (deal_ticket > 0 && m_active_links[i].broker_deal_ticket == deal_ticket) ||
+            (order_ticket > 0 && m_active_links[i].broker_close_order_ticket == order_ticket) ||
+            (deal_ticket > 0 && m_active_links[i].broker_close_deal_ticket == deal_ticket))
+         {
+            link = m_active_links[i];
+            return true;
+         }
+      }
+      return false;
+   }
+
+   bool FindActiveLinkByTradeId(const string trade_id, FalconBrokerTradeLink &link)
+   {
+      if(StringLen(trade_id) <= 0)
+         return false;
+
+      int n = ArraySize(m_active_links);
+      for(int i = n - 1; i >= 0; i--)
+      {
+         if(m_active_links[i].trade_id == trade_id)
+         {
+            link = m_active_links[i];
+            return true;
+         }
+      }
+      return false;
+   }
+
+   string LifecycleManagedCloseReason(const FalconTradeLifecycleRecord &record)
+   {
+      string reason = "PAPER_FINAL_CLOSE";
+      if(StringLen(record.paper_final_exit_reason) > 0)
+         reason = record.paper_final_exit_reason;
+      else if(StringLen(record.paper_runner_exit_reason) > 0)
+         reason = record.paper_runner_exit_reason;
+      else if(StringLen(record.paper_exit_reason) > 0)
+         reason = record.paper_exit_reason;
+      else if(StringLen(record.close_reason) > 0)
+         reason = record.close_reason;
+
+      string state = StringFormat("protectionActivated=%s; runnerActivated=%s; protectionState=%s; runnerState=%s",
+                                  FalconBoolToYesNo(record.paper_protection_activated),
+                                  FalconBoolToYesNo(record.paper_runner_activated),
+                                  record.paper_protection_state,
+                                  record.paper_runner_state);
+      return reason + "; " + state;
+   }
+
+   bool RecoverClosedBrokerExitFromHistory(FalconBrokerTradeLink &link,
+                                           const FalconTradeLifecycleRecord &record,
+                                           CFalconReportWriter &report_writer,
+                                           const string recovery_context)
+   {
+      // v0.56.9: In Strategy Tester some server TP/SL exits may be known in
+      // account history before the Paper lifecycle reaches its final close.
+      // When Paper finalization later tries managed close, PositionSelectByTicket
+      // can fail and v0.56.8a reported only "already closed" with zero actual
+      // delta. This recovery scans realized deal history by position identifier,
+      // ticket, order/deal ticket, or TradeId hash and writes the missing actual
+      // broker delta into both BrokerExecutionLifecycle and BrokerPaperTradeReconciliation.
+      if(!link.broker_entry_accepted)
+         return false;
+
+      if(link.broker_exit_observed)
+      {
+         string already_reason = StringFormat("Closed-before-Paper-final recovery skipped because broker exit was already observed; context=%s; previousExitStatus=%s; previousReason=%s",
+                                             recovery_context,
+                                             link.broker_exit_status,
+                                             link.broker_exit_reason);
+         report_writer.AppendBrokerPaperTradeReconciliationRecord(record,
+                                                                  link,
+                                                                  "BROKER_EXIT_ALREADY_OBSERVED_BEFORE_PAPER_FINAL",
+                                                                  "BROKER_ALREADY_CLOSED_BEFORE_PAPER_FINAL_ACTUAL_DELTA_AVAILABLE",
+                                                                  already_reason);
+         return true;
+      }
+
+      datetime history_from = record.entry_time;
+      if(link.broker_entry_time > 0 && (history_from <= 0 || link.broker_entry_time < history_from))
+         history_from = link.broker_entry_time;
+      if(history_from > 86400)
+         history_from -= 86400;
+      else
+         history_from = 0;
+
+      datetime history_to = TimeCurrent() + 86400;
+      if(record.exit_time > history_to)
+         history_to = record.exit_time + 86400;
+
+      if(!HistorySelect(history_from, history_to))
+         return false;
+
+      string target_hash = link.trade_id_short;
+      if(StringLen(target_hash) <= 0)
+         target_hash = FalconTradeIdShortHash(record.trade_id);
+
+      ulong best_deal = 0;
+      ulong best_order = 0;
+      datetime best_time = 0;
+      double best_profit = 0.0;
+      double best_swap = 0.0;
+      double best_commission = 0.0;
+      double best_price = 0.0;
+      double best_volume = 0.0;
+      long best_reason = 0;
+      long best_entry = 0;
+      string best_deal_comment = "";
+      string best_order_comment = "";
+      string best_match = "UNMATCHED";
+
+      int total = HistoryDealsTotal();
+      for(int i = total - 1; i >= 0; i--)
+      {
+         ulong deal_ticket = HistoryDealGetTicket(i);
+         if(deal_ticket == 0)
+            continue;
+         if(!HistoryDealSelect(deal_ticket))
+            continue;
+
+         string deal_symbol = HistoryDealGetString(deal_ticket, DEAL_SYMBOL);
+         if(deal_symbol != _Symbol)
+            continue;
+
+         long deal_entry = (long)HistoryDealGetInteger(deal_ticket, DEAL_ENTRY);
+         if(!(deal_entry == DEAL_ENTRY_OUT || deal_entry == DEAL_ENTRY_INOUT || deal_entry == DEAL_ENTRY_OUT_BY))
+            continue;
+
+         datetime deal_time = (datetime)HistoryDealGetInteger(deal_ticket, DEAL_TIME);
+         if(link.broker_entry_time > 0 && deal_time < link.broker_entry_time)
+            continue;
+
+         ulong position_id = (ulong)HistoryDealGetInteger(deal_ticket, DEAL_POSITION_ID);
+         ulong order_ticket = (ulong)HistoryDealGetInteger(deal_ticket, DEAL_ORDER);
+         string deal_comment = HistoryDealGetString(deal_ticket, DEAL_COMMENT);
+         string order_comment = "";
+         if(order_ticket > 0 && HistoryOrderSelect(order_ticket))
+            order_comment = HistoryOrderGetString(order_ticket, ORDER_COMMENT);
+
+         string deal_hash = FalconExtractCommentHash(deal_comment);
+         string order_hash = FalconExtractCommentHash(order_comment);
+
+         bool identity_match = false;
+         string match_by = "";
+         if(position_id > 0 && link.broker_position_identifier > 0 && position_id == link.broker_position_identifier)
+         {
+            identity_match = true;
+            match_by = "POSITION_IDENTIFIER_HISTORY";
+         }
+         else if(position_id > 0 && link.broker_position_ticket > 0 && position_id == link.broker_position_ticket)
+         {
+            identity_match = true;
+            match_by = "POSITION_TICKET_HISTORY";
+         }
+         else if(order_ticket > 0 && (order_ticket == link.broker_order_ticket || order_ticket == link.broker_close_order_ticket))
+         {
+            identity_match = true;
+            match_by = "ORDER_TICKET_HISTORY";
+         }
+         else if(StringLen(target_hash) > 0 && deal_hash == target_hash)
+         {
+            identity_match = true;
+            match_by = "DEAL_COMMENT_HASH_HISTORY";
+         }
+         else if(StringLen(target_hash) > 0 && order_hash == target_hash)
+         {
+            identity_match = true;
+            match_by = "ORDER_COMMENT_HASH_HISTORY";
+         }
+
+         long deal_magic = (long)HistoryDealGetInteger(deal_ticket, DEAL_MAGIC);
+         if(deal_magic != FC_MAGIC_FVG_MICRO && !identity_match)
+            continue;
+         if(!identity_match)
+            continue;
+
+         if(best_deal == 0 || deal_time >= best_time)
+         {
+            best_deal = deal_ticket;
+            best_order = order_ticket;
+            best_time = deal_time;
+            best_profit = HistoryDealGetDouble(deal_ticket, DEAL_PROFIT);
+            best_swap = HistoryDealGetDouble(deal_ticket, DEAL_SWAP);
+            best_commission = HistoryDealGetDouble(deal_ticket, DEAL_COMMISSION);
+            best_price = HistoryDealGetDouble(deal_ticket, DEAL_PRICE);
+            best_volume = HistoryDealGetDouble(deal_ticket, DEAL_VOLUME);
+            best_reason = (long)HistoryDealGetInteger(deal_ticket, DEAL_REASON);
+            best_entry = deal_entry;
+            best_deal_comment = deal_comment;
+            best_order_comment = order_comment;
+            best_match = match_by;
+         }
+      }
+
+      if(best_deal == 0)
+         return false;
+
+      double actual_delta = best_profit + best_swap + best_commission;
+      string exit_status = BrokerDealReasonToObservationStatus(best_reason);
+      string recovery_reason = StringFormat("Closed-before-Paper-final history recovery; context=%s; mappedBy=%s; dealEntry=%s; dealReason=%d; profit=%.4f; swap=%.4f; commission=%.4f; dealComment=%s; orderComment=%s; policy=%s",
+                                            recovery_context,
+                                            best_match,
+                                            BrokerDealEntryToString(best_entry),
+                                            (int)best_reason,
+                                            best_profit,
+                                            best_swap,
+                                            best_commission,
+                                            best_deal_comment,
+                                            best_order_comment,
+                                            FALCON_MREB_DECISION_POLICY);
+
+      UpdateLinkCloseObservation(link,
+                                 best_order,
+                                 best_deal,
+                                 best_price,
+                                 best_volume,
+                                 actual_delta,
+                                 best_time,
+                                 exit_status,
+                                 recovery_reason);
+
+      report_writer.AppendBrokerExitObservationLifecycleRecord(link,
+                                                               best_deal,
+                                                               best_order,
+                                                               best_price,
+                                                               best_volume,
+                                                               actual_delta,
+                                                               best_time,
+                                                               exit_status,
+                                                               recovery_reason);
+
+      report_writer.AppendBrokerPaperTradeReconciliationRecord(record,
+                                                               link,
+                                                               "BROKER_EXIT_RECOVERED_FROM_HISTORY_BEFORE_PAPER_FINAL",
+                                                               "BROKER_ALREADY_CLOSED_BEFORE_PAPER_FINAL_ACTUAL_DELTA_RECOVERED",
+                                                               recovery_reason);
+
+      MarkLinkClosed(link.broker_position_identifier > 0 ? link.broker_position_identifier : link.broker_position_ticket,
+                     best_order,
+                     best_deal);
+      return true;
+   }
+
+   bool FindSingleActiveLink(FalconBrokerTradeLink &link)
+   {
+      int n = ArraySize(m_active_links);
+      if(n == 1)
+      {
+         link = m_active_links[0];
+         return true;
+      }
+      return false;
+   }
+
+   void MarkLinkClosed(const ulong position_ticket, const ulong order_ticket, const ulong deal_ticket)
+   {
+      int n = ArraySize(m_active_links);
+      for(int i = n - 1; i >= 0; i--)
+      {
+         bool match = false;
+         if(position_ticket > 0 && m_active_links[i].broker_position_ticket == position_ticket)
+            match = true;
+         if(order_ticket > 0 && m_active_links[i].broker_order_ticket == order_ticket)
+            match = true;
+         if(deal_ticket > 0 && m_active_links[i].broker_deal_ticket == deal_ticket)
+            match = true;
+         if(position_ticket > 0 && m_active_links[i].broker_position_identifier == position_ticket)
+            match = true;
+         if(order_ticket > 0 && m_active_links[i].broker_close_order_ticket == order_ticket)
+            match = true;
+         if(deal_ticket > 0 && m_active_links[i].broker_close_deal_ticket == deal_ticket)
+            match = true;
+         if(match)
+         {
+            for(int j = i; j < n - 1; j++)
+               m_active_links[j] = m_active_links[j + 1];
+            ArrayResize(m_active_links, n - 1);
+            return;
+         }
+      }
+   }
+
+   double NormalizeVolume(const double requested_volume)
+   {
+      double min_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+      double max_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+      double step    = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+
+      double volume = requested_volume;
+      if(min_lot > 0.0 && volume < min_lot)
+         volume = min_lot;
+      if(max_lot > 0.0 && volume > max_lot)
+         volume = max_lot;
+      if(step > 0.0)
+         volume = MathFloor(volume / step) * step;
+      if(min_lot > 0.0 && volume < min_lot)
+         volume = min_lot;
+      return NormalizeDouble(volume, 2);
+   }
+
+   double NormalizeVolumeDownNoMinFloor(const double requested_volume)
+   {
+      double max_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+      double step    = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+      if(step <= 0.0)
+         step = 0.01;
+
+      double volume = requested_volume;
+      if(max_lot > 0.0 && volume > max_lot)
+         volume = max_lot;
+      if(volume <= 0.0)
+         return 0.0;
+
+      volume = MathFloor(volume / step) * step;
+      return NormalizeDouble(volume, 2);
+   }
+
+   double BrokerDynamicTierMaxLot(const string tier_name)
+   {
+      if(tier_name == "MICRO")    return 0.01;
+      if(tier_name == "TINY")     return 0.03;
+      if(tier_name == "SMALL")    return 0.10;
+      if(tier_name == "MEDIUM")   return 0.30;
+      if(tier_name == "STANDARD") return 1.00;
+      if(tier_name == "LARGE")    return 2.00;
+      return 0.01;
+   }
+
+   double BrokerDynamicCapitalMaxLot(const double effective_capital)
+   {
+      if(effective_capital <= 0.0)
+         return 0.0;
+      return NormalizeVolumeDownNoMinFloor((effective_capital / FALCON_DLM_CAPITAL_USD_PER_001_LOT) * 0.01);
+   }
+
+   double BrokerDynamicGrowthRampMaxLot()
+   {
+      double min_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+      double step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+      if(step <= 0.0) step = 0.01;
+      if(min_lot <= 0.0) min_lot = step;
+
+      if(!m_previous_broker_authority_lot_ready || m_previous_broker_authority_lot <= 0.0)
+         return min_lot;
+
+      return NormalizeVolume((m_previous_broker_authority_lot * FALCON_DLM_MAX_LOT_GROWTH_MULTIPLIER) + step);
+   }
+
+   bool EstimateBrokerRiskLoss(const ENUM_ORDER_TYPE order_type,
+                               const double volume,
+                               const double entry_price,
+                               const double sl_price,
+                               double &loss_usd,
+                               string &calc_status)
+   {
+      loss_usd = 0.0;
+      calc_status = "ORDERCALC_PROFIT_UNAVAILABLE";
+
+      double profit = 0.0;
+      if(OrderCalcProfit(order_type, _Symbol, volume, entry_price, sl_price, profit))
+      {
+         loss_usd = MathAbs(MathMin(profit, 0.0));
+         calc_status = "ORDERCALC_PROFIT_OK";
+         return true;
+      }
+      return false;
+   }
+
+   bool EstimateBrokerMargin(const ENUM_ORDER_TYPE order_type,
+                             const double volume,
+                             const double entry_price,
+                             double &margin_required,
+                             string &margin_status)
+   {
+      margin_required = 0.0;
+      margin_status = "ORDERCALC_MARGIN_UNAVAILABLE";
+
+      double margin = 0.0;
+      if(OrderCalcMargin(order_type, _Symbol, volume, entry_price, margin))
+      {
+         margin_required = margin;
+         margin_status = "ORDERCALC_MARGIN_OK";
+         return true;
+      }
+      return false;
+   }
+
+   bool ResolvePreEntryBrokerLotAuthority(const FalconShadowTradeRecord &record,
+                                          const double broker_entry_price,
+                                          const ENUM_ORDER_TYPE order_type,
+                                          double &authorized_volume,
+                                          string &reason)
+   {
+      authorized_volume = 0.0;
+      reason = "";
+
+      double min_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+      double max_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+      double step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+      if(step <= 0.0) step = 0.01;
+      if(min_lot <= 0.0) min_lot = step;
+      if(max_lot <= 0.0) max_lot = 100.0;
+
+      double effective_capital = FalconEffectiveCapitalForTier();
+      if(effective_capital <= 0.0)
+         effective_capital = AccountInfoDouble(ACCOUNT_BALANCE);
+      if(effective_capital <= 0.0 && ManualCapital > 0.0)
+         effective_capital = ManualCapital;
+
+      string tier = FalconCapitalTierName(effective_capital);
+      double base_risk_pct = FalconCapitalTierBaseRiskPct(tier);
+      double risk_budget_usd = 0.0;
+      if(effective_capital > 0.0 && base_risk_pct > 0.0)
+         risk_budget_usd = effective_capital * base_risk_pct / 100.0;
+
+      double requested_lot = (UseFixedLot ? FixedLotSize : record.lot_size);
+      string mode_status = FALCON_BLA_FIXED_MODE_STATUS;
+
+      if(!UseFixedLot)
+      {
+         mode_status = FALCON_BLA_DYNAMIC_MODE_STATUS;
+
+         if(record.structural_sl <= 0.0 || broker_entry_price <= 0.0)
+         {
+            reason = "BROKER_LOT_AUTHORITY_BLOCKED_DYNAMIC_STRUCTURAL_RISK_UNKNOWN";
+            return false;
+         }
+         if(risk_budget_usd <= 0.0)
+         {
+            reason = "BROKER_LOT_AUTHORITY_BLOCKED_DYNAMIC_RISK_BUDGET_UNKNOWN";
+            return false;
+         }
+
+         double one_lot_loss = 0.0;
+         string risk_calc_status = "";
+         if(!EstimateBrokerRiskLoss(order_type, 1.0, broker_entry_price, record.structural_sl, one_lot_loss, risk_calc_status) || one_lot_loss <= 0.0)
+         {
+            reason = "BROKER_LOT_AUTHORITY_BLOCKED_DYNAMIC_ONE_LOT_RISK_UNKNOWN_" + risk_calc_status;
+            return false;
+         }
+
+         double raw_lot = risk_budget_usd / one_lot_loss;
+         double tier_cap = BrokerDynamicTierMaxLot(tier);
+         double capital_cap = BrokerDynamicCapitalMaxLot(effective_capital);
+         double growth_cap = BrokerDynamicGrowthRampMaxLot();
+         requested_lot = raw_lot;
+
+         if(tier_cap > 0.0 && requested_lot > tier_cap)
+            requested_lot = tier_cap;
+         if(capital_cap > 0.0 && requested_lot > capital_cap)
+            requested_lot = capital_cap;
+         if(growth_cap > 0.0 && requested_lot > growth_cap)
+            requested_lot = growth_cap;
+
+         // Do not silently floor a dynamic risk lot below broker minimum if minimum lot risk is outside the budget.
+         if(requested_lot < min_lot)
+         {
+            double min_lot_loss = 0.0;
+            string min_calc_status = "";
+            EstimateBrokerRiskLoss(order_type, min_lot, broker_entry_price, record.structural_sl, min_lot_loss, min_calc_status);
+            if(min_lot_loss > risk_budget_usd)
+            {
+               reason = StringFormat("BROKER_LOT_AUTHORITY_BLOCKED_DYNAMIC_MIN_LOT_RISK_EXCEEDS_BUDGET minLoss=%.2f budget=%.2f rawLot=%.4f minLot=%.2f",
+                                     min_lot_loss, risk_budget_usd, raw_lot, min_lot);
+               return false;
+            }
+         }
+
+         reason = StringFormat("%s effectiveCapital=%.2f tier=%s riskBudget=%.2f rawLot=%.4f tierCap=%.2f capitalCap=%.2f growthCap=%.2f",
+                               mode_status, effective_capital, tier, risk_budget_usd, raw_lot, tier_cap, capital_cap, growth_cap);
+      }
+      else
+      {
+         if(requested_lot <= 0.0)
+         {
+            reason = "BROKER_LOT_AUTHORITY_BLOCKED_FIXED_LOT_INVALID";
+            return false;
+         }
+         reason = StringFormat("%s requestedFixedLot=%.2f effectiveCapital=%.2f tier=%s",
+                               mode_status, requested_lot, effective_capital, tier);
+      }
+
+      double normalized = NormalizeVolume(requested_lot);
+      if(normalized <= 0.0)
+      {
+         reason = "BROKER_LOT_AUTHORITY_BLOCKED_NORMALIZED_VOLUME_INVALID; " + reason;
+         return false;
+      }
+
+      double sl_loss = 0.0;
+      string sl_calc_status = "";
+      EstimateBrokerRiskLoss(order_type, normalized, broker_entry_price, record.structural_sl, sl_loss, sl_calc_status);
+      if(sl_loss > FALCON_BEEB_MAX_STRUCTURAL_SL_LOSS_USD)
+      {
+         reason = StringFormat("BROKER_LOT_AUTHORITY_BLOCKED_SL_LOSS_TOO_LARGE loss=%.2f max=%.2f lot=%.2f; %s",
+                               sl_loss, FALCON_BEEB_MAX_STRUCTURAL_SL_LOSS_USD, normalized, reason);
+         return false;
+      }
+
+      double margin_required = 0.0;
+      string margin_status = "";
+      if(EstimateBrokerMargin(order_type, normalized, broker_entry_price, margin_required, margin_status))
+      {
+         double free_margin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+         double max_margin = free_margin * FALCON_BLA_MAX_MARGIN_USE_PCT / 100.0;
+         if(free_margin > 0.0 && margin_required > max_margin)
+         {
+            reason = StringFormat("BROKER_LOT_AUTHORITY_BLOCKED_MARGIN_TOO_HIGH margin=%.2f free=%.2f maxPct=%.2f lot=%.2f; %s",
+                                  margin_required, free_margin, FALCON_BLA_MAX_MARGIN_USE_PCT, normalized, reason);
+            return false;
+         }
+      }
+
+      authorized_volume = normalized;
+      reason = StringFormat("BROKER_LOT_AUTHORITY_ACCEPTED lot=%.2f slLoss=%.2f marginStatus=%s margin=%.2f; %s",
+                            authorized_volume, sl_loss, margin_status, margin_required, reason);
+      return true;
+   }
+
+   bool ValidateAtomicStructuralRiskEnvelope(const FalconShadowTradeRecord &record,
+                                             const double broker_entry_price,
+                                             const double volume,
+                                             const ENUM_ORDER_TYPE order_type,
+                                             string &reason)
+   {
+      reason = "";
+
+      double sl_distance = MathAbs(broker_entry_price - record.structural_sl);
+      if(sl_distance > FALCON_BEEB_MAX_STRUCTURAL_SL_PRICE_DISTANCE)
+      {
+         reason = StringFormat("ATOMIC_ENTRY_BLOCKED_STRUCTURAL_SL_DISTANCE_TOO_LARGE distance=%.2f max=%.2f",
+                               sl_distance,
+                               FALCON_BEEB_MAX_STRUCTURAL_SL_PRICE_DISTANCE);
+         return false;
+      }
+
+      double potential_profit = 0.0;
+      if(OrderCalcProfit(order_type, _Symbol, volume, broker_entry_price, record.structural_sl, potential_profit))
+      {
+         double potential_loss = MathAbs(MathMin(potential_profit, 0.0));
+         if(potential_loss > FALCON_BEEB_MAX_STRUCTURAL_SL_LOSS_USD)
+         {
+            reason = StringFormat("ATOMIC_ENTRY_BLOCKED_STRUCTURAL_SL_LOSS_TOO_LARGE loss=%.2f max=%.2f distance=%.2f lot=%.2f",
+                                  potential_loss,
+                                  FALCON_BEEB_MAX_STRUCTURAL_SL_LOSS_USD,
+                                  sl_distance,
+                                  volume);
+            return false;
+         }
+      }
+      else
+      {
+         // Do not block solely because OrderCalcProfit is unavailable in the tester,
+         // but keep the distance guard above active. The reason is included in accepted
+         // lifecycle text only when a later stage adds detailed risk columns.
+      }
+
+      reason = StringFormat("ATOMIC_STRUCTURAL_SL_RISK_WITHIN_GUARD distance=%.2f lot=%.2f", sl_distance, volume);
+      return true;
+   }
+
+   int CountOpenFalconPositions(const string symbol, const long magic)
+   {
+      int count = 0;
+      int total = PositionsTotal();
+      for(int i = 0; i < total; i++)
+      {
+         ulong ticket = PositionGetTicket(i);
+         if(ticket == 0)
+            continue;
+         if(!PositionSelectByTicket(ticket))
+            continue;
+         string pos_symbol = PositionGetString(POSITION_SYMBOL);
+         long pos_magic = (long)PositionGetInteger(POSITION_MAGIC);
+         if(pos_symbol == symbol && pos_magic == magic)
+            count++;
+      }
+      return count;
+   }
+
+   ulong FindLatestFalconPositionTicket(const string symbol, const long magic)
+   {
+      ulong latest_ticket = 0;
+      int total = PositionsTotal();
+      for(int i = 0; i < total; i++)
+      {
+         ulong ticket = PositionGetTicket(i);
+         if(ticket == 0)
+            continue;
+         if(!PositionSelectByTicket(ticket))
+            continue;
+         string pos_symbol = PositionGetString(POSITION_SYMBOL);
+         long pos_magic = (long)PositionGetInteger(POSITION_MAGIC);
+         if(pos_symbol == symbol && pos_magic == magic)
+            latest_ticket = ticket;
+      }
+      return latest_ticket;
+   }
+
+   bool BridgeTakeProfitDirectionallyValid(const FalconShadowTradeRecord &record,
+                                           const double broker_entry_price,
+                                           const int tp_index)
+   {
+      double tp = 0.0;
+      if(tp_index == 1)
+         tp = record.tp1;
+      else if(tp_index == 2)
+         tp = record.tp2;
+      else if(tp_index == 3)
+         tp = record.tp3;
+      else
+         return false;
+
+      if(broker_entry_price <= 0.0 || tp <= 0.0)
+         return false;
+
+      if(record.direction == FALCON_DIRECTION_BUY)
+         return (tp > broker_entry_price);
+
+      if(record.direction == FALCON_DIRECTION_SELL)
+         return (tp < broker_entry_price);
+
+      return false;
+   }
+
+   bool SelectInitialBridgeTakeProfit(const FalconShadowTradeRecord &record,
+                                      const double broker_entry_price,
+                                      double &initial_tp,
+                                      string &reason)
+   {
+      initial_tp = 0.0;
+      reason = "";
+
+      if(broker_entry_price <= 0.0)
+      {
+         reason = "BRIDGE_TP_SELECTION_BLOCKED_INVALID_ENTRY_PRICE";
+         return false;
+      }
+
+      // v0.56.8: TP1 and TP2 are proof/protection checkpoints, and TP3 is
+      // explicitly classified as a temporary server-side safety cap, not a final
+      // runner-parity exit. Until controlled EA-managed close or BrokerModify is
+      // introduced, the furthest valid planned target remains attached only to
+      // prevent naked/orphan exposure while managed runner decisions are audited.
+      if(BridgeTakeProfitDirectionallyValid(record, broker_entry_price, 3))
+      {
+         initial_tp = record.tp3;
+         reason = "BRIDGE_INITIAL_SERVER_TP_SELECTED_TP3_SAFETY_CAP_NOT_FINAL_RUNNER_EXIT_TP1_TP2_REMAIN_PROOF_CHECKPOINTS; managedPolicy=" + FALCON_MREB_DECISION_POLICY + "; policy=" + FALCON_BPR_INITIAL_SERVER_TP_POLICY;
+         return true;
+      }
+
+      if(BridgeTakeProfitDirectionallyValid(record, broker_entry_price, 2))
+      {
+         initial_tp = record.tp2;
+         reason = "BRIDGE_INITIAL_SERVER_TP_FALLBACK_TP2_TP3_NOT_VALID_YET_TP2_IS_NOT_FINAL_PARITY_EXIT; policy=" + FALCON_BPR_INITIAL_SERVER_TP_POLICY;
+         return true;
+      }
+
+      if(BridgeTakeProfitDirectionallyValid(record, broker_entry_price, 1))
+      {
+         initial_tp = record.tp1;
+         reason = "BRIDGE_INITIAL_SERVER_TP_FALLBACK_TP1_NO_HIGHER_VALID_TARGET_YET_TP1_IS_NOT_FINAL_PARITY_EXIT; policy=" + FALCON_BPR_INITIAL_SERVER_TP_POLICY;
+         return true;
+      }
+
+      reason = "BRIDGE_TP_SELECTION_BLOCKED_NO_DIRECTIONALLY_VALID_TP1_TP2_OR_TP3";
+      return false;
+   }
+
+   bool ValidateAtomicEntryExitPlan(const FalconShadowTradeRecord &record,
+                                    const double broker_entry_price,
+                                    string &reason)
+   {
+      reason = "";
+
+      if(record.structural_sl <= 0.0)
+      {
+         reason = "ATOMIC_ENTRY_BLOCKED_MISSING_STRUCTURAL_SL";
+         return false;
+      }
+      if(broker_entry_price <= 0.0)
+      {
+         reason = "ATOMIC_ENTRY_BLOCKED_INVALID_BROKER_ENTRY_PRICE";
+         return false;
+      }
+
+      double initial_bridge_tp = 0.0;
+      string tp_selection_reason = "";
+      if(!SelectInitialBridgeTakeProfit(record, broker_entry_price, initial_bridge_tp, tp_selection_reason))
+      {
+         reason = "ATOMIC_ENTRY_BLOCKED_MISSING_OR_INVALID_INITIAL_BRIDGE_TP; " + tp_selection_reason;
+         return false;
+      }
+
+      if(record.direction == FALCON_DIRECTION_BUY)
+      {
+         if(!(record.structural_sl < broker_entry_price))
+         {
+            reason = "ATOMIC_ENTRY_BLOCKED_BUY_STRUCTURAL_SL_NOT_BELOW_ENTRY";
+            return false;
+         }
+         if(!(initial_bridge_tp > broker_entry_price))
+         {
+            reason = "ATOMIC_ENTRY_BLOCKED_BUY_INITIAL_BRIDGE_TP_NOT_ABOVE_ENTRY";
+            return false;
+         }
+      }
+      else if(record.direction == FALCON_DIRECTION_SELL)
+      {
+         if(!(record.structural_sl > broker_entry_price))
+         {
+            reason = "ATOMIC_ENTRY_BLOCKED_SELL_STRUCTURAL_SL_NOT_ABOVE_ENTRY";
+            return false;
+         }
+         if(!(initial_bridge_tp < broker_entry_price))
+         {
+            reason = "ATOMIC_ENTRY_BLOCKED_SELL_INITIAL_BRIDGE_TP_NOT_BELOW_ENTRY";
+            return false;
+         }
+      }
+      else
+      {
+         reason = "ATOMIC_ENTRY_BLOCKED_INVALID_DIRECTION";
+         return false;
+      }
+
+      double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+      if(point <= 0.0)
+         point = _Point;
+      long stops_level = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+      if(point > 0.0 && stops_level > 0)
+      {
+         double sl_distance_points = MathAbs(broker_entry_price - record.structural_sl) / point;
+         double tp_distance_points = MathAbs(initial_bridge_tp - broker_entry_price) / point;
+         if(sl_distance_points < (double)stops_level)
+         {
+            reason = StringFormat("ATOMIC_ENTRY_BLOCKED_STRUCTURAL_SL_INSIDE_STOPS_LEVEL slPts=%.1f stops=%d", sl_distance_points, (int)stops_level);
+            return false;
+         }
+         if(tp_distance_points < (double)stops_level)
+         {
+            reason = StringFormat("ATOMIC_ENTRY_BLOCKED_INITIAL_BRIDGE_TP_INSIDE_STOPS_LEVEL tpPts=%.1f stops=%d", tp_distance_points, (int)stops_level);
+            return false;
+         }
+      }
+
+      reason = "ATOMIC_ENTRY_EXIT_PLAN_VALID_STRUCTURAL_SL_AND_BRIDGE_INITIAL_TP; " + tp_selection_reason;
+      return true;
+   }
+
+   double DirectionalPriceByDistance(const int direction,
+                                     const double broker_entry_price,
+                                     const double distance,
+                                     const bool stop_side)
+   {
+      if(direction == FALCON_DIRECTION_BUY)
+         return (stop_side ? broker_entry_price - distance : broker_entry_price + distance);
+      if(direction == FALCON_DIRECTION_SELL)
+         return (stop_side ? broker_entry_price + distance : broker_entry_price - distance);
+      return 0.0;
+   }
+
+   bool BuildLockParityEmergencyServerStops(const FalconShadowTradeRecord &record,
+                                            const double broker_entry_price,
+                                            const double volume,
+                                            const ENUM_ORDER_TYPE order_type,
+                                            double &server_sl,
+                                            double &server_tp,
+                                            string &reason)
+   {
+      server_sl = 0.0;
+      server_tp = 0.0;
+      reason = "";
+
+      if(broker_entry_price <= 0.0 || volume <= 0.0)
+      {
+         reason = "EMERGENCY_SERVER_STOPS_BLOCKED_INVALID_ENTRY_OR_VOLUME";
+         return false;
+      }
+      if(record.structural_sl <= 0.0)
+      {
+         reason = "EMERGENCY_SERVER_STOPS_BLOCKED_MISSING_VIRTUAL_STRUCTURAL_SL";
+         return false;
+      }
+
+      double planned_tp = 0.0;
+      string tp_reason = "";
+      if(!SelectInitialBridgeTakeProfit(record, broker_entry_price, planned_tp, tp_reason))
+      {
+         reason = "EMERGENCY_SERVER_STOPS_BLOCKED_NO_VALID_PLANNED_TP; " + tp_reason;
+         return false;
+      }
+
+      double structural_distance = MathAbs(broker_entry_price - record.structural_sl);
+      if(structural_distance <= 0.0)
+      {
+         reason = "EMERGENCY_SERVER_STOPS_BLOCKED_ZERO_STRUCTURAL_DISTANCE";
+         return false;
+      }
+
+      double target_sl_distance = structural_distance * FALCON_LOCK_PARITY_EMERGENCY_SL_DISTANCE_MULTIPLIER;
+      target_sl_distance = MathMax(target_sl_distance, FALCON_LOCK_PARITY_MIN_EMERGENCY_SL_PRICE_DISTANCE);
+      target_sl_distance = MathMax(target_sl_distance, structural_distance);
+      target_sl_distance = MathMin(target_sl_distance, FALCON_LOCK_PARITY_MAX_EMERGENCY_SL_PRICE_DISTANCE);
+
+      double loss_usd = 0.0;
+      string loss_status = "";
+      double candidate_sl = DirectionalPriceByDistance(record.direction, broker_entry_price, target_sl_distance, true);
+      if(EstimateBrokerRiskLoss(order_type, volume, broker_entry_price, candidate_sl, loss_usd, loss_status) && loss_usd > FALCON_LOCK_PARITY_MAX_EMERGENCY_SL_LOSS_USD)
+      {
+         double low = structural_distance;
+         double high = target_sl_distance;
+         double best = structural_distance;
+         for(int i = 0; i < 24; i++)
+         {
+            double mid = (low + high) * 0.5;
+            double mid_sl = DirectionalPriceByDistance(record.direction, broker_entry_price, mid, true);
+            double mid_loss = 0.0;
+            string mid_status = "";
+            if(!EstimateBrokerRiskLoss(order_type, volume, broker_entry_price, mid_sl, mid_loss, mid_status))
+               break;
+            if(mid_loss <= FALCON_LOCK_PARITY_MAX_EMERGENCY_SL_LOSS_USD)
+            {
+               best = mid;
+               low = mid;
+            }
+            else
+               high = mid;
+         }
+         target_sl_distance = best;
+         candidate_sl = DirectionalPriceByDistance(record.direction, broker_entry_price, target_sl_distance, true);
+         EstimateBrokerRiskLoss(order_type, volume, broker_entry_price, candidate_sl, loss_usd, loss_status);
+      }
+
+      double planned_tp_distance = MathAbs(planned_tp - broker_entry_price);
+      if(planned_tp_distance <= 0.0)
+      {
+         reason = "EMERGENCY_SERVER_STOPS_BLOCKED_ZERO_PLANNED_TP_DISTANCE";
+         return false;
+      }
+      double target_tp_distance = planned_tp_distance * FALCON_LOCK_PARITY_EMERGENCY_TP_DISTANCE_MULTIPLIER;
+      target_tp_distance = MathMax(target_tp_distance, FALCON_LOCK_PARITY_MIN_EMERGENCY_TP_PRICE_DISTANCE);
+      target_tp_distance = MathMax(target_tp_distance, planned_tp_distance);
+      target_tp_distance = MathMin(target_tp_distance, FALCON_LOCK_PARITY_MAX_EMERGENCY_TP_PRICE_DISTANCE);
+
+      server_sl = DirectionalPriceByDistance(record.direction, broker_entry_price, target_sl_distance, true);
+      server_tp = DirectionalPriceByDistance(record.direction, broker_entry_price, target_tp_distance, false);
+
+      if(server_sl <= 0.0 || server_tp <= 0.0)
+      {
+         reason = StringFormat("EMERGENCY_SERVER_STOPS_BLOCKED_NONPOSITIVE_RESULT sl=%.5f tp=%.5f", server_sl, server_tp);
+         return false;
+      }
+
+      if(record.direction == FALCON_DIRECTION_BUY)
+      {
+         if(!(server_sl < broker_entry_price && server_tp > broker_entry_price))
+         {
+            reason = StringFormat("EMERGENCY_SERVER_STOPS_BLOCKED_BUY_DIRECTIONAL_INVALID sl=%.5f entry=%.5f tp=%.5f", server_sl, broker_entry_price, server_tp);
+            return false;
+         }
+      }
+      else if(record.direction == FALCON_DIRECTION_SELL)
+      {
+         if(!(server_sl > broker_entry_price && server_tp < broker_entry_price))
+         {
+            reason = StringFormat("EMERGENCY_SERVER_STOPS_BLOCKED_SELL_DIRECTIONAL_INVALID sl=%.5f entry=%.5f tp=%.5f", server_sl, broker_entry_price, server_tp);
+            return false;
+         }
+      }
+      else
+      {
+         reason = "EMERGENCY_SERVER_STOPS_BLOCKED_INVALID_DIRECTION";
+         return false;
+      }
+
+      reason = StringFormat("EMERGENCY_SERVER_STOPS_SELECTED virtualStructuralSL=%.5f serverEmergencySL=%.5f plannedTP=%.5f serverEmergencyTP=%.5f structuralDistance=%.2f emergencySLDistance=%.2f emergencyTPDistance=%.2f emergencySLLoss=%.2f lossStatus=%s policy=%s",
+                            record.structural_sl, server_sl, planned_tp, server_tp, structural_distance, target_sl_distance, target_tp_distance, loss_usd, loss_status, FALCON_LOCK_PARITY_SERVER_STOP_POLICY);
+      return true;
+   }
+
+   void ResetLinkFromShadowRecordId(const FalconTradeLifecycleRecord &record, FalconBrokerTradeLink &link)
+   {
+      link.trade_id = record.trade_id;
+      link.trade_id_short = FalconTradeIdShortHash(record.trade_id);
+      link.strategy_id = record.strategy_id;
+      link.engine_id = record.engine_id;
+      link.direction = record.direction;
+      link.broker_magic = FC_MAGIC_FVG_MICRO;
+      link.broker_position_ticket = 0;
+      link.broker_position_identifier = 0;
+      link.broker_order_ticket = 0;
+      link.broker_deal_ticket = 0;
+      link.broker_close_order_ticket = 0;
+      link.broker_close_deal_ticket = 0;
+      link.requested_lot = record.lot_size;
+      link.accepted_lot = 0.0;
+      link.planned_entry_price = record.entry_price;
+      link.broker_entry_price = 0.0;
+      link.broker_sl = 0.0;
+      link.broker_tp = 0.0;
+      link.broker_close_price = 0.0;
+      link.broker_close_volume = 0.0;
+      link.broker_actual_balance_delta = 0.0;
+      link.planned_entry_time = record.entry_time;
+      link.broker_entry_time = 0;
+      link.broker_close_time = 0;
+      link.broker_entry_attempted = false;
+      link.broker_entry_accepted = false;
+      link.broker_close_attempted = false;
+      link.broker_close_accepted = false;
+      link.broker_exit_observed = false;
+      link.managed_close_attempted = false;
+      link.managed_close_accepted = false;
+      link.entry_comment = "";
+      link.managed_close_comment = "";
+      link.broker_exit_status = "";
+      link.broker_exit_reason = "";
+      link.status = "NO_BROKER_LINK_FOUND";
+      link.reason = "No broker link was found for this Paper TradeId.";
+   }
+
+   void ResetLinkFromShadow(const FalconShadowTradeRecord &record, FalconBrokerTradeLink &link)
+   {
+      link.trade_id = record.shadow_id;
+      link.trade_id_short = FalconTradeIdShortHash(record.shadow_id);
+      link.strategy_id = record.strategy_id;
+      link.engine_id = record.engine_id;
+      link.direction = record.direction;
+      link.broker_magic = FC_MAGIC_FVG_MICRO;
+      link.broker_position_ticket = 0;
+      link.broker_position_identifier = 0;
+      link.broker_order_ticket = 0;
+      link.broker_deal_ticket = 0;
+      link.broker_close_order_ticket = 0;
+      link.broker_close_deal_ticket = 0;
+      link.requested_lot = record.lot_size;
+      link.accepted_lot = 0.0;
+      link.planned_entry_price = record.entry_price;
+      link.broker_entry_price = 0.0;
+      link.broker_sl = 0.0;
+      link.broker_tp = 0.0;
+      link.broker_close_price = 0.0;
+      link.broker_close_volume = 0.0;
+      link.broker_actual_balance_delta = 0.0;
+      link.planned_entry_time = record.entry_time;
+      link.broker_entry_time = 0;
+      link.broker_close_time = 0;
+      link.broker_entry_attempted = false;
+      link.broker_entry_accepted = false;
+      link.broker_close_attempted = false;
+      link.broker_close_accepted = false;
+      link.broker_exit_observed = false;
+      link.managed_close_attempted = false;
+      link.managed_close_accepted = false;
+      link.entry_comment = "";
+      link.managed_close_comment = "";
+      link.broker_exit_status = "";
+      link.broker_exit_reason = "";
+      link.status = FALCON_BEEB_ENTRY_DISABLED_STATUS;
+      link.reason = "Not evaluated yet.";
+   }
+
+   bool TesterEntryAllowed(string &reason)
+   {
+      if(!EnableRealExecution)
+      {
+         reason = "ENABLE_REAL_EXECUTION_FALSE_ENTRY_BRIDGE_AUDIT_ONLY";
+         return false;
+      }
+      if(!MQLInfoInteger(MQL_TESTER))
+      {
+         reason = "NOT_STRATEGY_TESTER_DEMO_AND_LIVE_BLOCKED_IN_V0564";
+         return false;
+      }
+      if(!FALCON_BEEB_MANAGED_EXIT_BRIDGE_READY)
+      {
+         reason = "BROKER_ENTRY_BLOCKED_ATOMIC_EXIT_BRIDGE_NOT_READY_NO_ORPHAN_POSITIONS";
+         return false;
+      }
+      reason = "TESTER_ATOMIC_ENTRY_EXIT_ALLOWED_ENABLE_REAL_EXECUTION_TRUE_VALIDATED_PLAN_REQUIRED";
+      return true;
+   }
+
+public:
+   CFalconBrokerEntryBridge()
+   {
+      m_initialized = false;
+      m_entry_attempts = 0;
+      m_entry_accepted = 0;
+      m_entry_blocked = 0;
+      m_previous_broker_authority_lot = 0.0;
+      m_previous_broker_authority_lot_ready = false;
+      ArrayResize(m_active_links, 0);
+      ArrayResize(m_link_audit_history, 0);
+      ArrayResize(m_paper_final_records, 0);
+   }
+
+   bool Initialize()
+   {
+      m_initialized = true;
+      CFalconLogger::Info("Emergency Server Stop Envelope LOCK Parity Probe v0.56.9b initialized. Tester-only OrderSend requires pre-entry broker lot authority, validated StructuralSL/TP plan, and mandatory server SL/TP attachment; EA-side managed close at Paper final is measured only for still-open broker positions; Demo/Live remain blocked.");
+      return true;
+   }
+
+   bool TryOpenFromShadowRecord(const FalconShadowTradeRecord &record, CFalconReportWriter &report_writer)
+   {
+      if(!m_initialized)
+         Initialize();
+
+      FalconBrokerTradeLink link;
+      ResetLinkFromShadow(record, link);
+
+      string guard_reason = "";
+      if(!TesterEntryAllowed(guard_reason))
+      {
+         link.status = FALCON_BEEB_ENTRY_DISABLED_STATUS;
+         link.reason = guard_reason;
+         StoreOrUpdateAuditLink(link);
+         report_writer.AppendBrokerEntryBridgeLifecycleRecord(link);
+         return false;
+      }
+
+      if(record.status != FALCON_SHADOW_RECORD_STAGED || record.is_closed)
+      {
+         m_entry_blocked++;
+         link.status = FALCON_BEEB_ENTRY_BLOCKED_STATUS;
+         link.reason = "SHADOW_RECORD_NOT_OPEN_STAGED";
+         StoreOrUpdateAuditLink(link);
+         report_writer.AppendBrokerEntryBridgeLifecycleRecord(link);
+         return false;
+      }
+
+      int open_positions = CountOpenFalconPositions(_Symbol, FC_MAGIC_FVG_MICRO);
+      if(open_positions >= FALCON_BEEB_MAX_OPEN_POSITIONS_PER_ENGINE)
+      {
+         m_entry_blocked++;
+         link.status = FALCON_BEEB_ENTRY_BLOCKED_STATUS;
+         link.reason = StringFormat("BROKER_ENTRY_BLOCKED_EXISTING_FALCON_POSITION_COUNT_%d", open_positions);
+         StoreOrUpdateAuditLink(link);
+         report_writer.AppendBrokerEntryBridgeLifecycleRecord(link);
+         return false;
+      }
+
+      MqlTradeRequest request;
+      MqlTradeResult result;
+      ZeroMemory(request);
+      ZeroMemory(result);
+
+      ENUM_ORDER_TYPE order_type = ORDER_TYPE_BUY;
+      double price = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      if(record.direction == FALCON_DIRECTION_SELL)
+      {
+         order_type = ORDER_TYPE_SELL;
+         price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      }
+      if(price <= 0.0)
+      {
+         m_entry_blocked++;
+         link.status = FALCON_BEEB_ENTRY_BLOCKED_STATUS;
+         link.reason = "BROKER_ENTRY_PRICE_UNAVAILABLE";
+         StoreOrUpdateAuditLink(link);
+         report_writer.AppendBrokerEntryBridgeLifecycleRecord(link);
+         return false;
+      }
+
+      double volume = 0.0;
+      string lot_authority_reason = "";
+      if(!ResolvePreEntryBrokerLotAuthority(record, price, order_type, volume, lot_authority_reason))
+      {
+         m_entry_blocked++;
+         link.status = FALCON_BEEB_ENTRY_BLOCKED_STATUS;
+         link.reason = lot_authority_reason;
+         StoreOrUpdateAuditLink(link);
+         report_writer.AppendBrokerEntryBridgeLifecycleRecord(link);
+         return false;
+      }
+
+      string atomic_plan_reason = "";
+      if(!ValidateAtomicEntryExitPlan(record, price, atomic_plan_reason))
+      {
+         m_entry_blocked++;
+         link.status = FALCON_BEEB_ENTRY_BLOCKED_STATUS;
+         link.reason = atomic_plan_reason;
+         StoreOrUpdateAuditLink(link);
+         report_writer.AppendBrokerEntryBridgeLifecycleRecord(link);
+         return false;
+      }
+
+      string structural_risk_reason = "";
+      if(!ValidateAtomicStructuralRiskEnvelope(record, price, volume, order_type, structural_risk_reason))
+      {
+         m_entry_blocked++;
+         link.status = FALCON_BEEB_ENTRY_BLOCKED_STATUS;
+         link.reason = structural_risk_reason;
+         StoreOrUpdateAuditLink(link);
+         report_writer.AppendBrokerEntryBridgeLifecycleRecord(link);
+         return false;
+      }
+
+      request.action = TRADE_ACTION_DEAL;
+      request.symbol = _Symbol;
+      request.volume = volume;
+      request.type = order_type;
+      request.price = price;
+      // v0.56.9b: emergency server stop envelope probe.
+      // Entry orders remain non-naked, but server SL/TP are now fail-safe envelope
+      // levels instead of the normal Paper structural SL / TP3 lifecycle levels.
+      // This lets the tester measure whether premature server stops are the major
+      // LOCK parity gap while keeping visible SL/TP on every broker entry.
+      double initial_bridge_tp = 0.0;
+      string initial_bridge_tp_reason = "";
+      SelectInitialBridgeTakeProfit(record, price, initial_bridge_tp, initial_bridge_tp_reason);
+      double emergency_server_sl = 0.0;
+      double emergency_server_tp = 0.0;
+      string emergency_server_stop_reason = "";
+      if(!BuildLockParityEmergencyServerStops(record, price, volume, order_type, emergency_server_sl, emergency_server_tp, emergency_server_stop_reason))
+      {
+         m_entry_blocked++;
+         link.broker_entry_attempted = false;
+         link.broker_entry_accepted = false;
+         link.entry_comment = FalconBuildBrokerCommentWithHash(FALCON_BEEB_ORDER_COMMENT, record.shadow_id);
+         link.status = FALCON_BEEB_ENTRY_BLOCKED_STATUS;
+         link.reason = emergency_server_stop_reason;
+         StoreOrUpdateAuditLink(link);
+         report_writer.AppendBrokerEntryBridgeLifecycleRecord(link);
+         return false;
+      }
+      request.sl = NormalizeDouble(emergency_server_sl, _Digits);
+      request.tp = NormalizeDouble(emergency_server_tp, _Digits);
+      request.deviation = 30;
+      request.magic = FC_MAGIC_FVG_MICRO;
+      request.comment = FalconBuildBrokerCommentWithHash(FALCON_BEEB_ORDER_COMMENT, record.shadow_id);
+      request.type_time = ORDER_TIME_GTC;
+
+      // v0.56.9b: hard safety invariant after the v0.56.9 naked-order probe.
+      // No broker/tester OrderSend is allowed without both server-side StructuralSL
+      // and a selected bridge TP safety cap. This protects the broker lane while
+      // keeping LOCK parity analysis in reports instead of unsafe naked execution.
+      if(request.sl <= 0.0 || request.tp <= 0.0)
+      {
+         m_entry_blocked++;
+         link.broker_entry_attempted = false;
+         link.broker_entry_accepted = false;
+         link.broker_sl = request.sl;
+         link.broker_tp = request.tp;
+         link.entry_comment = request.comment;
+         link.status = FALCON_BEEB_ENTRY_BLOCKED_STATUS;
+         link.reason = StringFormat("BROKER_ENTRY_BLOCKED_NO_SERVER_SL_TP_SAFETY_INVARIANT request.sl=%.5f request.tp=%.5f policy=%s", request.sl, request.tp, FALCON_LOCK_PARITY_SERVER_STOP_POLICY);
+         StoreOrUpdateAuditLink(link);
+         report_writer.AppendBrokerEntryBridgeLifecycleRecord(link);
+         return false;
+      }
+
+      link.broker_entry_attempted = true;
+      link.requested_lot = record.lot_size;
+      link.accepted_lot = volume;
+      link.broker_entry_price = price;
+      link.broker_entry_time = TimeCurrent();
+      link.broker_sl = request.sl;
+      link.broker_tp = request.tp;
+      link.entry_comment = request.comment;
+      m_entry_attempts++;
+
+      bool sent = OrderSend(request, result);
+      link.broker_order_ticket = result.order;
+      link.broker_deal_ticket = result.deal;
+
+      if(sent && (result.retcode == TRADE_RETCODE_DONE || result.retcode == TRADE_RETCODE_PLACED || result.retcode == TRADE_RETCODE_DONE_PARTIAL))
+      {
+         link.broker_entry_accepted = true;
+         link.broker_position_ticket = FindLatestFalconPositionTicket(_Symbol, FC_MAGIC_FVG_MICRO);
+         if(link.broker_position_ticket > 0 && PositionSelectByTicket(link.broker_position_ticket))
+            link.broker_position_identifier = (ulong)PositionGetInteger(POSITION_IDENTIFIER);
+         link.status = FALCON_BEEB_ENTRY_ACCEPTED_STATUS;
+         link.reason = StringFormat("OrderSend accepted retcode=%d; LOCK parity emergency server-stop envelope active; serverStopPolicy=%s; plannedBridgeTp=%.5f; broker exits should be EA-managed at Paper final unless emergency server SL/TP is hit; managedPolicy=%s; %s; %s; %s", (int)result.retcode, FALCON_LOCK_PARITY_SERVER_STOP_POLICY, initial_bridge_tp, FALCON_MREB_DECISION_POLICY, initial_bridge_tp_reason, emergency_server_stop_reason, lot_authority_reason);
+         m_entry_accepted++;
+         m_previous_broker_authority_lot = volume;
+         m_previous_broker_authority_lot_ready = true;
+         StoreAcceptedLink(link);
+      }
+      else
+      {
+         link.broker_entry_accepted = false;
+         link.status = FALCON_BEEB_ENTRY_BLOCKED_STATUS;
+         link.reason = StringFormat("OrderSend failed/blocked sent=%s retcode=%d comment=%s", (sent ? "true" : "false"), (int)result.retcode, result.comment);
+         m_entry_blocked++;
+      }
+
+      StoreOrUpdateAuditLink(link);
+      report_writer.AppendBrokerEntryBridgeLifecycleRecord(link);
+      return link.broker_entry_accepted;
+   }
+
+   bool TryManagedCloseFromLifecycleRecord(const FalconTradeLifecycleRecord &record, CFalconReportWriter &report_writer)
+   {
+      if(!FALCON_MREB_RUNTIME_MANAGED_CLOSE_READY)
+         return false;
+      if(!EnableRealExecution)
+         return false;
+      if(!MQLInfoInteger(MQL_TESTER))
+         return false;
+
+      StorePaperFinalRecord(record);
+
+      FalconBrokerTradeLink link;
+      if(!FindActiveLinkByTradeId(record.trade_id, link))
+      {
+         if(FindAuditLinkByTradeId(record.trade_id, link))
+         {
+            if(link.broker_entry_accepted && link.broker_exit_observed)
+            {
+               string already_observed_reason = "No active broker link found at Paper finalization, but audit history already contains a realized broker exit. This is a valid closed-before-Paper-final reconciliation row.";
+               report_writer.AppendBrokerPaperTradeReconciliationRecord(record,
+                                                                        link,
+                                                                        "BROKER_EXIT_ALREADY_OBSERVED_BEFORE_PAPER_FINAL",
+                                                                        "BROKER_ALREADY_CLOSED_BEFORE_PAPER_FINAL_ACTUAL_DELTA_AVAILABLE",
+                                                                        already_observed_reason);
+               return false;
+            }
+
+            if(link.broker_entry_accepted && RecoverClosedBrokerExitFromHistory(link,
+                                                                                record,
+                                                                                report_writer,
+                                                                                "NO_ACTIVE_LINK_AUDIT_HISTORY_RECOVERY"))
+               return false;
+
+            report_writer.AppendBrokerPaperTradeReconciliationRecord(record,
+                                                                     link,
+                                                                     "PAPER_FINAL_NO_ACTIVE_BROKER_POSITION",
+                                                                     link.broker_entry_accepted ? "BROKER_ALREADY_CLOSED_BEFORE_PAPER_FINAL_OR_LINK_INACTIVE_ACTUAL_DELTA_NOT_FOUND" : "PAPER_TRADE_NOT_OPENED_ON_BROKER",
+                                                                     link.broker_entry_accepted ? "No active broker link found at Paper finalization; history recovery could not locate a realized close deal, so actual delta remains unreconciled." : "Paper trade has no active broker link; entry was blocked or never opened.");
+         }
+         else
+         {
+            FalconBrokerTradeLink empty_link;
+            ResetLinkFromShadowRecordId(record, empty_link);
+            report_writer.AppendBrokerPaperTradeReconciliationRecord(record,
+                                                                     empty_link,
+                                                                     "PAPER_FINAL_NO_BROKER_LINK_FOUND",
+                                                                     "NO_BROKER_AUDIT_LINK_FOR_TRADEID",
+                                                                     "No active or audit broker link matched this Paper TradeId.");
+         }
+         return false;
+      }
+
+      report_writer.AppendBrokerPaperTradeReconciliationRecord(record,
+                                                               link,
+                                                               "PAPER_FINAL_ACTIVE_BROKER_LINK_FOUND_BEFORE_MANAGED_CLOSE",
+                                                               "ACTIVE_LINK_FOUND_MANAGED_CLOSE_DECISION_PENDING",
+                                                               "Paper final lifecycle closed while broker position is still active; controlled tester-only managed close will be evaluated.");
+
+      if(link.broker_position_ticket <= 0)
+      {
+         if(RecoverClosedBrokerExitFromHistory(link,
+                                               record,
+                                               report_writer,
+                                               "ACTIVE_LINK_NO_POSITION_TICKET_HISTORY_RECOVERY"))
+            return false;
+
+         string no_ticket_reason = "EA-managed close skipped: active broker link has no broker position ticket and history recovery did not find a realized close deal; tradeId=" + record.trade_id;
+         report_writer.AppendBrokerManagedCloseLifecycleRecord(link,
+                                                              false,
+                                                              false,
+                                                              0,
+                                                              0,
+                                                              0.0,
+                                                              0.0,
+                                                              TimeCurrent(),
+                                                              "EA_MANAGED_CLOSE_SKIPPED_NO_POSITION_TICKET",
+                                                              no_ticket_reason);
+         return false;
+      }
+
+      if(!PositionSelectByTicket(link.broker_position_ticket))
+      {
+         if(RecoverClosedBrokerExitFromHistory(link,
+                                               record,
+                                               report_writer,
+                                               "POSITION_SELECT_FAILED_BEFORE_MANAGED_CLOSE_HISTORY_RECOVERY"))
+            return false;
+
+         string missing_pos_reason = "EA-managed close skipped: linked broker position no longer exists before managed close, and history recovery did not find a realized close deal; likely already closed by server TP/SL or tester but actual delta remains unreconciled; tradeId=" + record.trade_id;
+         report_writer.AppendBrokerManagedCloseLifecycleRecord(link,
+                                                              false,
+                                                              false,
+                                                              0,
+                                                              0,
+                                                              0.0,
+                                                              0.0,
+                                                              TimeCurrent(),
+                                                              "EA_MANAGED_CLOSE_SKIPPED_POSITION_ALREADY_CLOSED_ACTUAL_DELTA_NOT_FOUND",
+                                                              missing_pos_reason);
+         MarkLinkClosed(link.broker_position_ticket, link.broker_order_ticket, link.broker_deal_ticket);
+         return false;
+      }
+
+      string pos_symbol = PositionGetString(POSITION_SYMBOL);
+      long pos_magic = (long)PositionGetInteger(POSITION_MAGIC);
+      if(pos_symbol != _Symbol || pos_magic != FC_MAGIC_FVG_MICRO)
+      {
+         string mismatch_reason = StringFormat("EA-managed close blocked: linked position identity mismatch posSymbol=%s posMagic=%d expectedSymbol=%s expectedMagic=%d tradeId=%s",
+                                               pos_symbol,
+                                               (int)pos_magic,
+                                               _Symbol,
+                                               (int)FC_MAGIC_FVG_MICRO,
+                                               record.trade_id);
+         report_writer.AppendBrokerManagedCloseLifecycleRecord(link,
+                                                              false,
+                                                              false,
+                                                              0,
+                                                              0,
+                                                              0.0,
+                                                              0.0,
+                                                              TimeCurrent(),
+                                                              "EA_MANAGED_CLOSE_BLOCKED_POSITION_IDENTITY_MISMATCH",
+                                                              mismatch_reason);
+         return false;
+      }
+
+      double volume = PositionGetDouble(POSITION_VOLUME);
+      if(volume <= 0.0)
+      {
+         string volume_reason = "EA-managed close blocked: linked position volume is not positive; tradeId=" + record.trade_id;
+         report_writer.AppendBrokerManagedCloseLifecycleRecord(link,
+                                                              false,
+                                                              false,
+                                                              0,
+                                                              0,
+                                                              0.0,
+                                                              0.0,
+                                                              TimeCurrent(),
+                                                              "EA_MANAGED_CLOSE_BLOCKED_INVALID_POSITION_VOLUME",
+                                                              volume_reason);
+         return false;
+      }
+
+      long position_type = (long)PositionGetInteger(POSITION_TYPE);
+      MqlTick tick;
+      if(!SymbolInfoTick(_Symbol, tick))
+      {
+         string tick_reason = "EA-managed close blocked: SymbolInfoTick unavailable; tradeId=" + record.trade_id;
+         report_writer.AppendBrokerManagedCloseLifecycleRecord(link,
+                                                              false,
+                                                              false,
+                                                              0,
+                                                              0,
+                                                              0.0,
+                                                              volume,
+                                                              TimeCurrent(),
+                                                              "EA_MANAGED_CLOSE_BLOCKED_NO_TICK",
+                                                              tick_reason);
+         return false;
+      }
+
+      MqlTradeRequest request;
+      MqlTradeResult result;
+      ZeroMemory(request);
+      ZeroMemory(result);
+
+      request.action = TRADE_ACTION_DEAL;
+      request.symbol = _Symbol;
+      request.position = link.broker_position_ticket;
+      request.volume = volume;
+      request.magic = FC_MAGIC_FVG_MICRO;
+      request.deviation = 30;
+      request.comment = FalconBuildBrokerCommentWithHash(FALCON_MREB_CLOSE_COMMENT_PREFIX, record.trade_id);
+      request.type_time = ORDER_TIME_GTC;
+
+      if(position_type == POSITION_TYPE_BUY)
+      {
+         request.type = ORDER_TYPE_SELL;
+         request.price = tick.bid;
+      }
+      else if(position_type == POSITION_TYPE_SELL)
+      {
+         request.type = ORDER_TYPE_BUY;
+         request.price = tick.ask;
+      }
+      else
+      {
+         string type_reason = StringFormat("EA-managed close blocked: unsupported position type=%d; tradeId=%s", (int)position_type, record.trade_id);
+         report_writer.AppendBrokerManagedCloseLifecycleRecord(link,
+                                                              false,
+                                                              false,
+                                                              0,
+                                                              0,
+                                                              0.0,
+                                                              volume,
+                                                              TimeCurrent(),
+                                                              "EA_MANAGED_CLOSE_BLOCKED_UNSUPPORTED_POSITION_TYPE",
+                                                              type_reason);
+         return false;
+      }
+
+      string lifecycle_reason = LifecycleManagedCloseReason(record);
+      bool sent = OrderSend(request, result);
+      bool accepted = (sent && (result.retcode == TRADE_RETCODE_DONE || result.retcode == TRADE_RETCODE_PLACED || result.retcode == TRADE_RETCODE_DONE_PARTIAL));
+      string status = accepted ? "EA_MANAGED_CLOSE_REQUEST_ACCEPTED_WAITING_ON_TRADE_TRANSACTION" : "EA_MANAGED_CLOSE_REQUEST_REJECTED";
+      string reason = StringFormat("Controlled tester-only EA-side managed close at Paper final lifecycle exit; sent=%s; retcode=%d; resultComment=%s; lifecycleReason=%s; no BrokerModify; no RuntimeSLChanged; Demo/Live blocked",
+                                   (sent ? "true" : "false"),
+                                   (int)result.retcode,
+                                   result.comment,
+                                   lifecycle_reason);
+
+      link.broker_close_attempted = true;
+      link.broker_close_accepted = accepted;
+      link.managed_close_attempted = true;
+      link.managed_close_accepted = accepted;
+      link.broker_close_order_ticket = result.order;
+      link.broker_close_deal_ticket = result.deal;
+      link.managed_close_comment = request.comment;
+      UpdateAuditLinkManagedCloseRequest(record.trade_id, true, accepted, result.order, result.deal, request.comment);
+
+      report_writer.AppendBrokerManagedCloseLifecycleRecord(link,
+                                                           true,
+                                                           accepted,
+                                                           result.order,
+                                                           result.deal,
+                                                           request.price,
+                                                           volume,
+                                                           TimeCurrent(),
+                                                           status,
+                                                           reason);
+      report_writer.AppendBrokerPaperTradeReconciliationRecord(record,
+                                                               link,
+                                                               "EA_MANAGED_CLOSE_REQUEST_SENT",
+                                                               accepted ? "MANAGED_CLOSE_REQUEST_ACCEPTED_ACTUAL_DELTA_PENDING_TRANSACTION" : "MANAGED_CLOSE_REQUEST_REJECTED",
+                                                               reason);
+      return accepted;
+   }
+
+   bool ObserveTradeTransactionExit(const MqlTradeTransaction &trans, CFalconReportWriter &report_writer)
+   {
+      if(trans.type != TRADE_TRANSACTION_DEAL_ADD)
+         return false;
+      if(trans.deal == 0)
+         return false;
+      if(!HistoryDealSelect(trans.deal))
+         return false;
+
+      string deal_symbol = HistoryDealGetString(trans.deal, DEAL_SYMBOL);
+      long deal_magic = (long)HistoryDealGetInteger(trans.deal, DEAL_MAGIC);
+      if(deal_symbol != _Symbol || deal_magic != FC_MAGIC_FVG_MICRO)
+         return false;
+
+      long deal_entry = (long)HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
+      if(!(deal_entry == DEAL_ENTRY_OUT || deal_entry == DEAL_ENTRY_INOUT || deal_entry == DEAL_ENTRY_OUT_BY))
+         return false;
+
+      ulong position_id = (ulong)HistoryDealGetInteger(trans.deal, DEAL_POSITION_ID);
+      ulong order_ticket = (ulong)HistoryDealGetInteger(trans.deal, DEAL_ORDER);
+      string deal_comment = HistoryDealGetString(trans.deal, DEAL_COMMENT);
+      string order_comment = "";
+      if(order_ticket > 0 && HistoryOrderSelect(order_ticket))
+         order_comment = HistoryOrderGetString(order_ticket, ORDER_COMMENT);
+      string deal_hash = FalconExtractCommentHash(deal_comment);
+      string order_hash = FalconExtractCommentHash(order_comment);
+
+      FalconBrokerTradeLink link;
+      string mapped_by = "UNMAPPED";
+
+      if(FindActiveLinkByPositionIdentifier(position_id, link))
+         mapped_by = "POSITION_IDENTIFIER";
+      else if(FindActiveLinkByPosition(position_id, link))
+         mapped_by = "POSITION_TICKET_FROM_DEAL_POSITION_ID";
+      else if(FindActiveLinkByPosition(trans.position, link))
+         mapped_by = "TRANS_POSITION";
+      else if(FindActiveLinkByOrderOrDeal(order_ticket, trans.deal, link))
+         mapped_by = "ORDER_OR_ENTRY_DEAL";
+      else if(FindAuditLinkByTradeHash(deal_hash, link))
+         mapped_by = "DEAL_COMMENT_HASH";
+      else if(FindAuditLinkByTradeHash(order_hash, link))
+         mapped_by = "ORDER_COMMENT_HASH";
+      else if(FindSingleActiveLink(link))
+         mapped_by = "SINGLE_ACTIVE_LINK_FALLBACK";
+      else
+         return false;
+
+      double profit = HistoryDealGetDouble(trans.deal, DEAL_PROFIT);
+      double swap = HistoryDealGetDouble(trans.deal, DEAL_SWAP);
+      double commission = HistoryDealGetDouble(trans.deal, DEAL_COMMISSION);
+      double actual_delta = profit + swap + commission;
+      double close_price = HistoryDealGetDouble(trans.deal, DEAL_PRICE);
+      double close_volume = HistoryDealGetDouble(trans.deal, DEAL_VOLUME);
+      datetime close_time = (datetime)HistoryDealGetInteger(trans.deal, DEAL_TIME);
+      long deal_reason = (long)HistoryDealGetInteger(trans.deal, DEAL_REASON);
+      string exit_status = BrokerDealReasonToObservationStatus(deal_reason);
+      string managed_runner_classification = "MANAGED_RUNNER_CLASSIFICATION_PENDING";
+      if(deal_reason == DEAL_REASON_TP)
+         managed_runner_classification = "SERVER_TP_EXIT_IS_TP3_SAFETY_CAP_NOT_FINAL_RUNNER_PARITY";
+      else if(deal_reason == DEAL_REASON_SL)
+         managed_runner_classification = "SERVER_SL_EXIT_BEFORE_MANAGED_RUNNER_DECISION";
+      string exit_reason = StringFormat("OnTradeTransaction broker exit observed; mappedBy=%s; dealEntry=%s; dealReason=%d; profit=%.4f; swap=%.4f; commission=%.4f; dealComment=%s; orderComment=%s; dealHash=%s; orderHash=%s; managedRunnerStatus=%s; managedPolicy=%s",
+                                        mapped_by,
+                                        BrokerDealEntryToString(deal_entry),
+                                        (int)deal_reason,
+                                        profit,
+                                        swap,
+                                        commission,
+                                        deal_comment,
+                                        order_comment,
+                                        deal_hash,
+                                        order_hash,
+                                        managed_runner_classification,
+                                        FALCON_MREB_DECISION_POLICY);
+
+      UpdateLinkCloseObservation(link,
+                                 order_ticket,
+                                 trans.deal,
+                                 close_price,
+                                 close_volume,
+                                 actual_delta,
+                                 close_time,
+                                 exit_status,
+                                 exit_reason);
+
+      report_writer.AppendBrokerExitObservationLifecycleRecord(link,
+                                                               trans.deal,
+                                                               order_ticket,
+                                                               close_price,
+                                                               close_volume,
+                                                               actual_delta,
+                                                               close_time,
+                                                               exit_status,
+                                                               exit_reason);
+      FalconTradeLifecycleRecord paper_record;
+      if(FindPaperFinalRecord(link.trade_id, paper_record))
+      {
+         report_writer.AppendBrokerPaperTradeReconciliationRecord(paper_record,
+                                                                  link,
+                                                                  "BROKER_EXIT_OBSERVED_WITH_PAPER_FINAL",
+                                                                  "BROKER_EXIT_ACTUAL_DELTA_RECONCILED_TO_PAPER_FINAL",
+                                                                  exit_reason);
+      }
+      else
+      {
+         string broker_only_reason = exit_reason + "; brokerOnly=true; no Paper final TradeLifecycle record exists for this TradeId; this is a LOCK parity violation that must be eliminated before profit parity or Demo/Live.";
+         report_writer.AppendBrokerOnlyTradeReconciliationRecord(link,
+                                                                 "BROKER_EXIT_OBSERVED_WITHOUT_PAPER_FINAL_BROKER_ONLY",
+                                                                 "BROKER_ONLY_TRADE_NOT_IN_LOCK_PAPER_LIFECYCLE",
+                                                                 broker_only_reason);
+      }
+      MarkLinkClosed(position_id, order_ticket, trans.deal);
+      return true;
+   }
+
+
+
+   bool RecoverBrokerOnlyExitFromHistory(FalconBrokerTradeLink &link,
+                                         CFalconReportWriter &report_writer,
+                                         const string recovery_context)
+   {
+      // v0.56.9: best-effort recovery for active links that never received a
+      // Paper final record. This helps catch tester/end-of-test closes and makes
+      // broker-only impact visible in BrokerPaperTradeReconciliation.
+      if(!link.broker_entry_accepted)
+         return false;
+      if(link.broker_exit_observed)
+      {
+         report_writer.AppendBrokerOnlyTradeReconciliationRecord(link,
+                                                                 "BROKER_ONLY_EXIT_ALREADY_OBSERVED_WITHOUT_PAPER_FINAL",
+                                                                 "BROKER_ONLY_TRADE_NOT_IN_LOCK_PAPER_LIFECYCLE",
+                                                                 "Broker-only exit was already observed before Deinit; no Paper final TradeLifecycle record exists; context=" + recovery_context);
+         return true;
+      }
+
+      datetime history_from = link.broker_entry_time;
+      if(history_from > 86400)
+         history_from -= 86400;
+      else
+         history_from = 0;
+      datetime history_to = TimeCurrent() + 86400;
+      if(!HistorySelect(history_from, history_to))
+         return false;
+
+      string target_hash = link.trade_id_short;
+      if(StringLen(target_hash) <= 0)
+         target_hash = FalconTradeIdShortHash(link.trade_id);
+
+      ulong best_deal = 0;
+      ulong best_order = 0;
+      datetime best_time = 0;
+      double best_profit = 0.0;
+      double best_swap = 0.0;
+      double best_commission = 0.0;
+      double best_price = 0.0;
+      double best_volume = 0.0;
+      long best_reason = 0;
+      long best_entry = 0;
+      string best_deal_comment = "";
+      string best_order_comment = "";
+      string best_match = "UNMATCHED";
+
+      int total = HistoryDealsTotal();
+      for(int i = total - 1; i >= 0; i--)
+      {
+         ulong deal_ticket = HistoryDealGetTicket(i);
+         if(deal_ticket == 0)
+            continue;
+         if(!HistoryDealSelect(deal_ticket))
+            continue;
+
+         string deal_symbol = HistoryDealGetString(deal_ticket, DEAL_SYMBOL);
+         if(deal_symbol != _Symbol)
+            continue;
+
+         long deal_entry = (long)HistoryDealGetInteger(deal_ticket, DEAL_ENTRY);
+         if(!(deal_entry == DEAL_ENTRY_OUT || deal_entry == DEAL_ENTRY_INOUT || deal_entry == DEAL_ENTRY_OUT_BY))
+            continue;
+
+         datetime deal_time = (datetime)HistoryDealGetInteger(deal_ticket, DEAL_TIME);
+         if(link.broker_entry_time > 0 && deal_time < link.broker_entry_time)
+            continue;
+
+         ulong position_id = (ulong)HistoryDealGetInteger(deal_ticket, DEAL_POSITION_ID);
+         ulong order_ticket = (ulong)HistoryDealGetInteger(deal_ticket, DEAL_ORDER);
+         string deal_comment = HistoryDealGetString(deal_ticket, DEAL_COMMENT);
+         string order_comment = "";
+         if(order_ticket > 0 && HistoryOrderSelect(order_ticket))
+            order_comment = HistoryOrderGetString(order_ticket, ORDER_COMMENT);
+
+         string deal_hash = FalconExtractCommentHash(deal_comment);
+         string order_hash = FalconExtractCommentHash(order_comment);
+
+         bool identity_match = false;
+         string match_by = "";
+         if(position_id > 0 && link.broker_position_identifier > 0 && position_id == link.broker_position_identifier)
+         {
+            identity_match = true;
+            match_by = "POSITION_IDENTIFIER_HISTORY_BROKER_ONLY";
+         }
+         else if(position_id > 0 && link.broker_position_ticket > 0 && position_id == link.broker_position_ticket)
+         {
+            identity_match = true;
+            match_by = "POSITION_TICKET_HISTORY_BROKER_ONLY";
+         }
+         else if(order_ticket > 0 && (order_ticket == link.broker_order_ticket || order_ticket == link.broker_close_order_ticket))
+         {
+            identity_match = true;
+            match_by = "ORDER_TICKET_HISTORY_BROKER_ONLY";
+         }
+         else if(StringLen(target_hash) > 0 && deal_hash == target_hash)
+         {
+            identity_match = true;
+            match_by = "DEAL_COMMENT_HASH_HISTORY_BROKER_ONLY";
+         }
+         else if(StringLen(target_hash) > 0 && order_hash == target_hash)
+         {
+            identity_match = true;
+            match_by = "ORDER_COMMENT_HASH_HISTORY_BROKER_ONLY";
+         }
+
+         long deal_magic = (long)HistoryDealGetInteger(deal_ticket, DEAL_MAGIC);
+         if(deal_magic != FC_MAGIC_FVG_MICRO && !identity_match)
+            continue;
+         if(!identity_match)
+            continue;
+
+         if(best_deal == 0 || deal_time >= best_time)
+         {
+            best_deal = deal_ticket;
+            best_order = order_ticket;
+            best_time = deal_time;
+            best_profit = HistoryDealGetDouble(deal_ticket, DEAL_PROFIT);
+            best_swap = HistoryDealGetDouble(deal_ticket, DEAL_SWAP);
+            best_commission = HistoryDealGetDouble(deal_ticket, DEAL_COMMISSION);
+            best_price = HistoryDealGetDouble(deal_ticket, DEAL_PRICE);
+            best_volume = HistoryDealGetDouble(deal_ticket, DEAL_VOLUME);
+            best_reason = (long)HistoryDealGetInteger(deal_ticket, DEAL_REASON);
+            best_entry = deal_entry;
+            best_deal_comment = deal_comment;
+            best_order_comment = order_comment;
+            best_match = match_by;
+         }
+      }
+
+      if(best_deal == 0)
+         return false;
+
+      double actual_delta = best_profit + best_swap + best_commission;
+      string exit_status = BrokerDealReasonToObservationStatus(best_reason);
+      string recovery_reason = StringFormat("Broker-only history recovery; context=%s; mappedBy=%s; dealEntry=%s; dealReason=%d; profit=%.4f; swap=%.4f; commission=%.4f; dealComment=%s; orderComment=%s; no Paper final TradeLifecycle record exists; LOCK parity violation",
+                                            recovery_context,
+                                            best_match,
+                                            BrokerDealEntryToString(best_entry),
+                                            (int)best_reason,
+                                            best_profit,
+                                            best_swap,
+                                            best_commission,
+                                            best_deal_comment,
+                                            best_order_comment);
+
+      UpdateLinkCloseObservation(link,
+                                 best_order,
+                                 best_deal,
+                                 best_price,
+                                 best_volume,
+                                 actual_delta,
+                                 best_time,
+                                 exit_status,
+                                 recovery_reason);
+
+      report_writer.AppendBrokerExitObservationLifecycleRecord(link,
+                                                               best_deal,
+                                                               best_order,
+                                                               best_price,
+                                                               best_volume,
+                                                               actual_delta,
+                                                               best_time,
+                                                               exit_status,
+                                                               recovery_reason);
+      report_writer.AppendBrokerOnlyTradeReconciliationRecord(link,
+                                                              "BROKER_ONLY_EXIT_RECOVERED_FROM_HISTORY_AT_DEINIT",
+                                                              "BROKER_ONLY_TRADE_NOT_IN_LOCK_PAPER_LIFECYCLE_ACTUAL_DELTA_RECOVERED",
+                                                              recovery_reason);
+      MarkLinkClosed(link.broker_position_identifier > 0 ? link.broker_position_identifier : link.broker_position_ticket,
+                     best_order,
+                     best_deal);
+      return true;
+   }
+
+   void FlushOpenLinksAtDeinit(CFalconReportWriter &report_writer)
+   {
+      int n = ArraySize(m_active_links);
+      if(n <= 0)
+         return;
+
+      for(int i = 0; i < n; i++)
+      {
+         FalconBrokerTradeLink link = m_active_links[i];
+         if(RecoverBrokerOnlyExitFromHistory(link, report_writer, "FLUSH_OPEN_LINKS_AT_DEINIT_HISTORY_RECOVERY"))
+            continue;
+
+         double current_price = 0.0;
+         double current_volume = (link.accepted_lot > 0.0 ? link.accepted_lot : link.requested_lot);
+         double floating_delta = 0.0;
+         string position_state = "POSITION_NOT_SELECTED_AT_DEINIT";
+
+         if(link.broker_position_ticket > 0 && PositionSelectByTicket(link.broker_position_ticket))
+         {
+            current_price = PositionGetDouble(POSITION_PRICE_CURRENT);
+            current_volume = PositionGetDouble(POSITION_VOLUME);
+            floating_delta = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+            position_state = "POSITION_STILL_OPEN_AT_DEINIT_FLOATING_DELTA_ONLY";
+         }
+
+         string reason = StringFormat("OnDeinit open broker link still active; no server TP/SL close was observed before finalization; positionState=%s; floatingDelta=%.4f; this is not a realized broker close and remains not comparable to Paper FinalWorking", position_state, floating_delta);
+         report_writer.AppendBrokerExitObservationLifecycleRecord(link,
+                                                                  0,
+                                                                  0,
+                                                                  current_price,
+                                                                  current_volume,
+                                                                  0.0,
+                                                                  TimeCurrent(),
+                                                                  "OPEN_POSITION_AT_DEINIT_EXIT_NOT_OBSERVED",
+                                                                  reason);
+         report_writer.AppendBrokerOnlyTradeReconciliationRecord(link,
+                                                                 "BROKER_ONLY_POSITION_OPEN_AT_DEINIT_WITHOUT_PAPER_FINAL",
+                                                                 "BROKER_ONLY_OPEN_AT_DEINIT_NOT_LOCK_PARITY_COMPARABLE",
+                                                                 reason + "; no Paper final TradeLifecycle record exists for this active broker link.");
+      }
+
+      ArrayResize(m_active_links, 0);
+      ArrayResize(m_link_audit_history, 0);
+      ArrayResize(m_paper_final_records, 0);
+   }
+
+   int EntryAttempts() { return m_entry_attempts; }
+   int EntryAccepted() { return m_entry_accepted; }
+   int EntryBlocked() { return m_entry_blocked; }
+};
+
+// ==================================================================
 // Global Runtime Objects
 // ==================================================================
 CFalconMarketContext     g_market_context;
@@ -12360,6 +15867,7 @@ CFalconFvgMicroRetestWatcher g_fvg_micro_retest_watcher;
 CFalconFvgMicroTradePlanStagingDryRun g_fvg_micro_tradeplan_stager;
 CFalconFvgMicroShadowLifecycleSimulation g_fvg_micro_lifecycle_simulator;
 CFalconReportWriter      g_report_writer;
+CFalconBrokerEntryBridge g_broker_entry_bridge;
 CFalconExecutionGuard    g_execution_guard;
 CFalconRiskTradeManagementArchitecture g_risk_tm_architecture;
 bool                     g_is_initialized = false;
@@ -12492,6 +16000,7 @@ void FalconRunFvgMicroRuntimeShadowPipeline(const string trigger)
             else if(staging_snapshot.staged_to_shadow_executor)
             {
                g_last_staged_fvg_candidate_id = watcher_snapshot.candidate_id;
+               g_broker_entry_bridge.TryOpenFromShadowRecord(g_fvg_micro_tradeplan_stager.GetShadowRecord(), g_report_writer);
                g_fvg_micro_lifecycle_simulator.Initialize(g_fvg_micro_tradeplan_stager, g_market_context, g_shadow_executor);
                g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
                g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot(trigger + "_StagedShadowRecord");
@@ -12525,7 +16034,7 @@ int OnInit()
    PrintFormat("============================================================");
    PrintFormat("%s", EA_NAME);
    PrintFormat("Version: %s | Build: %s", EA_VERSION_TAG, EA_BUILD_TAG);
-   PrintFormat("Stage: Risk & TradeManagement Architecture Consolidation / No Behavior Change / No OrderSend / No runtime SL change");
+   PrintFormat("Stage: v0.56.9b Emergency Server Stop Envelope LOCK Parity Probe / Tester only / No Demo / No Live");
    PrintFormat("ReportProfile: %s", FalconReportProfileToString());
    PrintFormat("============================================================");
    FalconPrintReportFolderHints();
@@ -12542,6 +16051,7 @@ int OnInit()
       return INIT_FAILED;
    g_strategy_registry.PrintRegistryState();
    g_report_writer.Initialize(symbol_context);
+   g_broker_entry_bridge.Initialize();
    g_report_writer.WriteMarketDiagnosticsSnapshot(g_market_context.GetQuoteContext(), g_market_context.GetPrimaryCandleSnapshot());
    g_report_writer.WriteStrategyRegistryDiagnosticsSnapshot(g_strategy_registry);
    g_candle_cache.LoadAll(g_market_context);
@@ -12573,12 +16083,17 @@ int OnInit()
    if(!g_fvg_micro_tradeplan_stager.Initialize(g_fvg_micro_retest_watcher, g_runtime_safety_guard, g_shadow_executor))
       return INIT_FAILED;
    g_report_writer.WriteFvgMicroTradePlanStagingDiagnosticsSnapshot(g_fvg_micro_tradeplan_stager);
+   if(g_fvg_micro_tradeplan_stager.GetSnapshot().staged_to_shadow_executor)
+      g_broker_entry_bridge.TryOpenFromShadowRecord(g_fvg_micro_tradeplan_stager.GetShadowRecord(), g_report_writer);
 
    if(!g_fvg_micro_lifecycle_simulator.Initialize(g_fvg_micro_tradeplan_stager, g_market_context, g_shadow_executor))
       return INIT_FAILED;
    FalconTradeLifecycleRecord lifecycle_record_on_init;
    if(g_fvg_micro_lifecycle_simulator.ExtractClosedLifecycleRecord(lifecycle_record_on_init))
+   {
       g_report_writer.RegisterClosedTrade(lifecycle_record_on_init);
+      g_broker_entry_bridge.TryManagedCloseFromLifecycleRecord(lifecycle_record_on_init, g_report_writer);
+   }
    g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
    g_report_writer.WriteReportCalibrationDiagnosticsSnapshot();
    g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot("OnInit_AfterAllInitialReports");
@@ -12597,17 +16112,18 @@ int OnInit()
 
    g_risk_tm_architecture.Initialize();
    g_risk_tm_architecture.PrintState();
-   CFalconLogger::Info("v0.55.1 Low-Capital Risk Feasibility Foundation active: measurement-only; no trade blocking yet.");
+   CFalconLogger::Info("v0.56.9b Emergency Server Stop Envelope LOCK Parity Probe active: EnableRealExecution=true is allowed only inside MT5 Strategy Tester; Demo/Live remain blocked before initialization proceeds.");
    g_execution_guard.AssertNoExecution();
 
    g_is_initialized = true;
-   CFalconLogger::Info("Initialization completed successfully. EA is Shadow/Paper-reporting only, Risk/TM architecture-consolidated, FalconGuard pre-execution design-ready, and report-ready.");
+   CFalconLogger::Info("Initialization completed successfully. v0.56.9b broker bridge is strategy-agnostic and restores mandatory server SL/TP. OrderSend requires pre-entry broker lot authority, validated StructuralSL/TP plan, and non-empty server SL/TP; EA-side managed PositionClose is allowed only inside Strategy Tester at Paper final close for still-open broker positions; Demo, Live, BrokerModify, and RuntimeSLChanged remain blocked.");
    return INIT_SUCCEEDED;
 }
 
 void OnDeinit(const int reason)
 {
    FalconUpdateReportPeriodLastSeen();
+   g_broker_entry_bridge.FlushOpenLinksAtDeinit(g_report_writer);
    g_report_writer.WriteFinalSummary();
    g_report_writer.WriteReportCalibrationDiagnosticsSnapshot();
    g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot("OnDeinit_FinalSmokeTest");
@@ -12622,11 +16138,12 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
                         const MqlTradeRequest &request,
                         const MqlTradeResult &result)
 {
-   // v0.43.0: event-driven state update scaffold only.
-   // Future Demo/Live builds will use this event as the source of truth
-   // for open/partial/close/modify state. This build still sends no
-   // orders and performs no broker-side modifications.
+   // v0.56.9: OnTradeTransaction plus history recovery are the tester-only source of truth
+   // for observing server-side broker exits created by atomic SL/TP orders.
+   // This does not add Demo/Live, BrokerModify, or RuntimeSLChanged. EA-side close requests are allowed only by the managed close bridge inside MT5 Strategy Tester; this route repairs report truth when the broker/tester closes
+   // an already-linked position at server-side SL/TP.
    FalconOttuRouteTransaction(trans);
+   g_broker_entry_bridge.ObserveTradeTransactionExit(trans, g_report_writer);
 }
 
 void OnTick()
@@ -12638,7 +16155,7 @@ void OnTick()
    FalconUpdateReportPeriodLastSeen();
 
    // v0.18.4 refreshes the FVG shadow pipeline during runtime and can close staged Shadow records diagnostically at TP1/SL/timeout.
-   // Broker execution remains impossible. No OrderSend is used.
+   // Broker entry bridge is tester-only and gated by EnableRealExecution=true. Broker close/Demo/Live remain disabled.
    FalconRunFvgMicroRuntimeShadowPipeline("OnTick_FvgRuntimePipeline");
    g_fvg_micro_lifecycle_simulator.Refresh(g_market_context, g_shadow_executor);
 
@@ -12646,6 +16163,7 @@ void OnTick()
    if(g_fvg_micro_lifecycle_simulator.ExtractClosedLifecycleRecord(lifecycle_record))
    {
       g_report_writer.RegisterClosedTrade(lifecycle_record);
+      g_broker_entry_bridge.TryManagedCloseFromLifecycleRecord(lifecycle_record, g_report_writer);
       // v0.18.5 performance rule:
       // TradeLifecycle rows are written immediately, but heavy file-verification/audit snapshots
       // are not rewritten after every Shadow close. They remain available at OnInit/OnDeinit.
