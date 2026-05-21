@@ -20,6 +20,15 @@
 #include "Core/FalconMarketContext.mqh"
 #include "Core/FalconCandleCache.mqh"
 
+// ==================================================================
+// R0.3: Evidence + Risk layer #include block (after Core)
+// Evidence depends on Core only. Risk depends on Core + RiskInputs.
+// ==================================================================
+#include "Evidence/FalconEvidenceFramework.mqh"
+#include "Risk/FalconRiskInputs.mqh"     // R0.3: FALCON_ARCH_* and FALCON_*_STATUS macros used by Risk classes
+#include "Risk/FalconRiskFoundation.mqh"
+#include "Risk/FalconRiskTradeManagement.mqh"
+
 
 // ==================================================================
 // v0.57.0 Lock Parity Executability Decomposer - report names
@@ -1677,37 +1686,6 @@ double g_falcon_session_start_balance = 0.0;
 #define FALCON_TDL_ORDER_SEND_POLICY            "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
 #define FALCON_TDL_NEXT_PHASE                   "v0.55.3b_DynamicLotSizingSafetyRampMaxGrowthCap"
 
-
-// ==================================================================
-// Risk & TradeManagement Architecture Consolidation - v0.55.0
-// Architecture / Refactor / No Behavior Change.
-// This build names ownership boundaries for the risk and trade-management
-// layers that are already active in Paper state. It does NOT alter entries,
-// exits, SL/TP, protection, runner, emergency, tier transitions, reports,
-// OrderSend, broker modify, or runtime SL behavior.
-// ==================================================================
-#define FALCON_ARCH_STATUS                       "RISK_TRADEMANAGEMENT_ARCHITECTURE_CONSOLIDATION"
-#define FALCON_ARCH_DECISION                     "CONSOLIDATE_ACTIVE_PAPER_RISK_AND_TM_OWNERSHIP_WITHOUT_BEHAVIOR_CHANGE"
-#define FALCON_ARCH_RUNTIME_ENFORCED             false
-#define FALCON_ARCH_SCOPE                        "RISKMANAGER;LOTSIZINGMANAGER;DAILYGOVERNANCE;ENGINERISKALLOCATION;KILLSWITCH;STRUCTURALSTOPENGINE;TPBUILDER;PARTIALMANAGER;PROOFPROTECTIONENGINE;RUNNERMANAGER;ADAPTIVERATCHETENGINE;EARLYFAILUREEXITENGINE"
-#define FALCON_ARCH_POLICY                       "NO_ENTRY_CHANGE;NO_EXIT_CHANGE;NO_SLTP_CHANGE;NO_PROTECTION_CHANGE;NO_RUNNER_CHANGE;NO_EMERGENCY_CHANGE;NO_TIER_CHANGE"
-#define FALCON_ARCH_ORDER_SEND_POLICY            "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
-#define FALCON_ARCH_REPORT_POLICY                "SUMMARY_VERSION_BUILD_ONLY;NO_NEW_CSV_REPORTS;NO_DIAGNOSTIC_SPAM"
-#define FALCON_ARCH_NEXT_PHASE                   "v0.55.3b_DynamicLotSizingSafetyRampMaxGrowthCap"
-
-#define FALCON_RISK_MANAGER_STATUS               "CONSOLIDATED_OWNER_FOR_GUARD_TIER_EMERGENCY_DECISIONS"
-#define FALCON_LOT_SIZING_MANAGER_STATUS         "DYNAMIC_LOT_PAPER_RUNTIME_APPLICATION_USEFIXEDLOT_RESPECTED"
-#define FALCON_DAILY_GOVERNANCE_STATUS           "PARTIAL_DAILY_R_AND_DAILY_PAUSE_RESET_OWNER"
-#define FALCON_ENGINE_RISK_ALLOCATION_STATUS     "FOUNDATION_FVG_MICRO_100_PERCENT_ONLY"
-#define FALCON_KILL_SWITCH_STATUS_V055           "PARTIAL_PAPER_EMERGENCY_BLOCKING_NO_BROKER_CLOSE_YET"
-
-#define FALCON_STRUCTURAL_STOP_ENGINE_STATUS     "ACTIVE_STRUCTURAL_SL_VALIDATION_OWNER"
-#define FALCON_TP_BUILDER_STATUS_V055            "ACTIVE_TP1_TP2_TP3_VALIDATION_OWNER"
-#define FALCON_PARTIAL_MANAGER_STATUS_V055       "PARTIAL_PROOF_CHECKPOINT_OWNER_NO_BROKER_PARTIAL_YET"
-#define FALCON_PROOF_PROTECTION_ENGINE_STATUS    "ACTIVE_PAPER_VIRTUAL_SL_PROTECTION_LOCKED"
-#define FALCON_RUNNER_MANAGER_STATUS_V055        "ACTIVE_PAPER_RUNNER_MOON_MODE_LOCKED"
-#define FALCON_ADAPTIVE_RATCHET_ENGINE_STATUS    "PARTIAL_INSIDE_PROTECTION_RUNNER_NOT_STANDALONE_ENGINE_YET"
-#define FALCON_EARLY_FAILURE_EXIT_ENGINE_STATUS  "PLANNED_NOT_ACTIVE_NO_EXIT_CHANGE"
 
 // ==================================================================
 // Low-Capital Risk Feasibility Foundation - v0.55.1
@@ -3837,96 +3815,6 @@ void FalconFinalizeAndRenameReportFiles(const string trigger)
 
 
 
-// ==================================================================
-// Evidence Framework Foundation - v0.13.1
-// Contract-only layer. Evidence strengthens or weakens future engine decisions,
-// but it never opens a trade and never overrides guards.
-// ==================================================================
-class CFalconEvidenceFramework
-{
-private:
-   FalconEvidenceRecord m_records[4];
-   int                  m_record_count;
-   bool                 m_initialized;
-
-public:
-   CFalconEvidenceFramework()
-   {
-      m_record_count = 0;
-      m_initialized  = false;
-   }
-
-   bool Initialize()
-   {
-      m_record_count = 0;
-      AddContractRecord("EVID_CANDLE", "Candle Pattern Evidence", FALCON_EVIDENCE_TYPE_CANDLE_PATTERN,
-                        "Contract only: engulfing, pin bar, hammer, shooting star, wide body, inside/outside bar, three-bar reversal.");
-      AddContractRecord("EVID_CHART", "Chart Pattern Evidence", FALCON_EVIDENCE_TYPE_CHART_PATTERN,
-                        "Contract only: double top/bottom, H&S, flag, wedge, triangle, range break/retest, channel break, sweep/reclaim.");
-      AddContractRecord("EVID_OBJECTIVE", "Objective Indicator Evidence", FALCON_EVIDENCE_TYPE_OBJECTIVE_INDICATOR,
-                        "Contract only: VWAP, EMA 7/25/50/200, ATR, RSI closed candle, session levels, previous day levels, FVG, tick volume.");
-      AddContractRecord("EVID_SMC", "SMC / Liquidity Evidence", FALCON_EVIDENCE_TYPE_SMC_LIQUIDITY,
-                        "Contract only: liquidity sweep, reclaim, FVG/imbalance, displacement, BOS/CHoCH, premium/discount, HTF/LTF alignment.");
-
-      m_initialized = (m_record_count == 4);
-      CFalconLogger::Info(StringFormat("EvidenceFramework initialized. Records=%d | PermissionMode=EVIDENCE_ONLY", m_record_count));
-      return m_initialized;
-   }
-
-   bool IsInitialized()
-   {
-      return m_initialized;
-   }
-
-   int Count()
-   {
-      return m_record_count;
-   }
-
-   bool GetRecordByIndex(const int index, FalconEvidenceRecord &record)
-   {
-      if(index < 0 || index >= m_record_count)
-         return false;
-      record = m_records[index];
-      return true;
-   }
-
-   FalconEvidencePack BuildEmptyEvidencePack()
-   {
-      FalconEvidencePack pack;
-      pack.has_candle_evidence              = false;
-      pack.has_chart_pattern_evidence       = false;
-      pack.has_objective_indicator_evidence = false;
-      pack.has_smc_evidence                 = false;
-      pack.score                            = 0.0;
-      pack.summary                          = "No runtime evidence evaluated in v0.13.1. Evidence Framework remains contract-only.";
-      return pack;
-   }
-
-private:
-   void AddContractRecord(const string evidence_id,
-                          const string evidence_name,
-                          const ENUM_FALCON_EVIDENCE_TYPE evidence_type,
-                          const string notes)
-   {
-      if(m_record_count >= 4)
-         return;
-
-      FalconEvidenceRecord record;
-      record.evidence_id           = evidence_id;
-      record.evidence_name         = evidence_name;
-      record.evidence_type         = evidence_type;
-      record.evidence_state        = FALCON_EVIDENCE_STATE_NOT_EVALUATED;
-      record.direction_bias        = FALCON_DIRECTION_NONE;
-      record.source_timeframe      = PERIOD_CURRENT;
-      record.score                 = 0.0;
-      record.is_runtime_permission = false;
-      record.notes                 = notes;
-
-      m_records[m_record_count] = record;
-      m_record_count++;
-   }
-};
 
 // ==================================================================
 // FalconGuard Risk Foundation + Pre-Execution utilities - v0.26.2
@@ -4072,76 +3960,6 @@ string FalconGuardKillSwitchAllowsTradingDesign()
    return "YES_DESIGN_ONLY_MANUAL_AND_AUTO_KILL_SWITCH_NOT_RUNTIME_ENFORCED";
 }
 
-// ==================================================================
-// Risk Foundation - validates only. No lot calculations yet.
-// ==================================================================
-class CFalconRiskFoundation
-{
-public:
-   bool ValidateInputs(const FalconSymbolContext &symbol_context)
-   {
-      // v0.56.4: EnableRealExecution=true is allowed only for the MT5 Strategy Tester
-      // Atomic Entry+Exit validation lane. Demo/Live remain blocked here before
-      // initialization continues, while still preserving the central execution safety switch.
-      if(EnableRealExecution && !MQLInfoInteger(MQL_TESTER))
-      {
-         CFalconLogger::Error("HARD SAFETY BLOCK: EnableRealExecution=true is allowed only inside MT5 Strategy Tester in v0.56.4b. Demo/Live remain blocked.");
-         return false;
-      }
-
-      if(!EnableShadowMode && !EnablePaperMode)
-      {
-         CFalconLogger::Warn("Both ShadowMode and PaperMode are disabled. EA will only load and stay idle.");
-      }
-
-      if(UseFixedLot)
-      {
-         if(FixedLotSize <= 0.0)
-         {
-            CFalconLogger::Error("FixedLotSize must be greater than zero.");
-            return false;
-         }
-
-         if(FixedLotSize < symbol_context.min_lot || FixedLotSize > symbol_context.max_lot)
-         {
-            CFalconLogger::Error(StringFormat("FixedLotSize %.2f is outside broker limits [%.2f - %.2f].",
-                                             FixedLotSize,
-                                             symbol_context.min_lot,
-                                             symbol_context.max_lot));
-            return false;
-         }
-      }
-
-      if(!UseAutoCapitalDetection && ManualCapital <= 0.0)
-      {
-         CFalconLogger::Error("ManualCapital must be greater than zero when UseAutoCapitalDetection=false.");
-         return false;
-      }
-
-      if(UseDailyLossLimit)
-      {
-         if(UseFixedDailyLossAmount && FixedDailyLossAmount <= 0.0)
-         {
-            CFalconLogger::Error("FixedDailyLossAmount must be greater than zero.");
-            return false;
-         }
-
-         if(!UseFixedDailyLossAmount && (DailyLossPercentOfCapital <= 0.0 || DailyLossPercentOfCapital > 100.0))
-         {
-            CFalconLogger::Error("DailyLossPercentOfCapital must be between 0 and 100.");
-            return false;
-         }
-      }
-
-      if(MaxTradesPerDay < 0 || MaxOpenPositions < 0)
-      {
-         CFalconLogger::Error("MaxTradesPerDay and MaxOpenPositions cannot be negative.");
-         return false;
-      }
-
-      return true;
-   }
-};
 
 // ==================================================================
 // First Shadow Strategy Adapter Shell - v0.13.1
@@ -12857,68 +12675,6 @@ bool FalconV055ArchitectureConsolidationContractReady()
    return true;
 }
 
-class CFalconRiskTradeManagementArchitecture
-{
-private:
-   bool m_initialized;
-   bool m_contract_ready;
-
-public:
-   CFalconRiskTradeManagementArchitecture()
-   {
-      m_initialized = false;
-      m_contract_ready = false;
-   }
-
-   bool Initialize()
-   {
-      m_contract_ready = FalconV055ArchitectureConsolidationContractReady();
-      m_initialized = true;
-      return m_contract_ready;
-   }
-
-   bool IsInitialized()
-   {
-      return m_initialized;
-   }
-
-   bool IsContractReady()
-   {
-      return m_contract_ready;
-   }
-
-   string RiskOwnershipMap()
-   {
-      return "RiskManager=" + FALCON_RISK_MANAGER_STATUS +
-             ";LotSizingManager=" + FALCON_LOT_SIZING_MANAGER_STATUS +
-             ";DailyGovernance=" + FALCON_DAILY_GOVERNANCE_STATUS +
-             ";EngineRiskAllocation=" + FALCON_ENGINE_RISK_ALLOCATION_STATUS +
-             ";KillSwitch=" + FALCON_KILL_SWITCH_STATUS_V055;
-   }
-
-   string TradeManagementOwnershipMap()
-   {
-      return "StructuralStopEngine=" + FALCON_STRUCTURAL_STOP_ENGINE_STATUS +
-             ";TPBuilder=" + FALCON_TP_BUILDER_STATUS_V055 +
-             ";PartialManager=" + FALCON_PARTIAL_MANAGER_STATUS_V055 +
-             ";ProofProtectionEngine=" + FALCON_PROOF_PROTECTION_ENGINE_STATUS +
-             ";RunnerManager=" + FALCON_RUNNER_MANAGER_STATUS_V055 +
-             ";AdaptiveRatchetEngine=" + FALCON_ADAPTIVE_RATCHET_ENGINE_STATUS +
-             ";EarlyFailureExitEngine=" + FALCON_EARLY_FAILURE_EXIT_ENGINE_STATUS;
-   }
-
-   void PrintState()
-   {
-      CFalconLogger::Info(StringFormat("v0.55.0 Architecture Consolidation | Status=%s | Decision=%s | ContractReady=%d | RuntimeEnforced=%d",
-                                       FALCON_ARCH_STATUS,
-                                       FALCON_ARCH_DECISION,
-                                       (m_contract_ready ? 1 : 0),
-                                       (FALCON_ARCH_RUNTIME_ENFORCED ? 1 : 0)));
-      CFalconLogger::Info("v0.55.0 Risk ownership map: " + RiskOwnershipMap());
-      CFalconLogger::Info("v0.55.0 TradeManagement ownership map: " + TradeManagementOwnershipMap());
-      CFalconLogger::Info("v0.55.0 Behavior policy: " + FALCON_ARCH_POLICY + " | " + FALCON_ARCH_ORDER_SEND_POLICY);
-   }
-};
 
 // ==================================================================
 // Strategy-agnostic Emergency Server Stop Envelope LOCK Parity Probe - v0.56.9b
