@@ -8,8 +8,8 @@
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.57.1"
-#define EA_BUILD_TAG   "LockParityProfileAndRunnerExitProbe"
+#define EA_VERSION_TAG "v0.57.2"
+#define EA_BUILD_TAG   "VirtualTrailingExitBridgeSimple"
 
 #define FALCON_MTF_COUNT       6
 
@@ -112,6 +112,9 @@
 #define FALCON_MREB_RUNTIME_MANAGED_CLOSE_READY        true
 #define FALCON_BPR_PROTECTION_RUNNER_RUNTIME_POLICY      "TESTER_ONLY_EA_MANAGED_POSITIONCLOSE_AT_PAPER_FINAL_WITH_EMERGENCY_SERVER_SL_TP_ENVELOPE_NO_RUNTIME_SL_CHANGE_NO_BROKERMODIFY"
 #define FALCON_MREB_CLOSE_COMMENT_PREFIX              "JAFC569BMC"
+// v0.57.2: Virtual Trailing Exit Bridge - tester-only reverse-deal close tag.
+#define FALCON_VIRTUAL_TRAILING_CLOSE_COMMENT_PREFIX  "JAFC572VT"
+#define FALCON_VIRTUAL_TRAILING_EXIT_LIFECYCLE_REPORT_NAME "VirtualTrailingExitLifecycle"
 #define FALCON_LOCK_PARITY_TESTER_MANAGED_LIFECYCLE_PROBE true
 #define FALCON_LOCK_PARITY_ATTACH_SERVER_SL_TP           true
 #define FALCON_LOCK_PARITY_SERVER_STOP_POLICY            "SERVER_EMERGENCY_ENVELOPE_SL_TP_ATTACHED_VIRTUAL_STRUCTURAL_MANAGED_CLOSE_PROBE_NO_NAKED_ORDER_GUARD"
@@ -1816,6 +1819,20 @@ input int    MaxTradesPerDay                 = 3;
 input int    MaxOpenPositions                = 1;
 
 // ==================================================================
+// 02b - Virtual Trailing Exit Bridge / جسر الخروج بـ trailing افتراضي - v0.57.2
+// Simple stage: fixed trailing distance + single breakeven point.
+// Tester-only. Closes via OrderSend(TRADE_ACTION_DEAL) reverse only.
+// Emergency server SL/TP envelope from v0.56.9b remains untouched.
+// ==================================================================
+// ==================================================================
+// 02.1 - Enable Virtual Trailing Bridge 
+// ==================================================================
+input bool   EnableVirtualTrailingBridge     = true;   // v0.57.2 trailing exit
+input double VirtualTrailingStartPoints      = 30.0;   // profit points before trailing arms
+input double VirtualTrailingDistancePoints   = 20.0;   // trailing distance behind peak
+input double VirtualBreakevenAtPoints        = 15.0;   // profit points to lock breakeven
+
+// ==================================================================
 // 03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات
 // Keep this list small and explicit. FVG Micro is ON by default for ShadowSmoke only; all other engines remain OFF.
 // ==================================================================
@@ -3132,6 +3149,14 @@ struct FalconBrokerTradeLink
    string                    broker_exit_reason;
    string                    status;
    string                    reason;
+
+   // v0.57.2: Virtual Trailing Exit Bridge per-link state.
+   bool                      virtual_trailing_active;
+   bool                      virtual_breakeven_locked;
+   double                    virtual_peak_favorable_price;
+   double                    virtual_trailing_stop_price;
+   double                    virtual_protection_floor_price;
+   datetime                  virtual_trailing_last_update;
 };
 
 struct FalconBrokerTradeManagementEvent
@@ -4934,11 +4959,12 @@ int FalconReportNameCount()
    // AutoPeriod finalization/rename. BrokerPaperTradeReconciliation is now included
    // so it must not remain with To_AUTO_RUNNING in final report files.
    // v0.57.0: +2 reports per profile (LockParityExecutabilityDecomposition + Rollup).
+   // v0.57.2: +1 report per profile (VirtualTrailingExitLifecycle).
    if(ReportProfile == FALCON_REPORT_MINIMAL)
-      return 12;
-   if(ReportProfile == FALCON_REPORT_STANDARD)
       return 13;
-   return 30;
+   if(ReportProfile == FALCON_REPORT_STANDARD)
+      return 14;
+   return 31;
 }
 
 string FalconReportNameByIndex(const int index)
@@ -4959,6 +4985,7 @@ string FalconReportNameByIndex(const int index)
          case 9: return FALCON_BROKER_PAPER_RECONCILIATION_REPORT_NAME;
          case 10: return FALCON_LOCK_PARITY_DECOMP_REPORT_NAME;
          case 11: return FALCON_LOCK_PARITY_ROLLUP_REPORT_NAME;
+         case 12: return FALCON_VIRTUAL_TRAILING_EXIT_LIFECYCLE_REPORT_NAME;
       }
       return "UnknownReport";
    }
@@ -4980,6 +5007,7 @@ string FalconReportNameByIndex(const int index)
          case 10: return FALCON_BROKER_PAPER_RECONCILIATION_REPORT_NAME;
          case 11: return FALCON_LOCK_PARITY_DECOMP_REPORT_NAME;
          case 12: return FALCON_LOCK_PARITY_ROLLUP_REPORT_NAME;
+         case 13: return FALCON_VIRTUAL_TRAILING_EXIT_LIFECYCLE_REPORT_NAME;
       }
       return "UnknownReport";
    }
@@ -5016,6 +5044,7 @@ string FalconReportNameByIndex(const int index)
       case 27: return FALCON_BROKER_PAPER_RECONCILIATION_REPORT_NAME;
       case 28: return FALCON_LOCK_PARITY_DECOMP_REPORT_NAME;
       case 29: return FALCON_LOCK_PARITY_ROLLUP_REPORT_NAME;
+      case 30: return FALCON_VIRTUAL_TRAILING_EXIT_LIFECYCLE_REPORT_NAME;
    }
    return "UnknownReport";
 }
@@ -8192,6 +8221,8 @@ private:
    // v0.57.0: Lock Parity Executability Decomposer report files.
    string              m_lock_parity_decomp_file;
    string              m_lock_parity_rollup_file;
+   // v0.57.2: Virtual Trailing Exit Bridge report file.
+   string              m_virtual_trailing_exit_lifecycle_file;
    FalconSymbolContext m_symbol_context;
    FalconReportTotals  m_totals;
 
@@ -8263,6 +8294,8 @@ public:
       // v0.57.0: Lock Parity Executability Decomposer report files.
       m_lock_parity_decomp_file = FalconBuildReportFileName(FALCON_LOCK_PARITY_DECOMP_REPORT_NAME);
       m_lock_parity_rollup_file = FalconBuildReportFileName(FALCON_LOCK_PARITY_ROLLUP_REPORT_NAME);
+      // v0.57.2: Virtual Trailing Exit Bridge report file.
+      m_virtual_trailing_exit_lifecycle_file = FalconBuildReportFileName(FALCON_VIRTUAL_TRAILING_EXIT_LIFECYCLE_REPORT_NAME);
       ResetTotals();
 
       if(EnableMainReport)
@@ -8282,6 +8315,11 @@ public:
          }
          // v0.57.0: Lock Parity Executability Decomposer header.
          WriteLockParityDecompositionHeader();
+         // v0.57.2: Virtual Trailing Exit Bridge header. Only emit the file when the
+         // bridge can actually fire (tester-only managed close path) so LOCKPARITY
+         // without execution stays at exactly 4 CSVs.
+         if(EnableVirtualTrailingBridge && EnableRealExecution && MQLInfoInteger(MQL_TESTER))
+            WriteVirtualTrailingExitLifecycleHeader();
       }
 
       if(ForceCreateReportFilesOnInit)
@@ -12035,6 +12073,69 @@ public:
       FileClose(handle);
    }
 
+   // ==================================================================
+   // v0.57.2: Virtual Trailing Exit Bridge report
+   // One row per virtual-trailing-initiated close attempt. Diagnostic only:
+   // does NOT modify any trade value, does NOT replace ManagedCloseLifecycle.
+   // ==================================================================
+   void WriteVirtualTrailingExitLifecycleHeader()
+   {
+      int handle = FileOpen(m_virtual_trailing_exit_lifecycle_file, FalconReportWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not create VirtualTrailingExitLifecycle file: %s", m_virtual_trailing_exit_lifecycle_file));
+         return;
+      }
+
+      string header =
+         "TradeId,Direction,EntryTime,EntryPrice,ExitTime,ExitPrice,"
+         "PeakFavorablePrice,TrailingStopPriceAtExit,BreakevenLocked,TrailingActivated,"
+         "ProfitPointsAtExit,ExitTriggerReason,BrokerCloseRetcode,VirtualTrailingStatus";
+      FileWriteString(handle, header + "\r\n");
+      FileClose(handle);
+   }
+
+   void AppendVirtualTrailingExitLifecycleRecord(const FalconBrokerTradeLink &link,
+                                                 const datetime exit_time,
+                                                 const double exit_price,
+                                                 const double profit_points_at_exit,
+                                                 const string exit_trigger_reason,
+                                                 const uint broker_close_retcode,
+                                                 const string virtual_trailing_status)
+   {
+      int handle = FileOpen(m_virtual_trailing_exit_lifecycle_file, FalconReportReadWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         WriteVirtualTrailingExitLifecycleHeader();
+         handle = FileOpen(m_virtual_trailing_exit_lifecycle_file, FalconReportReadWriteCsvFlags(), ',');
+      }
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not append VirtualTrailingExitLifecycle row: %s", m_virtual_trailing_exit_lifecycle_file));
+         return;
+      }
+      FileSeek(handle, 0, SEEK_END);
+
+      string row = "";
+      row += FalconCsvSafe(link.trade_id) + ",";
+      row += FalconCsvSafe(FalconDirectionToString(link.direction)) + ",";
+      row += FalconCsvSafe(FalconTimeToString(link.broker_entry_time)) + ",";
+      row += DoubleToString(link.broker_entry_price, m_symbol_context.digits) + ",";
+      row += FalconCsvSafe(FalconTimeToString(exit_time)) + ",";
+      row += DoubleToString(exit_price, m_symbol_context.digits) + ",";
+      row += DoubleToString(link.virtual_peak_favorable_price, m_symbol_context.digits) + ",";
+      row += DoubleToString(link.virtual_trailing_stop_price, m_symbol_context.digits) + ",";
+      row += FalconCsvSafe(link.virtual_breakeven_locked ? "YES" : "NO") + ",";
+      row += FalconCsvSafe(link.virtual_trailing_active ? "YES" : "NO") + ",";
+      row += DoubleToString(profit_points_at_exit, 2) + ",";
+      row += FalconCsvSafe(exit_trigger_reason) + ",";
+      row += IntegerToString((int)broker_close_retcode) + ",";
+      row += FalconCsvSafe(virtual_trailing_status);
+
+      FileWriteString(handle, row + "\r\n");
+      FileClose(handle);
+   }
+
    void RegisterClosedTrade(FalconTradeLifecycleRecord &record)
    {
       if(!m_initialized || !EnableMainReport)
@@ -15609,6 +15710,13 @@ private:
       link.broker_exit_reason = "";
       link.status = "NO_BROKER_LINK_FOUND";
       link.reason = "No broker link was found for this Paper TradeId.";
+      // v0.57.2: Virtual Trailing Exit Bridge state - zero-init.
+      link.virtual_trailing_active = false;
+      link.virtual_breakeven_locked = false;
+      link.virtual_peak_favorable_price = 0.0;
+      link.virtual_trailing_stop_price = 0.0;
+      link.virtual_protection_floor_price = 0.0;
+      link.virtual_trailing_last_update = 0;
    }
 
    void ResetLinkFromShadow(const FalconShadowTradeRecord &record, FalconBrokerTradeLink &link)
@@ -15650,6 +15758,13 @@ private:
       link.broker_exit_reason = "";
       link.status = FALCON_BEEB_ENTRY_DISABLED_STATUS;
       link.reason = "Not evaluated yet.";
+      // v0.57.2: Virtual Trailing Exit Bridge state - zero-init.
+      link.virtual_trailing_active = false;
+      link.virtual_breakeven_locked = false;
+      link.virtual_peak_favorable_price = 0.0;
+      link.virtual_trailing_stop_price = 0.0;
+      link.virtual_protection_floor_price = 0.0;
+      link.virtual_trailing_last_update = 0;
    }
 
    bool TesterEntryAllowed(string &reason)
@@ -15883,6 +15998,136 @@ public:
       return link.broker_entry_accepted;
    }
 
+   // ==================================================================
+   // v0.57.2: Reverse-deal close helper - extracted from
+   // TryManagedCloseFromLifecycleRecord so the new Virtual Trailing
+   // Bridge can reuse the SAME OrderSend(TRADE_ACTION_DEAL) path without
+   // duplicating it. Caller must have already validated:
+   //   - link.broker_position_ticket > 0
+   //   - PositionSelectByTicket succeeded
+   //   - position identity (_Symbol + FC_MAGIC_FVG_MICRO) matches
+   //   - PositionGetDouble(POSITION_VOLUME) > 0  (passed as volume)
+   //   - PositionGetInteger(POSITION_TYPE)        (passed as position_type)
+   //
+   // Helper handles: SymbolInfoTick, request build, OrderSend, link/audit
+   // updates, and ManagedCloseLifecycle row. Lifecycle-specific and
+   // trailing-specific post-reports remain at the caller (e.g.
+   // BrokerPaperTradeReconciliation, VirtualTrailingExitLifecycle).
+   //
+   // Returns true iff OrderSend was actually called (regardless of broker
+   // acceptance). accepted_out is true only when retcode is DONE/PLACED/
+   // DONE_PARTIAL. On pre-send failures (no tick, unsupported type) logs
+   // a ManagedCloseLifecycle block row and returns false.
+   // ==================================================================
+   bool ExecuteReverseClosePositionRequest(FalconBrokerTradeLink &link,
+                                           const long position_type,
+                                           const double volume,
+                                           const string comment_prefix,
+                                           const string lifecycle_reason,
+                                           CFalconReportWriter &report_writer,
+                                           bool &accepted_out,
+                                           uint &retcode_out,
+                                           double &executed_price_out,
+                                           string &result_comment_out)
+   {
+      accepted_out = false;
+      retcode_out = 0;
+      executed_price_out = 0.0;
+      result_comment_out = "";
+
+      MqlTick tick;
+      if(!SymbolInfoTick(_Symbol, tick))
+      {
+         string tick_reason = "EA-managed close blocked: SymbolInfoTick unavailable; tradeId=" + link.trade_id;
+         report_writer.AppendBrokerManagedCloseLifecycleRecord(link,
+                                                              false,
+                                                              false,
+                                                              0,
+                                                              0,
+                                                              0.0,
+                                                              volume,
+                                                              TimeCurrent(),
+                                                              "EA_MANAGED_CLOSE_BLOCKED_NO_TICK",
+                                                              tick_reason);
+         return false;
+      }
+
+      MqlTradeRequest request;
+      MqlTradeResult result;
+      ZeroMemory(request);
+      ZeroMemory(result);
+
+      request.action    = TRADE_ACTION_DEAL;
+      request.symbol    = _Symbol;
+      request.position  = link.broker_position_ticket;
+      request.volume    = volume;
+      request.magic     = FC_MAGIC_FVG_MICRO;
+      request.deviation = 30;
+      request.comment   = FalconBuildBrokerCommentWithHash(comment_prefix, link.trade_id);
+      request.type_time = ORDER_TIME_GTC;
+
+      if(position_type == POSITION_TYPE_BUY)
+      {
+         request.type  = ORDER_TYPE_SELL;
+         request.price = tick.bid;
+      }
+      else if(position_type == POSITION_TYPE_SELL)
+      {
+         request.type  = ORDER_TYPE_BUY;
+         request.price = tick.ask;
+      }
+      else
+      {
+         string type_reason = StringFormat("EA-managed close blocked: unsupported position type=%d; tradeId=%s", (int)position_type, link.trade_id);
+         report_writer.AppendBrokerManagedCloseLifecycleRecord(link,
+                                                              false,
+                                                              false,
+                                                              0,
+                                                              0,
+                                                              0.0,
+                                                              volume,
+                                                              TimeCurrent(),
+                                                              "EA_MANAGED_CLOSE_BLOCKED_UNSUPPORTED_POSITION_TYPE",
+                                                              type_reason);
+         return false;
+      }
+
+      bool sent = OrderSend(request, result);
+      accepted_out       = (sent && (result.retcode == TRADE_RETCODE_DONE || result.retcode == TRADE_RETCODE_PLACED || result.retcode == TRADE_RETCODE_DONE_PARTIAL));
+      retcode_out        = result.retcode;
+      executed_price_out = request.price;
+      result_comment_out = result.comment;
+
+      string status = accepted_out ? "EA_MANAGED_CLOSE_REQUEST_ACCEPTED_WAITING_ON_TRADE_TRANSACTION" : "EA_MANAGED_CLOSE_REQUEST_REJECTED";
+      string reason = StringFormat("Controlled tester-only EA-side managed close via %s; sent=%s; retcode=%d; resultComment=%s; lifecycleReason=%s; no BrokerModify; no RuntimeSLChanged; Demo/Live blocked",
+                                   comment_prefix,
+                                   (sent ? "true" : "false"),
+                                   (int)result.retcode,
+                                   result.comment,
+                                   lifecycle_reason);
+
+      link.broker_close_attempted     = true;
+      link.broker_close_accepted      = accepted_out;
+      link.managed_close_attempted    = true;
+      link.managed_close_accepted     = accepted_out;
+      link.broker_close_order_ticket  = result.order;
+      link.broker_close_deal_ticket   = result.deal;
+      link.managed_close_comment      = request.comment;
+      UpdateAuditLinkManagedCloseRequest(link.trade_id, true, accepted_out, result.order, result.deal, request.comment);
+
+      report_writer.AppendBrokerManagedCloseLifecycleRecord(link,
+                                                           true,
+                                                           accepted_out,
+                                                           result.order,
+                                                           result.deal,
+                                                           request.price,
+                                                           volume,
+                                                           TimeCurrent(),
+                                                           status,
+                                                           reason);
+      return true;
+   }
+
    bool TryManagedCloseFromLifecycleRecord(const FalconTradeLifecycleRecord &record, CFalconReportWriter &report_writer)
    {
       if(!FALCON_MREB_RUNTIME_MANAGED_CLOSE_READY)
@@ -16027,98 +16272,223 @@ public:
       }
 
       long position_type = (long)PositionGetInteger(POSITION_TYPE);
-      MqlTick tick;
-      if(!SymbolInfoTick(_Symbol, tick))
-      {
-         string tick_reason = "EA-managed close blocked: SymbolInfoTick unavailable; tradeId=" + record.trade_id;
-         report_writer.AppendBrokerManagedCloseLifecycleRecord(link,
-                                                              false,
-                                                              false,
-                                                              0,
-                                                              0,
-                                                              0.0,
-                                                              volume,
-                                                              TimeCurrent(),
-                                                              "EA_MANAGED_CLOSE_BLOCKED_NO_TICK",
-                                                              tick_reason);
-         return false;
-      }
 
-      MqlTradeRequest request;
-      MqlTradeResult result;
-      ZeroMemory(request);
-      ZeroMemory(result);
-
-      request.action = TRADE_ACTION_DEAL;
-      request.symbol = _Symbol;
-      request.position = link.broker_position_ticket;
-      request.volume = volume;
-      request.magic = FC_MAGIC_FVG_MICRO;
-      request.deviation = 30;
-      request.comment = FalconBuildBrokerCommentWithHash(FALCON_MREB_CLOSE_COMMENT_PREFIX, record.trade_id);
-      request.type_time = ORDER_TIME_GTC;
-
-      if(position_type == POSITION_TYPE_BUY)
-      {
-         request.type = ORDER_TYPE_SELL;
-         request.price = tick.bid;
-      }
-      else if(position_type == POSITION_TYPE_SELL)
-      {
-         request.type = ORDER_TYPE_BUY;
-         request.price = tick.ask;
-      }
-      else
-      {
-         string type_reason = StringFormat("EA-managed close blocked: unsupported position type=%d; tradeId=%s", (int)position_type, record.trade_id);
-         report_writer.AppendBrokerManagedCloseLifecycleRecord(link,
-                                                              false,
-                                                              false,
-                                                              0,
-                                                              0,
-                                                              0.0,
-                                                              volume,
-                                                              TimeCurrent(),
-                                                              "EA_MANAGED_CLOSE_BLOCKED_UNSUPPORTED_POSITION_TYPE",
-                                                              type_reason);
-         return false;
-      }
-
+      // v0.57.2: OrderSend block factored into ExecuteReverseClosePositionRequest so the
+      // Virtual Trailing Exit Bridge can reuse the same close path. Lifecycle-specific
+      // post-reporting (BrokerPaperTradeReconciliation) remains here.
       string lifecycle_reason = LifecycleManagedCloseReason(record);
-      bool sent = OrderSend(request, result);
-      bool accepted = (sent && (result.retcode == TRADE_RETCODE_DONE || result.retcode == TRADE_RETCODE_PLACED || result.retcode == TRADE_RETCODE_DONE_PARTIAL));
-      string status = accepted ? "EA_MANAGED_CLOSE_REQUEST_ACCEPTED_WAITING_ON_TRADE_TRANSACTION" : "EA_MANAGED_CLOSE_REQUEST_REJECTED";
-      string reason = StringFormat("Controlled tester-only EA-side managed close at Paper final lifecycle exit; sent=%s; retcode=%d; resultComment=%s; lifecycleReason=%s; no BrokerModify; no RuntimeSLChanged; Demo/Live blocked",
-                                   (sent ? "true" : "false"),
-                                   (int)result.retcode,
-                                   result.comment,
-                                   lifecycle_reason);
+      bool accepted = false;
+      uint retcode = 0;
+      double executed_price = 0.0;
+      string result_comment = "";
+      bool sent = ExecuteReverseClosePositionRequest(link,
+                                                    position_type,
+                                                    volume,
+                                                    FALCON_MREB_CLOSE_COMMENT_PREFIX,
+                                                    lifecycle_reason,
+                                                    report_writer,
+                                                    accepted,
+                                                    retcode,
+                                                    executed_price,
+                                                    result_comment);
+      if(!sent)
+         return false;
 
-      link.broker_close_attempted = true;
-      link.broker_close_accepted = accepted;
-      link.managed_close_attempted = true;
-      link.managed_close_accepted = accepted;
-      link.broker_close_order_ticket = result.order;
-      link.broker_close_deal_ticket = result.deal;
-      link.managed_close_comment = request.comment;
-      UpdateAuditLinkManagedCloseRequest(record.trade_id, true, accepted, result.order, result.deal, request.comment);
-
-      report_writer.AppendBrokerManagedCloseLifecycleRecord(link,
-                                                           true,
-                                                           accepted,
-                                                           result.order,
-                                                           result.deal,
-                                                           request.price,
-                                                           volume,
-                                                           TimeCurrent(),
-                                                           status,
-                                                           reason);
+      string paper_reconciliation_reason = StringFormat("Controlled tester-only EA-side managed close at Paper final lifecycle exit; sent=true; retcode=%d; resultComment=%s; lifecycleReason=%s; no BrokerModify; no RuntimeSLChanged; Demo/Live blocked",
+                                                       (int)retcode,
+                                                       result_comment,
+                                                       lifecycle_reason);
       report_writer.AppendBrokerPaperTradeReconciliationRecord(record,
                                                                link,
                                                                "EA_MANAGED_CLOSE_REQUEST_SENT",
                                                                accepted ? "MANAGED_CLOSE_REQUEST_ACCEPTED_ACTUAL_DELTA_PENDING_TRANSACTION" : "MANAGED_CLOSE_REQUEST_REJECTED",
-                                                               reason);
+                                                               paper_reconciliation_reason);
       return accepted;
+   }
+
+   // ==================================================================
+   // v0.57.2: Virtual Trailing Exit Bridge - tick-driven update.
+   // For every open broker link: maintains peak-favorable price, locks
+   // breakeven, arms trailing, and closes via OrderSend(TRADE_ACTION_DEAL)
+   // reverse (through the factored helper). No BrokerModify, no
+   // TRADE_ACTION_SLTP, no RuntimeSLChanged. Emergency server SL/TP from
+   // v0.56.9b stays attached - this is the regular exit; server SL/TP is
+   // the safety net.
+   //
+   // Gated externally by OnTick (EnableVirtualTrailingBridge &&
+   // EnableRealExecution && MQL_TESTER). Redundant internal guards for
+   // safety in case the method is ever called from elsewhere.
+   // ==================================================================
+   void UpdateVirtualTrailingForOpenLinks(CFalconReportWriter &report_writer)
+   {
+      if(!EnableVirtualTrailingBridge)
+         return;
+      if(!EnableRealExecution)
+         return;
+      if(!MQLInfoInteger(MQL_TESTER))
+         return;
+      if(!FALCON_MREB_RUNTIME_MANAGED_CLOSE_READY)
+         return;
+
+      MqlTick tick;
+      if(!SymbolInfoTick(_Symbol, tick))
+         return;
+
+      int total = ArraySize(m_active_links);
+      for(int i = 0; i < total; i++)
+      {
+         if(!m_active_links[i].broker_entry_accepted) continue;
+         if(m_active_links[i].broker_exit_observed)   continue;
+         if(m_active_links[i].broker_close_attempted) continue;
+         if(m_active_links[i].broker_position_ticket == 0) continue;
+         if(m_active_links[i].broker_entry_price <= 0.0)   continue;
+
+         double current_price = 0.0;
+         if(m_active_links[i].direction == FALCON_DIRECTION_BUY)
+            current_price = tick.bid;
+         else if(m_active_links[i].direction == FALCON_DIRECTION_SELL)
+            current_price = tick.ask;
+         else
+            continue;
+         if(current_price <= 0.0) continue;
+
+         double profit_points = FalconRawIndexPoints(m_active_links[i].direction,
+                                                    m_active_links[i].broker_entry_price,
+                                                    current_price);
+
+         // 4.2 Update peak favorable price (one-direction).
+         if(m_active_links[i].direction == FALCON_DIRECTION_BUY)
+         {
+            if(m_active_links[i].virtual_peak_favorable_price <= 0.0 ||
+               current_price > m_active_links[i].virtual_peak_favorable_price)
+               m_active_links[i].virtual_peak_favorable_price = current_price;
+         }
+         else
+         {
+            if(m_active_links[i].virtual_peak_favorable_price <= 0.0 ||
+               current_price < m_active_links[i].virtual_peak_favorable_price)
+               m_active_links[i].virtual_peak_favorable_price = current_price;
+         }
+
+         // 4.3 Lock breakeven once profit crosses VirtualBreakevenAtPoints.
+         if(!m_active_links[i].virtual_breakeven_locked &&
+            profit_points >= VirtualBreakevenAtPoints)
+         {
+            m_active_links[i].virtual_breakeven_locked = true;
+            m_active_links[i].virtual_protection_floor_price = m_active_links[i].broker_entry_price;
+         }
+
+         // 4.4 Arm trailing once profit crosses VirtualTrailingStartPoints.
+         if(!m_active_links[i].virtual_trailing_active &&
+            profit_points >= VirtualTrailingStartPoints)
+            m_active_links[i].virtual_trailing_active = true;
+
+         // 4.5 Trailing stop moves in one direction only.
+         if(m_active_links[i].virtual_trailing_active)
+         {
+            if(m_active_links[i].direction == FALCON_DIRECTION_BUY)
+            {
+               double trail = m_active_links[i].virtual_peak_favorable_price - VirtualTrailingDistancePoints;
+               if(m_active_links[i].virtual_trailing_stop_price <= 0.0 ||
+                  trail > m_active_links[i].virtual_trailing_stop_price)
+                  m_active_links[i].virtual_trailing_stop_price = trail;
+            }
+            else
+            {
+               double trail = m_active_links[i].virtual_peak_favorable_price + VirtualTrailingDistancePoints;
+               if(m_active_links[i].virtual_trailing_stop_price <= 0.0 ||
+                  trail < m_active_links[i].virtual_trailing_stop_price)
+                  m_active_links[i].virtual_trailing_stop_price = trail;
+            }
+         }
+
+         m_active_links[i].virtual_trailing_last_update = TimeCurrent();
+
+         // 4.6 Effective stop = deepest protection between floor and trail (ignoring zeros).
+         double floor_price = m_active_links[i].virtual_breakeven_locked ? m_active_links[i].virtual_protection_floor_price : 0.0;
+         double trail_price = m_active_links[i].virtual_trailing_active ? m_active_links[i].virtual_trailing_stop_price : 0.0;
+
+         double effective_stop = 0.0;
+         if(m_active_links[i].direction == FALCON_DIRECTION_BUY)
+         {
+            if(floor_price > 0.0 && trail_price > 0.0)
+               effective_stop = MathMax(floor_price, trail_price);
+            else if(floor_price > 0.0)
+               effective_stop = floor_price;
+            else if(trail_price > 0.0)
+               effective_stop = trail_price;
+         }
+         else
+         {
+            if(floor_price > 0.0 && trail_price > 0.0)
+               effective_stop = MathMin(floor_price, trail_price);
+            else if(floor_price > 0.0)
+               effective_stop = floor_price;
+            else if(trail_price > 0.0)
+               effective_stop = trail_price;
+         }
+
+         if(effective_stop <= 0.0) continue;
+
+         // 4.7 Hit decision.
+         bool hit = false;
+         if(m_active_links[i].direction == FALCON_DIRECTION_BUY)
+            hit = (current_price <= effective_stop);
+         else
+            hit = (current_price >= effective_stop);
+         if(!hit) continue;
+
+         // Trigger reason: trail is binding when it equals effective_stop and trailing is active.
+         bool trail_is_binding = (m_active_links[i].virtual_trailing_active &&
+                                  trail_price > 0.0 &&
+                                  MathAbs(effective_stop - trail_price) < 0.0000001);
+         string trigger_reason = trail_is_binding ? "TRAILING_STOP_HIT" : "BREAKEVEN_FLOOR_HIT";
+
+         // Validate live position before calling the close helper.
+         if(!PositionSelectByTicket(m_active_links[i].broker_position_ticket)) continue;
+         string pos_symbol = PositionGetString(POSITION_SYMBOL);
+         long pos_magic = (long)PositionGetInteger(POSITION_MAGIC);
+         if(pos_symbol != _Symbol || pos_magic != FC_MAGIC_FVG_MICRO) continue;
+         double volume = PositionGetDouble(POSITION_VOLUME);
+         if(volume <= 0.0) continue;
+         long position_type = (long)PositionGetInteger(POSITION_TYPE);
+
+         bool accepted = false;
+         uint retcode = 0;
+         double executed_price = 0.0;
+         string result_comment = "";
+         string lifecycle_reason = StringFormat("VirtualTrailing-initiated close: reason=%s; profitPts=%.2f; effectiveStop=%.5f; peak=%.5f; trailActive=%s; beLocked=%s",
+                                                trigger_reason,
+                                                profit_points,
+                                                effective_stop,
+                                                m_active_links[i].virtual_peak_favorable_price,
+                                                m_active_links[i].virtual_trailing_active ? "true" : "false",
+                                                m_active_links[i].virtual_breakeven_locked ? "true" : "false");
+
+         bool sent = ExecuteReverseClosePositionRequest(m_active_links[i],
+                                                        position_type,
+                                                        volume,
+                                                        FALCON_VIRTUAL_TRAILING_CLOSE_COMMENT_PREFIX,
+                                                        lifecycle_reason,
+                                                        report_writer,
+                                                        accepted,
+                                                        retcode,
+                                                        executed_price,
+                                                        result_comment);
+
+         string trailing_status = sent
+                                  ? (accepted ? "TRAILING_CLOSE_REQUEST_ACCEPTED_WAITING_ON_TRADE_TRANSACTION"
+                                              : "TRAILING_CLOSE_REQUEST_REJECTED")
+                                  : "TRAILING_CLOSE_PRE_SEND_BLOCKED";
+
+         report_writer.AppendVirtualTrailingExitLifecycleRecord(m_active_links[i],
+                                                                TimeCurrent(),
+                                                                sent ? executed_price : current_price,
+                                                                profit_points,
+                                                                trigger_reason,
+                                                                retcode,
+                                                                trailing_status);
+      }
    }
 
    bool ObserveTradeTransactionExit(const MqlTradeTransaction &trans, CFalconReportWriter &report_writer)
@@ -16769,6 +17139,14 @@ void OnTick()
    // v0.18.4 refreshes the FVG shadow pipeline during runtime and can close staged Shadow records diagnostically at TP1/SL/timeout.
    // Broker entry bridge is tester-only and gated by EnableRealExecution=true. Broker close/Demo/Live remain disabled.
    FalconRunFvgMicroRuntimeShadowPipeline("OnTick_FvgRuntimePipeline");
+
+   // v0.57.2: Virtual Trailing Exit Bridge - per-tick trailing update on every open broker link.
+   // Tester-only. Close via OrderSend(TRADE_ACTION_DEAL) reverse only. No BrokerModify, no
+   // TRADE_ACTION_SLTP, no RuntimeSLChanged. Method short-circuits internally if gates fail;
+   // outer guard here keeps the call a no-op outside the tester.
+   if(EnableVirtualTrailingBridge && EnableRealExecution && MQLInfoInteger(MQL_TESTER))
+      g_broker_entry_bridge.UpdateVirtualTrailingForOpenLinks(g_report_writer);
+
    g_fvg_micro_lifecycle_simulator.Refresh(g_market_context, g_shadow_executor);
 
    FalconTradeLifecycleRecord lifecycle_record;
