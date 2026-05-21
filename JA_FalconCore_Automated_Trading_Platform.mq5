@@ -8,10 +8,20 @@
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.56.9b"
-#define EA_BUILD_TAG   "EmergencyServerStopEnvelopeLockParityProbe"
+#define EA_VERSION_TAG "v0.57.0"
+#define EA_BUILD_TAG   "LockParityExecutabilityDecomposer"
 
 #define FALCON_MTF_COUNT       6
+
+// ==================================================================
+// v0.57.0 Lock Parity Executability Decomposer - report names
+// Report-only / diagnostic additive layer. No execution behaviour changes.
+// ==================================================================
+#define FALCON_LOCK_PARITY_DECOMP_REPORT_NAME  "LockParityExecutabilityDecomposition"
+#define FALCON_LOCK_PARITY_ROLLUP_REPORT_NAME  "LockParityExecutabilityRollup"
+#define FALCON_LOCK_PARITY_CHAIN_RESIDUAL_TOL  0.0005
+#define FALCON_LOCK_PARITY_ROLLUP_TOL          0.001
+#define FALCON_LOCK_PARITY_DELTA_EPS           0.0005
 
 // ==================================================================
 // Paper State Persistence / Restart Recovery Foundation - v0.55.13
@@ -3499,6 +3509,26 @@ struct FalconReportTotals
    int    layer3_reset_on_new_peak_events;
    int    layer_reset_event_trades;
    int    layer_reset_duplicate_triggers;
+
+   // v0.57.0: Lock Parity Executability Decomposer rollup totals.
+   // Report-only; never mutates trade values.
+   int    lock_parity_evaluated_trades;
+   int    lock_parity_decomposition_pass_trades;
+   int    lock_parity_decomposition_breach_trades;
+   double lock_parity_raw_net_usd;
+   double lock_parity_final_working_net_usd;
+   double lock_parity_sum_guard_delta_usd;
+   double lock_parity_sum_protection_delta_usd;
+   double lock_parity_sum_runner_delta_usd;
+   double lock_parity_sum_losscap_delta_usd;
+   double lock_parity_sum_marketclose_delta_usd;
+   double lock_parity_sum_emergency_delta_usd;
+   double lock_parity_sum_other_delta_usd;
+   double lock_parity_executable_adjustment_usd;
+   double lock_parity_non_executable_adjustment_usd;
+   double lock_parity_protection_executable_usd;
+   double lock_parity_runner_pending_usd;
+   double lock_parity_accounting_only_usd;
 };
 
 bool FalconPrgaContractReady()
@@ -4891,11 +4921,12 @@ int FalconReportNameCount()
    // v0.56.9: every official report created during OnInit must participate in
    // AutoPeriod finalization/rename. BrokerPaperTradeReconciliation is now included
    // so it must not remain with To_AUTO_RUNNING in final report files.
+   // v0.57.0: +2 reports per profile (LockParityExecutabilityDecomposition + Rollup).
    if(ReportProfile == FALCON_REPORT_MINIMAL)
-      return 10;
+      return 12;
    if(ReportProfile == FALCON_REPORT_STANDARD)
-      return 11;
-   return 28;
+      return 13;
+   return 30;
 }
 
 string FalconReportNameByIndex(const int index)
@@ -4914,6 +4945,8 @@ string FalconReportNameByIndex(const int index)
          case 7: return FALCON_BROKER_CONTRACT_REALITY_REPORT_NAME;
          case 8: return FALCON_BROKER_REBASED_COMPARISON_REPORT_NAME;
          case 9: return FALCON_BROKER_PAPER_RECONCILIATION_REPORT_NAME;
+         case 10: return FALCON_LOCK_PARITY_DECOMP_REPORT_NAME;
+         case 11: return FALCON_LOCK_PARITY_ROLLUP_REPORT_NAME;
       }
       return "UnknownReport";
    }
@@ -4933,6 +4966,8 @@ string FalconReportNameByIndex(const int index)
          case 8: return FALCON_BROKER_CONTRACT_REALITY_REPORT_NAME;
          case 9: return FALCON_BROKER_REBASED_COMPARISON_REPORT_NAME;
          case 10: return FALCON_BROKER_PAPER_RECONCILIATION_REPORT_NAME;
+         case 11: return FALCON_LOCK_PARITY_DECOMP_REPORT_NAME;
+         case 12: return FALCON_LOCK_PARITY_ROLLUP_REPORT_NAME;
       }
       return "UnknownReport";
    }
@@ -4967,6 +5002,8 @@ string FalconReportNameByIndex(const int index)
       case 25: return FALCON_BROKER_CONTRACT_REALITY_REPORT_NAME;
       case 26: return FALCON_BROKER_REBASED_COMPARISON_REPORT_NAME;
       case 27: return FALCON_BROKER_PAPER_RECONCILIATION_REPORT_NAME;
+      case 28: return FALCON_LOCK_PARITY_DECOMP_REPORT_NAME;
+      case 29: return FALCON_LOCK_PARITY_ROLLUP_REPORT_NAME;
    }
    return "UnknownReport";
 }
@@ -8139,6 +8176,9 @@ private:
    string              m_broker_contract_reality_audit_file;
    string              m_broker_rebased_paper_comparison_file;
    string              m_broker_paper_reconciliation_file;
+   // v0.57.0: Lock Parity Executability Decomposer report files.
+   string              m_lock_parity_decomp_file;
+   string              m_lock_parity_rollup_file;
    FalconSymbolContext m_symbol_context;
    FalconReportTotals  m_totals;
 
@@ -8207,6 +8247,9 @@ public:
       m_broker_contract_reality_audit_file = FalconBuildReportFileName(FALCON_BROKER_CONTRACT_REALITY_REPORT_NAME);
       m_broker_rebased_paper_comparison_file = FalconBuildReportFileName(FALCON_BROKER_REBASED_COMPARISON_REPORT_NAME);
       m_broker_paper_reconciliation_file = FalconBuildReportFileName(FALCON_BROKER_PAPER_RECONCILIATION_REPORT_NAME);
+      // v0.57.0: Lock Parity Executability Decomposer report files.
+      m_lock_parity_decomp_file = FalconBuildReportFileName(FALCON_LOCK_PARITY_DECOMP_REPORT_NAME);
+      m_lock_parity_rollup_file = FalconBuildReportFileName(FALCON_LOCK_PARITY_ROLLUP_REPORT_NAME);
       ResetTotals();
 
       if(EnableMainReport)
@@ -8221,6 +8264,8 @@ public:
          WriteBrokerRebasedPaperComparisonHeader();
          WriteBrokerPaperTradeReconciliationHeader();
          WriteBrokerContractRealityAudit();
+         // v0.57.0: Lock Parity Executability Decomposer header.
+         WriteLockParityDecompositionHeader();
       }
 
       if(ForceCreateReportFilesOnInit)
@@ -11453,6 +11498,387 @@ public:
       CFalconLogger::Info(StringFormat("Runtime report verification snapshot written: %s | Trigger=%s", m_runtime_report_verification_file, trigger));
    }
 
+   // ==================================================================
+   // v0.57.0: Lock Parity Executability Decomposer
+   // Pure additive / report-only. Reads finalized lifecycle record after
+   // every Apply* layer has run; never mutates any trade value.
+   // ==================================================================
+   void WriteLockParityDecompositionHeader()
+   {
+      int handle = FileOpen(m_lock_parity_decomp_file, FalconReportWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not create LockParityExecutabilityDecomposition file: %s", m_lock_parity_decomp_file));
+         return;
+      }
+
+      string header =
+         "TradeId,Direction,EntryTime,ExitTime,EntryPrice,ExitPrice,LotSize,ActiveLot,"
+         "L0_RawNetUSD,"
+         "L1_GuardNetUSD,L1_GuardDeltaUSD,L1_GuardClass,"
+         "L2_ProtectionNetUSD,L2_ProtectionDeltaUSD,L2_ProtectionClass,L2_ProtectionLevel,"
+         "L3_RunnerNetUSD,L3_RunnerDeltaUSD,L3_RunnerClass,L3_RunnerAdditionalPoints,"
+         "L4_LossCapBeforeUSD,L4_LossCapAfterUSD,L4_LossCapDeltaUSD,L4_LossCapClass,L4_LossCapBlocked,"
+         "L5_MarketCloseBeforeUSD,L5_MarketCloseAfterUSD,L5_MarketCloseDeltaUSD,L5_MarketCloseClass,"
+         "L6_EmergencyBeforeUSD,L6_EmergencyAfterUSD,L6_EmergencyDeltaUSD,L6_EmergencyClass,L6_EmergencyLayer,"
+         "L7_OtherDeltaUSD,L7_OtherClass,"
+         "FinalWorkingNetUSD,"
+         "TotalExecutableDeltaUSD,TotalNonExecutableDeltaUSD,"
+         "ChainResidualUSD,DecompositionStatus";
+      FileWriteString(handle, header + "\r\n");
+      FileClose(handle);
+   }
+
+   bool LockParityIsExecutableClass(const string class_tag)
+   {
+      return (StringFind(class_tag, "EXECUTABLE_") == 0);
+   }
+
+   bool LockParityIsNonExecutableClass(const string class_tag)
+   {
+      if(class_tag == "NON_EXECUTABLE_ACCOUNTING")
+         return true;
+      if(class_tag == "RUNNER_EXTENSION_NEEDS_PRICE_PROOF")
+         return true;
+      if(class_tag == "UNATTRIBUTED_NEEDS_REVIEW")
+         return true;
+      return false;
+   }
+
+   bool LockParityProtectionLevelTouched(const FalconTradeLifecycleRecord &record)
+   {
+      if(record.paper_protection_level <= 0.0)
+         return false;
+      if(record.entry_price <= 0.0 || record.exit_price <= 0.0)
+         return false;
+      double lo = MathMin(record.entry_price, record.exit_price);
+      double hi = MathMax(record.entry_price, record.exit_price);
+      return (record.paper_protection_level >= lo && record.paper_protection_level <= hi);
+   }
+
+   string ClassifyLockParityGuard(const FalconTradeLifecycleRecord &record, const double delta_usd)
+   {
+      bool guard_rejected = (StringFind(record.paper_guard_status, "REJECT") >= 0);
+      bool guard_zeroed   = (MathAbs(record.paper_guard_net_usd) < 0.0001 &&
+                             MathAbs(record.net_usd) >= FALCON_LOCK_PARITY_DELTA_EPS);
+      if(guard_rejected || guard_zeroed)
+         return "EXECUTABLE_ENTRY_FILTER";
+      if(MathAbs(delta_usd) < FALCON_LOCK_PARITY_DELTA_EPS)
+         return "NO_ADJUSTMENT";
+      return "NON_EXECUTABLE_ACCOUNTING";
+   }
+
+   string ClassifyLockParityProtection(const FalconTradeLifecycleRecord &record, const double delta_usd)
+   {
+      if(record.paper_protection_activated && record.paper_protection_level > 0.0 &&
+         LockParityProtectionLevelTouched(record))
+         return "EXECUTABLE_PROTECTION_CLOSE";
+      if(record.paper_protection_activated && MathAbs(delta_usd) >= FALCON_LOCK_PARITY_DELTA_EPS)
+         return "NON_EXECUTABLE_ACCOUNTING";
+      if(MathAbs(delta_usd) < FALCON_LOCK_PARITY_DELTA_EPS)
+         return "NO_ADJUSTMENT";
+      return "NON_EXECUTABLE_ACCOUNTING";
+   }
+
+   string ClassifyLockParityRunner(const FalconTradeLifecycleRecord &record, const double delta_usd)
+   {
+      if(record.paper_runner_activated && MathAbs(record.paper_runner_additional_points) > 0.0)
+         return "RUNNER_EXTENSION_NEEDS_PRICE_PROOF";
+      if(MathAbs(delta_usd) < FALCON_LOCK_PARITY_DELTA_EPS)
+         return "NO_ADJUSTMENT";
+      return "NON_EXECUTABLE_ACCOUNTING";
+   }
+
+   string ClassifyLockParityLossCap(const FalconTradeLifecycleRecord &record, const double delta_usd)
+   {
+      if(record.falcon_single_trade_loss_cap_blocked == 1)
+         return "EXECUTABLE_RISK_NO_ENTRY";
+      if(MathAbs(delta_usd) >= FALCON_LOCK_PARITY_DELTA_EPS)
+         return "NON_EXECUTABLE_ACCOUNTING";
+      return "NO_ADJUSTMENT";
+   }
+
+   string ClassifyLockParityMarketClose(const FalconTradeLifecycleRecord &record, const double delta_usd)
+   {
+      if(record.falcon_market_close_blocked == 1)
+         return "EXECUTABLE_TIME_NO_ENTRY";
+      if(MathAbs(delta_usd) >= FALCON_LOCK_PARITY_DELTA_EPS)
+         return "EXECUTABLE_TIME_CLOSE";
+      return "NO_ADJUSTMENT";
+   }
+
+   string ClassifyLockParityEmergency(const FalconTradeLifecycleRecord &record, const double delta_usd)
+   {
+      bool zeroed_after = (MathAbs(record.falcon_emergency_after_net_usd) < 0.0001);
+      if(record.falcon_emergency_triggered_layer > 0 && zeroed_after &&
+         MathAbs(delta_usd) >= FALCON_LOCK_PARITY_DELTA_EPS)
+         return "EXECUTABLE_GOVERNANCE_NO_ENTRY";
+      if(MathAbs(delta_usd) >= FALCON_LOCK_PARITY_DELTA_EPS)
+         return "NON_EXECUTABLE_ACCOUNTING";
+      return "NO_ADJUSTMENT";
+   }
+
+   string ClassifyLockParityOther(const double delta_usd)
+   {
+      if(MathAbs(delta_usd) >= FALCON_LOCK_PARITY_DELTA_EPS)
+         return "UNATTRIBUTED_NEEDS_REVIEW";
+      return "NO_ADJUSTMENT";
+   }
+
+   double LockParityActiveLot(const FalconTradeLifecycleRecord &record)
+   {
+      if(record.falcon_dlm_active_lot > 0.0)
+         return record.falcon_dlm_active_lot;
+      return record.lot_size;
+   }
+
+   void AppendLockParityDecompositionRecord(const FalconTradeLifecycleRecord &record)
+   {
+      // Layer deltas. d_other is residual that makes the per-trade chain closed by construction.
+      double d_guard       = record.paper_guard_net_usd                          - record.net_usd;
+      double d_protection  = record.paper_protection_net_usd                     - record.paper_guard_net_usd;
+      double d_runner      = record.paper_runner_net_usd                         - record.paper_protection_net_usd;
+      double d_losscap     = record.falcon_single_trade_loss_cap_after_net_usd
+                           - record.falcon_single_trade_loss_cap_before_net_usd;
+      double d_marketclose = record.falcon_market_close_after_net_usd
+                           - record.falcon_market_close_before_net_usd;
+      double d_emergency   = record.falcon_emergency_after_net_usd
+                           - record.falcon_emergency_before_net_usd;
+      double d_other       = record.falcon_emergency_after_net_usd - record.net_usd
+                           - (d_guard + d_protection + d_runner
+                              + d_losscap + d_marketclose + d_emergency);
+
+      string c_guard       = ClassifyLockParityGuard(record, d_guard);
+      string c_protection  = ClassifyLockParityProtection(record, d_protection);
+      string c_runner      = ClassifyLockParityRunner(record, d_runner);
+      string c_losscap     = ClassifyLockParityLossCap(record, d_losscap);
+      string c_marketclose = ClassifyLockParityMarketClose(record, d_marketclose);
+      string c_emergency   = ClassifyLockParityEmergency(record, d_emergency);
+      string c_other       = ClassifyLockParityOther(d_other);
+
+      double exec_sum = 0.0;
+      double nonexec_sum = 0.0;
+      if(LockParityIsExecutableClass(c_guard))         exec_sum    += d_guard;
+      else if(LockParityIsNonExecutableClass(c_guard)) nonexec_sum += d_guard;
+      if(LockParityIsExecutableClass(c_protection))         exec_sum    += d_protection;
+      else if(LockParityIsNonExecutableClass(c_protection)) nonexec_sum += d_protection;
+      if(LockParityIsExecutableClass(c_runner))         exec_sum    += d_runner;
+      else if(LockParityIsNonExecutableClass(c_runner)) nonexec_sum += d_runner;
+      if(LockParityIsExecutableClass(c_losscap))         exec_sum    += d_losscap;
+      else if(LockParityIsNonExecutableClass(c_losscap)) nonexec_sum += d_losscap;
+      if(LockParityIsExecutableClass(c_marketclose))         exec_sum    += d_marketclose;
+      else if(LockParityIsNonExecutableClass(c_marketclose)) nonexec_sum += d_marketclose;
+      if(LockParityIsExecutableClass(c_emergency))         exec_sum    += d_emergency;
+      else if(LockParityIsNonExecutableClass(c_emergency)) nonexec_sum += d_emergency;
+      if(LockParityIsExecutableClass(c_other))         exec_sum    += d_other;
+      else if(LockParityIsNonExecutableClass(c_other)) nonexec_sum += d_other;
+
+      double chain_residual = record.falcon_emergency_after_net_usd
+                            - (record.net_usd + d_guard + d_protection + d_runner
+                               + d_losscap + d_marketclose + d_emergency + d_other);
+      string decomp_status = (MathAbs(chain_residual) < FALCON_LOCK_PARITY_CHAIN_RESIDUAL_TOL ? "PASS" : "RESIDUAL_BREACH");
+
+      int handle = FileOpen(m_lock_parity_decomp_file, FalconReportReadWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         WriteLockParityDecompositionHeader();
+         handle = FileOpen(m_lock_parity_decomp_file, FalconReportReadWriteCsvFlags(), ',');
+      }
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not append LockParityExecutabilityDecomposition row: %s", m_lock_parity_decomp_file));
+         return;
+      }
+
+      FileSeek(handle, 0, SEEK_END);
+
+      string row = "";
+      row += FalconCsvSafe(record.trade_id) + ",";
+      row += FalconCsvSafe(FalconDirectionToString(record.direction)) + ",";
+      row += FalconCsvSafe(FalconTimeToString(record.entry_time)) + ",";
+      row += FalconCsvSafe(FalconTimeToString(record.exit_time)) + ",";
+      row += DoubleToString(record.entry_price, m_symbol_context.digits) + ",";
+      row += DoubleToString(record.exit_price, m_symbol_context.digits) + ",";
+      row += DoubleToString(record.lot_size, 2) + ",";
+      row += DoubleToString(LockParityActiveLot(record), 2) + ",";
+
+      row += DoubleToString(record.net_usd, 4) + ",";
+
+      row += DoubleToString(record.paper_guard_net_usd, 4) + ",";
+      row += DoubleToString(d_guard, 4) + ",";
+      row += FalconCsvSafe(c_guard) + ",";
+
+      row += DoubleToString(record.paper_protection_net_usd, 4) + ",";
+      row += DoubleToString(d_protection, 4) + ",";
+      row += FalconCsvSafe(c_protection) + ",";
+      row += DoubleToString(record.paper_protection_level, m_symbol_context.digits) + ",";
+
+      row += DoubleToString(record.paper_runner_net_usd, 4) + ",";
+      row += DoubleToString(d_runner, 4) + ",";
+      row += FalconCsvSafe(c_runner) + ",";
+      row += DoubleToString(record.paper_runner_additional_points, 2) + ",";
+
+      row += DoubleToString(record.falcon_single_trade_loss_cap_before_net_usd, 4) + ",";
+      row += DoubleToString(record.falcon_single_trade_loss_cap_after_net_usd, 4) + ",";
+      row += DoubleToString(d_losscap, 4) + ",";
+      row += FalconCsvSafe(c_losscap) + ",";
+      row += IntegerToString(record.falcon_single_trade_loss_cap_blocked) + ",";
+
+      row += DoubleToString(record.falcon_market_close_before_net_usd, 4) + ",";
+      row += DoubleToString(record.falcon_market_close_after_net_usd, 4) + ",";
+      row += DoubleToString(d_marketclose, 4) + ",";
+      row += FalconCsvSafe(c_marketclose) + ",";
+
+      row += DoubleToString(record.falcon_emergency_before_net_usd, 4) + ",";
+      row += DoubleToString(record.falcon_emergency_after_net_usd, 4) + ",";
+      row += DoubleToString(d_emergency, 4) + ",";
+      row += FalconCsvSafe(c_emergency) + ",";
+      row += IntegerToString(record.falcon_emergency_triggered_layer) + ",";
+
+      row += DoubleToString(d_other, 4) + ",";
+      row += FalconCsvSafe(c_other) + ",";
+
+      row += DoubleToString(record.falcon_emergency_after_net_usd, 4) + ",";
+
+      row += DoubleToString(exec_sum, 4) + ",";
+      row += DoubleToString(nonexec_sum, 4) + ",";
+
+      row += DoubleToString(chain_residual, 4) + ",";
+      row += FalconCsvSafe(decomp_status);
+
+      FileWriteString(handle, row + "\r\n");
+      FileClose(handle);
+   }
+
+   void UpdateLockParityTotals(const FalconTradeLifecycleRecord &record)
+   {
+      double d_guard       = record.paper_guard_net_usd                          - record.net_usd;
+      double d_protection  = record.paper_protection_net_usd                     - record.paper_guard_net_usd;
+      double d_runner      = record.paper_runner_net_usd                         - record.paper_protection_net_usd;
+      double d_losscap     = record.falcon_single_trade_loss_cap_after_net_usd
+                           - record.falcon_single_trade_loss_cap_before_net_usd;
+      double d_marketclose = record.falcon_market_close_after_net_usd
+                           - record.falcon_market_close_before_net_usd;
+      double d_emergency   = record.falcon_emergency_after_net_usd
+                           - record.falcon_emergency_before_net_usd;
+      double d_other       = record.falcon_emergency_after_net_usd - record.net_usd
+                           - (d_guard + d_protection + d_runner
+                              + d_losscap + d_marketclose + d_emergency);
+
+      string c_guard       = ClassifyLockParityGuard(record, d_guard);
+      string c_protection  = ClassifyLockParityProtection(record, d_protection);
+      string c_runner      = ClassifyLockParityRunner(record, d_runner);
+      string c_losscap     = ClassifyLockParityLossCap(record, d_losscap);
+      string c_marketclose = ClassifyLockParityMarketClose(record, d_marketclose);
+      string c_emergency   = ClassifyLockParityEmergency(record, d_emergency);
+      string c_other       = ClassifyLockParityOther(d_other);
+
+      m_totals.lock_parity_evaluated_trades++;
+      m_totals.lock_parity_raw_net_usd            += record.net_usd;
+      m_totals.lock_parity_final_working_net_usd  += record.falcon_emergency_after_net_usd;
+      m_totals.lock_parity_sum_guard_delta_usd       += d_guard;
+      m_totals.lock_parity_sum_protection_delta_usd  += d_protection;
+      m_totals.lock_parity_sum_runner_delta_usd      += d_runner;
+      m_totals.lock_parity_sum_losscap_delta_usd     += d_losscap;
+      m_totals.lock_parity_sum_marketclose_delta_usd += d_marketclose;
+      m_totals.lock_parity_sum_emergency_delta_usd   += d_emergency;
+      m_totals.lock_parity_sum_other_delta_usd       += d_other;
+
+      double per_trade_residual = record.falcon_emergency_after_net_usd
+                                - (record.net_usd + d_guard + d_protection + d_runner
+                                   + d_losscap + d_marketclose + d_emergency + d_other);
+      if(MathAbs(per_trade_residual) < FALCON_LOCK_PARITY_CHAIN_RESIDUAL_TOL)
+         m_totals.lock_parity_decomposition_pass_trades++;
+      else
+         m_totals.lock_parity_decomposition_breach_trades++;
+
+      // Bucket-level rollup
+      if(LockParityIsExecutableClass(c_guard))         m_totals.lock_parity_executable_adjustment_usd     += d_guard;
+      else if(LockParityIsNonExecutableClass(c_guard)) m_totals.lock_parity_non_executable_adjustment_usd += d_guard;
+      if(LockParityIsExecutableClass(c_protection))         m_totals.lock_parity_executable_adjustment_usd     += d_protection;
+      else if(LockParityIsNonExecutableClass(c_protection)) m_totals.lock_parity_non_executable_adjustment_usd += d_protection;
+      if(LockParityIsExecutableClass(c_runner))         m_totals.lock_parity_executable_adjustment_usd     += d_runner;
+      else if(LockParityIsNonExecutableClass(c_runner)) m_totals.lock_parity_non_executable_adjustment_usd += d_runner;
+      if(LockParityIsExecutableClass(c_losscap))         m_totals.lock_parity_executable_adjustment_usd     += d_losscap;
+      else if(LockParityIsNonExecutableClass(c_losscap)) m_totals.lock_parity_non_executable_adjustment_usd += d_losscap;
+      if(LockParityIsExecutableClass(c_marketclose))         m_totals.lock_parity_executable_adjustment_usd     += d_marketclose;
+      else if(LockParityIsNonExecutableClass(c_marketclose)) m_totals.lock_parity_non_executable_adjustment_usd += d_marketclose;
+      if(LockParityIsExecutableClass(c_emergency))         m_totals.lock_parity_executable_adjustment_usd     += d_emergency;
+      else if(LockParityIsNonExecutableClass(c_emergency)) m_totals.lock_parity_non_executable_adjustment_usd += d_emergency;
+      if(LockParityIsExecutableClass(c_other))         m_totals.lock_parity_executable_adjustment_usd     += d_other;
+      else if(LockParityIsNonExecutableClass(c_other)) m_totals.lock_parity_non_executable_adjustment_usd += d_other;
+
+      // Class-specific evidence buckets
+      if(c_protection == "EXECUTABLE_PROTECTION_CLOSE")
+         m_totals.lock_parity_protection_executable_usd += d_protection;
+      if(c_runner == "RUNNER_EXTENSION_NEEDS_PRICE_PROOF")
+         m_totals.lock_parity_runner_pending_usd += d_runner;
+      if(c_guard == "NON_EXECUTABLE_ACCOUNTING")        m_totals.lock_parity_accounting_only_usd += d_guard;
+      if(c_protection == "NON_EXECUTABLE_ACCOUNTING")   m_totals.lock_parity_accounting_only_usd += d_protection;
+      if(c_runner == "NON_EXECUTABLE_ACCOUNTING")       m_totals.lock_parity_accounting_only_usd += d_runner;
+      if(c_losscap == "NON_EXECUTABLE_ACCOUNTING")      m_totals.lock_parity_accounting_only_usd += d_losscap;
+      if(c_marketclose == "NON_EXECUTABLE_ACCOUNTING")  m_totals.lock_parity_accounting_only_usd += d_marketclose;
+      if(c_emergency == "NON_EXECUTABLE_ACCOUNTING")    m_totals.lock_parity_accounting_only_usd += d_emergency;
+      if(c_other == "UNATTRIBUTED_NEEDS_REVIEW")        m_totals.lock_parity_accounting_only_usd += d_other;
+   }
+
+   void WriteLockParityExecutabilityRollup()
+   {
+      int handle = FileOpen(m_lock_parity_rollup_file, FalconReportWriteCsvFlags(), ',');
+      if(handle == INVALID_HANDLE)
+      {
+         CFalconLogger::Warn(StringFormat("Could not create LockParityExecutabilityRollup file: %s", m_lock_parity_rollup_file));
+         return;
+      }
+
+      string header =
+         "TotalTrades,"
+         "LOCK_RawNetUSD,"
+         "LOCK_FinalWorkingNetUSD,"
+         "Sum_Guard_Delta,Sum_Protection_Delta,Sum_Runner_Delta,"
+         "Sum_LossCap_Delta,Sum_MarketClose_Delta,Sum_Emergency_Delta,Sum_Other_Delta,"
+         "LOCK_ExecutableAdjustmentUSD,"
+         "LOCK_NonExecutableAdjustmentUSD,"
+         "LOCK_ExecutableTargetUSD,"
+         "ExecutableSharePct,"
+         "ProtectionExecutableUSD,RunnerPendingUSD,AccountingOnlyUSD,"
+         "RollupResidualUSD,RollupStatus";
+      FileWriteString(handle, header + "\r\n");
+
+      double executable_target = m_totals.lock_parity_raw_net_usd + m_totals.lock_parity_executable_adjustment_usd;
+      double executable_share_pct = 0.0;
+      if(MathAbs(m_totals.lock_parity_final_working_net_usd) > 0.000001)
+         executable_share_pct = (executable_target / m_totals.lock_parity_final_working_net_usd) * 100.0;
+
+      double rollup_residual = m_totals.lock_parity_final_working_net_usd
+                             - (executable_target + m_totals.lock_parity_non_executable_adjustment_usd);
+      string rollup_status = (MathAbs(rollup_residual) < FALCON_LOCK_PARITY_ROLLUP_TOL ? "PASS" : "RESIDUAL_BREACH");
+
+      string row = "";
+      row += IntegerToString(m_totals.lock_parity_evaluated_trades) + ",";
+      row += DoubleToString(m_totals.lock_parity_raw_net_usd, 4) + ",";
+      row += DoubleToString(m_totals.lock_parity_final_working_net_usd, 4) + ",";
+      row += DoubleToString(m_totals.lock_parity_sum_guard_delta_usd, 4) + ",";
+      row += DoubleToString(m_totals.lock_parity_sum_protection_delta_usd, 4) + ",";
+      row += DoubleToString(m_totals.lock_parity_sum_runner_delta_usd, 4) + ",";
+      row += DoubleToString(m_totals.lock_parity_sum_losscap_delta_usd, 4) + ",";
+      row += DoubleToString(m_totals.lock_parity_sum_marketclose_delta_usd, 4) + ",";
+      row += DoubleToString(m_totals.lock_parity_sum_emergency_delta_usd, 4) + ",";
+      row += DoubleToString(m_totals.lock_parity_sum_other_delta_usd, 4) + ",";
+      row += DoubleToString(m_totals.lock_parity_executable_adjustment_usd, 4) + ",";
+      row += DoubleToString(m_totals.lock_parity_non_executable_adjustment_usd, 4) + ",";
+      row += DoubleToString(executable_target, 4) + ",";
+      row += DoubleToString(executable_share_pct, 4) + ",";
+      row += DoubleToString(m_totals.lock_parity_protection_executable_usd, 4) + ",";
+      row += DoubleToString(m_totals.lock_parity_runner_pending_usd, 4) + ",";
+      row += DoubleToString(m_totals.lock_parity_accounting_only_usd, 4) + ",";
+      row += DoubleToString(rollup_residual, 4) + ",";
+      row += FalconCsvSafe(rollup_status);
+
+      FileWriteString(handle, row + "\r\n");
+      FileClose(handle);
+   }
+
    void RegisterClosedTrade(FalconTradeLifecycleRecord &record)
    {
       if(!m_initialized || !EnableMainReport)
@@ -11477,6 +11903,10 @@ public:
       AppendBrokerExecutionLifecycleAuditRecord(record);
       AppendBrokerRebasedPaperComparisonRecord(record);
       AppendBrokerTradeManagementTimelineForRecord(record);
+      // v0.57.0: Lock Parity Executability Decomposer hook.
+      // Pure additive; runs AFTER every Apply* layer has populated the record.
+      UpdateLockParityTotals(record);
+      AppendLockParityDecompositionRecord(record);
    }
 
    int CountPhysicalTradeLifecycleDataRows()
@@ -11718,6 +12148,10 @@ public:
       FileWriteString(handle, SlimSummaryHeaderV0555() + "\r\n");
       FileWriteString(handle, summary_row + "\r\n");
       FileClose(handle);
+
+      // v0.57.0: Lock Parity Executability Decomposer rollup writer.
+      // Report-only; emits one row aggregating per-trade decomposition totals.
+      WriteLockParityExecutabilityRollup();
    }
 
 
@@ -13029,6 +13463,25 @@ m_totals.total_trades                = 0;
       m_totals.layer3_reset_on_new_peak_events = 0;
       m_totals.layer_reset_event_trades = 0;
       m_totals.layer_reset_duplicate_triggers = 0;
+
+      // v0.57.0: Lock Parity Executability Decomposer totals.
+      m_totals.lock_parity_evaluated_trades = 0;
+      m_totals.lock_parity_decomposition_pass_trades = 0;
+      m_totals.lock_parity_decomposition_breach_trades = 0;
+      m_totals.lock_parity_raw_net_usd = 0.0;
+      m_totals.lock_parity_final_working_net_usd = 0.0;
+      m_totals.lock_parity_sum_guard_delta_usd = 0.0;
+      m_totals.lock_parity_sum_protection_delta_usd = 0.0;
+      m_totals.lock_parity_sum_runner_delta_usd = 0.0;
+      m_totals.lock_parity_sum_losscap_delta_usd = 0.0;
+      m_totals.lock_parity_sum_marketclose_delta_usd = 0.0;
+      m_totals.lock_parity_sum_emergency_delta_usd = 0.0;
+      m_totals.lock_parity_sum_other_delta_usd = 0.0;
+      m_totals.lock_parity_executable_adjustment_usd = 0.0;
+      m_totals.lock_parity_non_executable_adjustment_usd = 0.0;
+      m_totals.lock_parity_protection_executable_usd = 0.0;
+      m_totals.lock_parity_runner_pending_usd = 0.0;
+      m_totals.lock_parity_accounting_only_usd = 0.0;
 
       m_tle_emergency_active = false;
       m_tle_emergency_reason = "NONE";
