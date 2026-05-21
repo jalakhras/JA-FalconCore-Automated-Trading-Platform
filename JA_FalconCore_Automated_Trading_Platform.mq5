@@ -8,8 +8,8 @@
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.57.2"
-#define EA_BUILD_TAG   "VirtualTrailingExitBridgeSimple"
+#define EA_VERSION_TAG "v0.57.3"
+#define EA_BUILD_TAG   "VirtualTrailingCalibrationAndSpreadAwareBreakeven"
 
 #define FALCON_MTF_COUNT       6
 
@@ -66,7 +66,10 @@
 #define FALCON_BELR_BASELINE_SOURCE                   "v0.55.13-fix4_LOCKED"
 #define FALCON_BELR_DIAGNOSTIC_REFERENCE              "v0.55.26-fix19_DIAGNOSTIC_ONLY_NOT_BASELINE"
 #define FALCON_BELR_NEXT_PHASE                        "v0.57.0_AFTER_LOCK_PARITY_PROBE_IDENTIFIES_TRUE_EXECUTABLE_GAPS"
-#define FALCON_BELR_REPORT_STAGE_TAG                  "BrokerPaperReconciliation"
+// v0.57.3: neutral stage tag for report filenames; was "BrokerPaperReconciliation"
+// which surfaced as the v0.56.9b build tag in filenames. Normalization in
+// FalconEffectiveReportModeTag() folds legacy presets into this value.
+#define FALCON_BELR_REPORT_STAGE_TAG                  "VirtualTrailingBridge"
 #define FALCON_BELR_DEPRECATED_REPORT_STAGE_TAG        "ShadowSmoke"
 #define FALCON_BELR_NO_BROKER_COMPARISON_STATUS       "NOT_COMPARABLE_NO_BROKER_EXECUTION"
 #define FALCON_BELR_REBASED_STATUS                    "BROKER_REBASED_PAPER_COMPARISON_AUDIT_ONLY"
@@ -115,6 +118,9 @@
 // v0.57.2: Virtual Trailing Exit Bridge - tester-only reverse-deal close tag.
 #define FALCON_VIRTUAL_TRAILING_CLOSE_COMMENT_PREFIX  "JAFC572VT"
 #define FALCON_VIRTUAL_TRAILING_EXIT_LIFECYCLE_REPORT_NAME "VirtualTrailingExitLifecycle"
+// v0.57.3: extra safety margin above the spread when locking breakeven so a
+// BUY closes on Bid (or SELL on Ask) at >= entry rather than at -spread.
+#define FALCON_VIRTUAL_TRAILING_BE_EXTRA_POINTS       2.0
 #define FALCON_LOCK_PARITY_TESTER_MANAGED_LIFECYCLE_PROBE true
 #define FALCON_LOCK_PARITY_ATTACH_SERVER_SL_TP           true
 #define FALCON_LOCK_PARITY_SERVER_STOP_POLICY            "SERVER_EMERGENCY_ENVELOPE_SL_TP_ATTACHED_VIRTUAL_STRUCTURAL_MANAGED_CLOSE_PROBE_NO_NAKED_ORDER_GUARD"
@@ -1827,10 +1833,11 @@ input int    MaxOpenPositions                = 1;
 // ==================================================================
 // 02.1 - Enable Virtual Trailing Bridge 
 // ==================================================================
+input group "02.1 - Enable Virtual Trailing Bridge";
 input bool   EnableVirtualTrailingBridge     = true;   // v0.57.2 trailing exit
-input double VirtualTrailingStartPoints      = 30.0;   // profit points before trailing arms
-input double VirtualTrailingDistancePoints   = 20.0;   // trailing distance behind peak
-input double VirtualBreakevenAtPoints        = 15.0;   // profit points to lock breakeven
+input double VirtualTrailingStartPoints      = 8.0;    // v0.57.3 recalibrated (was 30) - profit points before trailing arms
+input double VirtualTrailingDistancePoints   = 6.0;    // v0.57.3 recalibrated (was 20) - trailing distance behind peak
+input double VirtualBreakevenAtPoints        = 4.0;    // v0.57.3 recalibrated (was 15) - profit points to lock breakeven
 
 // ==================================================================
 // 03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات
@@ -4845,11 +4852,17 @@ string FalconEffectiveReportModeTag()
    // the default input changed. Normalize only report file naming/stage metadata; do
    // not change trading logic, Paper results, or report period tags.
    string raw_tag = FalconSanitizeFileTag(ReportModeTag);
+   // v0.57.3: add the v0.56.x stage tags to the normalization list so legacy presets
+   // and old default ReportModeTag values are folded into FALCON_BELR_REPORT_STAGE_TAG
+   // ("VirtualTrailingBridge"). No report content is changed; this only fixes the
+   // file-name tag stamped into report filenames.
    if(raw_tag == "" ||
       raw_tag == FALCON_BELR_DEPRECATED_REPORT_STAGE_TAG ||
       raw_tag == "BrokerExitObservation" ||
       raw_tag == "ProtectionRunnerBridge" ||
-      raw_tag == "ManagedRunnerBridge")
+      raw_tag == "ManagedRunnerBridge" ||
+      raw_tag == "BrokerPaperReconciliation" ||
+      raw_tag == "EmergencyServerStopEnvelopeLockParityProbe")
       return FALCON_BELR_REPORT_STAGE_TAG;
    return raw_tag;
 }
@@ -12090,7 +12103,8 @@ public:
       string header =
          "TradeId,Direction,EntryTime,EntryPrice,ExitTime,ExitPrice,"
          "PeakFavorablePrice,TrailingStopPriceAtExit,BreakevenLocked,TrailingActivated,"
-         "ProfitPointsAtExit,ExitTriggerReason,BrokerCloseRetcode,VirtualTrailingStatus";
+         "ProfitPointsAtExit,RealizedPointsAtExit,EstimatedUsdAtExit,"
+         "ExitTriggerReason,BrokerCloseRetcode,VirtualTrailingStatus";
       FileWriteString(handle, header + "\r\n");
       FileClose(handle);
    }
@@ -12103,6 +12117,15 @@ public:
                                                  const uint broker_close_retcode,
                                                  const string virtual_trailing_status)
    {
+      // v0.57.3: derive RealizedPointsAtExit and EstimatedUsdAtExit from the link
+      // and the report writer's symbol context. Caller doesn't need to compute either.
+      double realized_points_at_exit = FalconRawIndexPoints(link.direction,
+                                                           link.broker_entry_price,
+                                                           exit_price);
+      double lot_for_usd = (link.accepted_lot > 0.0) ? link.accepted_lot : link.requested_lot;
+      double estimated_usd_at_exit = FalconEstimateUsdByRawPoints(realized_points_at_exit,
+                                                                 lot_for_usd,
+                                                                 m_symbol_context);
       int handle = FileOpen(m_virtual_trailing_exit_lifecycle_file, FalconReportReadWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -12128,6 +12151,8 @@ public:
       row += FalconCsvSafe(link.virtual_breakeven_locked ? "YES" : "NO") + ",";
       row += FalconCsvSafe(link.virtual_trailing_active ? "YES" : "NO") + ",";
       row += DoubleToString(profit_points_at_exit, 2) + ",";
+      row += DoubleToString(realized_points_at_exit, 2) + ",";
+      row += DoubleToString(estimated_usd_at_exit, 4) + ",";
       row += FalconCsvSafe(exit_trigger_reason) + ",";
       row += IntegerToString((int)broker_close_retcode) + ",";
       row += FalconCsvSafe(virtual_trailing_status);
@@ -16371,11 +16396,23 @@ public:
          }
 
          // 4.3 Lock breakeven once profit crosses VirtualBreakevenAtPoints.
+         // v0.57.3: spread-aware floor. A BUY closes on Bid and a SELL closes on Ask,
+         // so locking at exactly broker_entry_price closes the position on the
+         // opposite side of the market and lands BREAKEVEN_FLOOR_HIT at -spread.
+         // We add (spread + extra buffer) in the profit direction so the realized
+         // exit on the closing side is >= entry.
          if(!m_active_links[i].virtual_breakeven_locked &&
             profit_points >= VirtualBreakevenAtPoints)
          {
+            long   spread_points_long = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+            double spread_price       = (double)spread_points_long * _Point;
+            double be_buffer          = spread_price + (FALCON_VIRTUAL_TRAILING_BE_EXTRA_POINTS * _Point);
+
             m_active_links[i].virtual_breakeven_locked = true;
-            m_active_links[i].virtual_protection_floor_price = m_active_links[i].broker_entry_price;
+            if(m_active_links[i].direction == FALCON_DIRECTION_BUY)
+               m_active_links[i].virtual_protection_floor_price = m_active_links[i].broker_entry_price + be_buffer;
+            else
+               m_active_links[i].virtual_protection_floor_price = m_active_links[i].broker_entry_price - be_buffer;
          }
 
          // 4.4 Arm trailing once profit crosses VirtualTrailingStartPoints.
@@ -16481,6 +16518,9 @@ public:
                                               : "TRAILING_CLOSE_REQUEST_REJECTED")
                                   : "TRAILING_CLOSE_PRE_SEND_BLOCKED";
 
+         // v0.57.3: pass the actual exit price the helper sent (or the tick price if the
+         // helper short-circuited pre-send). The report writer derives RealizedPointsAtExit
+         // and EstimatedUsdAtExit from link + exit_price + its own symbol context.
          report_writer.AppendVirtualTrailingExitLifecycleRecord(m_active_links[i],
                                                                 TimeCurrent(),
                                                                 sent ? executed_price : current_price,
