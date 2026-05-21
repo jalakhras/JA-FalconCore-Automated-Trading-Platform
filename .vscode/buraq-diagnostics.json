@@ -1,1 +1,278 @@
-{}
+{
+    "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\JA_FalconCore_Automated_Trading_Platform.mq5": [
+        {
+            "file": "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\JA_FalconCore_Automated_Trading_Platform.mq5",
+            "message": "macro 'FC_MAGIC_TAIL_SMART_RETURN' redefinition",
+            "range": {
+                "start": {
+                    "line": 812,
+                    "character": 8
+                },
+                "end": {
+                    "line": 812,
+                    "character": 108
+                }
+            },
+            "severity": "Warning",
+            "code": "30"
+        },
+        {
+            "file": "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\JA_FalconCore_Automated_Trading_Platform.mq5",
+            "message": "undeclared identifier 'FC_MAGIC_FVG_MICRO'",
+            "range": {
+                "start": {
+                    "line": 829,
+                    "character": 51
+                },
+                "end": {
+                    "line": 829,
+                    "character": 151
+                }
+            },
+            "severity": "Error",
+            "code": "256"
+        },
+        {
+            "file": "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\JA_FalconCore_Automated_Trading_Platform.mq5",
+            "message": "undeclared identifier 'FC_MAGIC_FVG_MICRO'",
+            "range": {
+                "start": {
+                    "line": 847,
+                    "character": 16
+                },
+                "end": {
+                    "line": 847,
+                    "character": 116
+                }
+            },
+            "severity": "Error",
+            "code": "256"
+        },
+        {
+            "file": "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\JA_FalconCore_Automated_Trading_Platform.mq5",
+            "message": "undeclared identifier 'FC_MAGIC_FVG_MICRO'",
+            "range": {
+                "start": {
+                    "line": 950,
+                    "character": 22
+                },
+                "end": {
+                    "line": 950,
+                    "character": 122
+                }
+            },
+            "severity": "Error",
+            "code": "256"
+        },
+        {
+            "file": "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\JA_FalconCore_Automated_Trading_Platform.mq5",
+            "message": "undeclared identifier 'FC_MAGIC_FVG_MICRO'",
+            "range": {
+                "start": {
+                    "line": 6392,
+                    "character": 29
+                },
+                "end": {
+                    "line": 6392,
+                    "character": 129
+                }
+            },
+            "severity": "Error",
+            "code": "256"
+        }
+    ],
+    "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\Execution\\FalconBrokerEntryBridge.mqh": [
+        {
+            "file": "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\Execution\\FalconBrokerEntryBridge.mqh",
+            "message": "undeclared identifier 'FC_MAGIC_FVG_MICRO'",
+            "range": {
+                "start": {
+                    "line": 417,
+                    "character": 26
+                },
+                "end": {
+                    "line": 417,
+                    "character": 126
+                }
+            },
+            "severity": "Error",
+            "code": "256"
+        },
+        {
+            "file": "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\Execution\\FalconBrokerEntryBridge.mqh",
+            "message": "undeclared identifier 'FC_MAGIC_FVG_MICRO'",
+            "range": {
+                "start": {
+                    "line": 1134,
+                    "character": 26
+                },
+                "end": {
+                    "line": 1134,
+                    "character": 126
+                }
+            },
+            "severity": "Error",
+            "code": "256"
+        },
+        {
+            "file": "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\Execution\\FalconBrokerEntryBridge.mqh",
+            "message": "undeclared identifier 'FC_MAGIC_FVG_MICRO'",
+            "range": {
+                "start": {
+                    "line": 1184,
+                    "character": 26
+                },
+                "end": {
+                    "line": 1184,
+                    "character": 126
+                }
+            },
+            "severity": "Error",
+            "code": "256"
+        },
+        {
+            "file": "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\Execution\\FalconBrokerEntryBridge.mqh",
+            "message": "undeclared identifier 'FC_MAGIC_FVG_MICRO'",
+            "range": {
+                "start": {
+                    "line": 1297,
+                    "character": 61
+                },
+                "end": {
+                    "line": 1297,
+                    "character": 161
+                }
+            },
+            "severity": "Error",
+            "code": "256"
+        },
+        {
+            "file": "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\Execution\\FalconBrokerEntryBridge.mqh",
+            "message": "undeclared identifier 'FC_MAGIC_FVG_MICRO'",
+            "range": {
+                "start": {
+                    "line": 1395,
+                    "character": 22
+                },
+                "end": {
+                    "line": 1395,
+                    "character": 122
+                }
+            },
+            "severity": "Error",
+            "code": "256"
+        },
+        {
+            "file": "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\Execution\\FalconBrokerEntryBridge.mqh",
+            "message": "undeclared identifier 'FC_MAGIC_FVG_MICRO'",
+            "range": {
+                "start": {
+                    "line": 1435,
+                    "character": 79
+                },
+                "end": {
+                    "line": 1435,
+                    "character": 179
+                }
+            },
+            "severity": "Error",
+            "code": "256"
+        },
+        {
+            "file": "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\Execution\\FalconBrokerEntryBridge.mqh",
+            "message": "undeclared identifier 'FC_MAGIC_FVG_MICRO'",
+            "range": {
+                "start": {
+                    "line": 1521,
+                    "character": 26
+                },
+                "end": {
+                    "line": 1521,
+                    "character": 126
+                }
+            },
+            "severity": "Error",
+            "code": "256"
+        },
+        {
+            "file": "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\Execution\\FalconBrokerEntryBridge.mqh",
+            "message": "undeclared identifier 'FC_MAGIC_FVG_MICRO'",
+            "range": {
+                "start": {
+                    "line": 1693,
+                    "character": 47
+                },
+                "end": {
+                    "line": 1693,
+                    "character": 147
+                }
+            },
+            "severity": "Error",
+            "code": "256"
+        },
+        {
+            "file": "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\Execution\\FalconBrokerEntryBridge.mqh",
+            "message": "undeclared identifier 'FC_MAGIC_FVG_MICRO'",
+            "range": {
+                "start": {
+                    "line": 1699,
+                    "character": 52
+                },
+                "end": {
+                    "line": 1699,
+                    "character": 152
+                }
+            },
+            "severity": "Error",
+            "code": "256"
+        },
+        {
+            "file": "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\Execution\\FalconBrokerEntryBridge.mqh",
+            "message": "undeclared identifier 'FC_MAGIC_FVG_MICRO'",
+            "range": {
+                "start": {
+                    "line": 2018,
+                    "character": 50
+                },
+                "end": {
+                    "line": 2018,
+                    "character": 150
+                }
+            },
+            "severity": "Error",
+            "code": "256"
+        },
+        {
+            "file": "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\Execution\\FalconBrokerEntryBridge.mqh",
+            "message": "undeclared identifier 'FC_MAGIC_FVG_MICRO'",
+            "range": {
+                "start": {
+                    "line": 2075,
+                    "character": 49
+                },
+                "end": {
+                    "line": 2075,
+                    "character": 149
+                }
+            },
+            "severity": "Error",
+            "code": "256"
+        },
+        {
+            "file": "d:\\Projects\\JA-FalconCore-Automated-Trading-Platform\\Execution\\FalconBrokerEntryBridge.mqh",
+            "message": "undeclared identifier 'FC_MAGIC_FVG_MICRO'",
+            "range": {
+                "start": {
+                    "line": 2286,
+                    "character": 26
+                },
+                "end": {
+                    "line": 2286,
+                    "character": 126
+                }
+            },
+            "severity": "Error",
+            "code": "256"
+        }
+    ]
+}
