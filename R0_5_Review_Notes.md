@@ -12,7 +12,8 @@ This document captures the spec §4 "review-as-you-move" findings for the Router
 |---|---|---|---|
 | `Router/FalconStrategyRegistry.mqh` | L3929–4148 | `CFalconStrategyRegistry` (215 LOC class + 5-line header) | 233 |
 | `Router/FalconStrategyAdapterShell.mqh` | L4154–4279 | `CFalconFirstShadowStrategyAdapterShell` (120 LOC class + 6-line header) | 143 |
-| **Total** | **351 source lines** | **2 classes** | **376** |
+| `Router/FalconRouterInputs.mqh` *(R0.5-fix, added post-compile)* | L1896 | `#define EnableFvgMicroRuntimePipelineRefresh` (1 macro) | 19 |
+| **Total** | **352 source lines** | **2 classes + 1 macro** | **395** |
 
 `Router/FalconRouter_Placeholder.mqh` deleted (8 LOC).
 
@@ -49,8 +50,9 @@ Duplication audit: both class definitions appear **exactly once**, in their resp
 #include "Execution/FalconRuntimeSafetyGuard.mqh"
 #include "Execution/FalconShadowExecutor.mqh"
 
-// Router (R0.5)
-#include "Router/FalconStrategyRegistry.mqh"        // depends on Core only
+// Router (R0.5 + R0.5-fix)
+#include "Router/FalconRouterInputs.mqh"            // R0.5-fix: preprocessor macros referenced by Registry
+#include "Router/FalconStrategyRegistry.mqh"        // depends on Core + RouterInputs
 #include "Router/FalconStrategyAdapterShell.mqh"    // depends on Registry + Runtime + Shadow
 
 // === MIDDLE block ===
@@ -65,8 +67,9 @@ Duplication audit: both class definitions appear **exactly once**, in their resp
 **Why both Router files at the top:**
 1. `CFalconStrategyRegistry` only depends on Core (`FalconStrategyRegistryEntry` struct, enums, `CFalconLogger`). All Core is already in scope.
 2. `CFalconFirstShadowStrategyAdapterShell` depends on `CFalconStrategyRegistry` (above), plus `CFalconRuntimeSafetyGuard` and `CFalconShadowExecutor` — both already in the Execution top block.
-3. Inputs referenced by Registry method bodies (`EnableStrategy_FvgMicroRetest`, `EnableFvgMicroRuntimePipelineRefresh`, and 11 more `EnableStrategy_*`) and by AdapterShell (`EnableShadowMode`) are declared further down in main `.mq5` at L1751–L1794. MQL5's two-pass parse resolves these at method-body compile time — the same pattern that already works for `CFalconShadowExecutor` (it references `EnableShadowMode` from a top-included `.mqh`). No `Router/FalconRouterInputs.mqh` is needed.
+3. The 13 `EnableStrategy_*` references plus `EnableShadowMode` are MQL5 `input` declarations at L1751–L1794. `input`s are globals, and MQL5's two-pass parse resolves them at method-body compile time — the same pattern that already works for `CFalconShadowExecutor` (it references `EnableShadowMode` from a top-included `.mqh`).
 4. `FalconAdapterStatusToString` (defined at L2428 in main `.mq5`) is called from inside `CFalconFirstShadowStrategyAdapterShell::Initialize()` — same two-pass resolution.
+5. **`EnableFvgMicroRuntimePipelineRefresh` is NOT an `input` — it is a `#define` at L1896.** Preprocessor macros are resolved during preprocessing, BEFORE the two-pass class parse, so this one identifier could NOT be forward-referenced from the top-included Registry. R0.5-fix introduces `Router/FalconRouterInputs.mqh` and includes it BEFORE the Registry class file — same pattern already established by `Core/FalconCoreInputs.mqh` and `Execution/FalconExecutionInputs.mqh`.
 
 **No Bridge-style split:** Neither Router class touches `CFalconReportWriter`, so the R0.4 trick of including a class after the ReportWriter definition is not needed here.
 
@@ -141,7 +144,7 @@ No back-pointers in either direction. No state shared via globals. **Clean one-w
 | 2 Router class files with include guards | ✓ |
 | `Router/FalconRouter_Placeholder.mqh` deleted | ✓ |
 | Include block has Router after Execution top block, Registry before AdapterShell | ✓ |
-| No `Router/FalconRouterInputs.mqh` needed (no Router-exclusive inputs/macros) | ✓ (per §2 condition: nothing exclusive to Router) |
+| `Router/FalconRouterInputs.mqh` exists (R0.5-fix) and is included BEFORE the Router class files | ✓ (carries `EnableFvgMicroRuntimePipelineRefresh` `#define`, the only macro-typed Router dependency declared after the original include point) |
 | Migrated code removed from main `.mq5` (no duplication) | ✓ (both classes: 1 hit under `Router/`, 0 in `.mq5`) |
 | 12 `Apply*` functions still in `CFalconReportWriter` | ✓ (`grep -cE "^\s+void Apply[A-Z]"` returns 12, unchanged) |
 | Compiles `0 errors, 0 warnings` | ⏳ requires MetaEditor F7 by user |
@@ -168,4 +171,12 @@ No back-pointers in either direction. No state shared via globals. **Clean one-w
 
 ---
 
-*End of R0.5 review notes. No `Apply*`, no `OrderSend` logic, no globals, no shared structures, no inputs/macros were modified. The 2 Router classes were moved verbatim.*
+---
+
+## 7. Post-compile fix log
+
+**R0.5-fix:** Initial compile against R0.5 raised `undeclared identifier 'EnableFvgMicroRuntimePipelineRefresh'` at line 72 of `Router/FalconStrategyRegistry.mqh`. Root cause: that identifier is a `#define` at L1896 of main `.mq5`, not an MQL5 `input`. Two-pass class-body parse does NOT cover `#define`s — those are resolved at preprocess time. The fix adds `Router/FalconRouterInputs.mqh` (verbatim move of the single `#define`) and includes it BEFORE the Registry class file, mirroring `Core/FalconCoreInputs.mqh` and `Execution/FalconExecutionInputs.mqh`. Full audit of both Router `.mqh` files against all 625 `#define` names in main `.mq5` confirmed `EnableFvgMicroRuntimePipelineRefresh` is the **only** such collision — no second-round error expected.
+
+---
+
+*End of R0.5 review notes. No `Apply*`, no `OrderSend` logic, no globals, no shared structures were modified. The 2 Router classes plus 1 supporting `#define` were moved verbatim.*

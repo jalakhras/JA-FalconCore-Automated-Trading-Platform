@@ -47,14 +47,20 @@
 
 // ==================================================================
 // R0.5: Router layer #include block (after Execution top block)
-// Registry depends on Core (Enums + DataStructures + Logger) and on the
-// `EnableStrategy_*` / `EnableShadowMode` inputs declared further down
-// in this file - resolved by MQL5's two-pass parse, same pattern as
-// CFalconShadowExecutor which already references EnableShadowMode.
+// FalconRouterInputs carries preprocessor macros referenced by Router
+// classes that were originally declared later in this file (must
+// precede the class .mqh files - #define is resolved at preprocess
+// time, before MQL5's two-pass class parse).
+// Registry depends on Core (Enums + DataStructures + Logger) and on
+// the `EnableStrategy_*` / `EnableShadowMode` inputs declared further
+// down in this file - those are `input` variables, resolved by MQL5's
+// two-pass parse, same pattern as CFalconShadowExecutor which already
+// references EnableShadowMode.
 // AdapterShell additionally depends on CFalconStrategyRegistry,
 // CFalconRuntimeSafetyGuard, CFalconShadowExecutor (all available
 // above). Registry must precede AdapterShell.
 // ==================================================================
+#include "Router/FalconRouterInputs.mqh"          // preprocessor: must come before the Router class .mqh files
 #include "Router/FalconStrategyRegistry.mqh"
 #include "Router/FalconStrategyAdapterShell.mqh"
 
@@ -1893,7 +1899,7 @@ string FalconReportProfileToString()
 #define ReportToDateTag                                       FALCON_REPORT_TO_DATE_TAG
 #define ForceCreateReportFilesOnInit                          FALCON_FORCE_CREATE_REPORT_FILES_ON_INIT
 #define PrintReportFolderHintsToLog                           FALCON_PRINT_REPORT_FOLDER_HINTS_TO_LOG
-#define EnableFvgMicroRuntimePipelineRefresh                  true
+// EnableFvgMicroRuntimePipelineRefresh moved to Router/FalconRouterInputs.mqh (R0.5-fix)
 #define ProcessFvgMicroDetectorOnlyOnNewM5ClosedBar            true
 
 // ==================================================================
