@@ -8,8 +8,8 @@
 #property strict
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "v0.57.3"
-#define EA_BUILD_TAG   "VirtualTrailingCalibrationAndSpreadAwareBreakeven"
+#define EA_VERSION_TAG "v0.57.4"
+#define EA_BUILD_TAG   "StructuralBreakeven"
 
 #define FALCON_MTF_COUNT       6
 
@@ -1838,6 +1838,12 @@ input bool   EnableVirtualTrailingBridge     = true;   // v0.57.2 trailing exit
 input double VirtualTrailingStartPoints      = 8.0;    // v0.57.3 recalibrated (was 30) - profit points before trailing arms
 input double VirtualTrailingDistancePoints   = 6.0;    // v0.57.3 recalibrated (was 20) - trailing distance behind peak
 input double VirtualBreakevenAtPoints        = 4.0;    // v0.57.3 recalibrated (was 15) - profit points to lock breakeven
+// v0.57.4: Structural Breakeven - anchor the BE floor on the last confirmed
+// M5 swing low (BUY) / swing high (SELL) instead of a fixed offset from entry.
+// When no qualifying swing exists, fall back to the v0.57.3 spread-aware floor.
+input bool   EnableStructuralBreakeven       = true;   // v0.57.4 structural BE
+input int    VirtualSwingLookbackBars        = 2;      // half-window N (5-bar swing when N=2)
+input int    VirtualSwingMaxLookback         = 40;     // max closed bars to scan
 
 // ==================================================================
 // 03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات
@@ -3164,6 +3170,10 @@ struct FalconBrokerTradeLink
    double                    virtual_trailing_stop_price;
    double                    virtual_protection_floor_price;
    datetime                  virtual_trailing_last_update;
+   // v0.57.4: BE mode tag set at BE-lock time. "STRUCTURAL" when anchored on a
+   // confirmed swing; "FIXED_FALLBACK" when no qualifying swing was found and
+   // the v0.57.3 spread-aware floor was used. Empty before BE locks.
+   string                    virtual_breakeven_mode;
 };
 
 struct FalconBrokerTradeManagementEvent
@@ -12102,7 +12112,7 @@ public:
 
       string header =
          "TradeId,Direction,EntryTime,EntryPrice,ExitTime,ExitPrice,"
-         "PeakFavorablePrice,TrailingStopPriceAtExit,BreakevenLocked,TrailingActivated,"
+         "PeakFavorablePrice,TrailingStopPriceAtExit,BreakevenLocked,BreakevenMode,TrailingActivated,"
          "ProfitPointsAtExit,RealizedPointsAtExit,EstimatedUsdAtExit,"
          "ExitTriggerReason,BrokerCloseRetcode,VirtualTrailingStatus";
       FileWriteString(handle, header + "\r\n");
@@ -12149,6 +12159,7 @@ public:
       row += DoubleToString(link.virtual_peak_favorable_price, m_symbol_context.digits) + ",";
       row += DoubleToString(link.virtual_trailing_stop_price, m_symbol_context.digits) + ",";
       row += FalconCsvSafe(link.virtual_breakeven_locked ? "YES" : "NO") + ",";
+      row += FalconCsvSafe(link.virtual_breakeven_mode) + ",";
       row += FalconCsvSafe(link.virtual_trailing_active ? "YES" : "NO") + ",";
       row += DoubleToString(profit_points_at_exit, 2) + ",";
       row += DoubleToString(realized_points_at_exit, 2) + ",";
@@ -15742,6 +15753,8 @@ private:
       link.virtual_trailing_stop_price = 0.0;
       link.virtual_protection_floor_price = 0.0;
       link.virtual_trailing_last_update = 0;
+      // v0.57.4: structural BE mode tag.
+      link.virtual_breakeven_mode = "";
    }
 
    void ResetLinkFromShadow(const FalconShadowTradeRecord &record, FalconBrokerTradeLink &link)
@@ -15790,6 +15803,8 @@ private:
       link.virtual_trailing_stop_price = 0.0;
       link.virtual_protection_floor_price = 0.0;
       link.virtual_trailing_last_update = 0;
+      // v0.57.4: structural BE mode tag.
+      link.virtual_breakeven_mode = "";
    }
 
    bool TesterEntryAllowed(string &reason)
@@ -16332,6 +16347,75 @@ public:
    }
 
    // ==================================================================
+   // v0.57.4: Structural Breakeven swing detection.
+   // Scans the last `max_lookback` CLOSED M5 bars (shift >= 1, no lookahead)
+   // for the most recent confirmed swing low / high. A swing low at bar i
+   // requires strictly lower `low` than the `swing_n` bars immediately before
+   // it (older) and the `swing_n` bars immediately after it (newer). Returns
+   // 0.0 when no qualifying swing exists in the window.
+   //
+   // CopyRates is requested with ArraySetAsSeries(true) so r[0] is the most
+   // recent CLOSED bar and r[count-1] is the oldest bar in the window.
+   // Walking i from swing_n upward then yields swings in newest-first order;
+   // the first hit is the most recent confirmed swing.
+   // ==================================================================
+   double FindLastSwingLow(const int swing_n, const int max_lookback)
+   {
+      if(swing_n < 1 || max_lookback < 1)
+         return 0.0;
+      int need = max_lookback + swing_n;
+      MqlRates r[];
+      ArraySetAsSeries(r, true);
+      int copied = CopyRates(_Symbol, PERIOD_M5, 1, need, r);
+      if(copied < (2 * swing_n + 1))
+         return 0.0;
+      int last_index = ArraySize(r) - swing_n - 1;
+      for(int i = swing_n; i <= last_index; i++)
+      {
+         bool is_low = true;
+         for(int k = 1; k <= swing_n; k++)
+         {
+            if(r[i].low >= r[i - k].low || r[i].low >= r[i + k].low)
+            {
+               is_low = false;
+               break;
+            }
+         }
+         if(is_low)
+            return r[i].low;
+      }
+      return 0.0;
+   }
+
+   double FindLastSwingHigh(const int swing_n, const int max_lookback)
+   {
+      if(swing_n < 1 || max_lookback < 1)
+         return 0.0;
+      int need = max_lookback + swing_n;
+      MqlRates r[];
+      ArraySetAsSeries(r, true);
+      int copied = CopyRates(_Symbol, PERIOD_M5, 1, need, r);
+      if(copied < (2 * swing_n + 1))
+         return 0.0;
+      int last_index = ArraySize(r) - swing_n - 1;
+      for(int i = swing_n; i <= last_index; i++)
+      {
+         bool is_high = true;
+         for(int k = 1; k <= swing_n; k++)
+         {
+            if(r[i].high <= r[i - k].high || r[i].high <= r[i + k].high)
+            {
+               is_high = false;
+               break;
+            }
+         }
+         if(is_high)
+            return r[i].high;
+      }
+      return 0.0;
+   }
+
+   // ==================================================================
    // v0.57.2: Virtual Trailing Exit Bridge - tick-driven update.
    // For every open broker link: maintains peak-favorable price, locks
    // breakeven, arms trailing, and closes via OrderSend(TRADE_ACTION_DEAL)
@@ -16396,11 +16480,12 @@ public:
          }
 
          // 4.3 Lock breakeven once profit crosses VirtualBreakevenAtPoints.
-         // v0.57.3: spread-aware floor. A BUY closes on Bid and a SELL closes on Ask,
-         // so locking at exactly broker_entry_price closes the position on the
-         // opposite side of the market and lands BREAKEVEN_FLOOR_HIT at -spread.
-         // We add (spread + extra buffer) in the profit direction so the realized
-         // exit on the closing side is >= entry.
+         // v0.57.3: spread-aware floor anchored on entry.
+         // v0.57.4: when EnableStructuralBreakeven is on, anchor the floor on the
+         // most recent confirmed M5 swing low (BUY) / swing high (SELL) that lies
+         // BETWEEN broker_entry_price and current_price. If no qualifying swing
+         // exists yet (early in the trade), fall back to the v0.57.3 spread-aware
+         // floor so the position is never left unprotected.
          if(!m_active_links[i].virtual_breakeven_locked &&
             profit_points >= VirtualBreakevenAtPoints)
          {
@@ -16408,11 +16493,39 @@ public:
             double spread_price       = (double)spread_points_long * _Point;
             double be_buffer          = spread_price + (FALCON_VIRTUAL_TRAILING_BE_EXTRA_POINTS * _Point);
 
+            double structural_floor = 0.0;
+            if(EnableStructuralBreakeven)
+            {
+               if(m_active_links[i].direction == FALCON_DIRECTION_BUY)
+               {
+                  double sl = FindLastSwingLow(VirtualSwingLookbackBars, VirtualSwingMaxLookback);
+                  // Accept only a swing low ABOVE entry and BELOW current bid.
+                  if(sl > m_active_links[i].broker_entry_price && sl < current_price)
+                     structural_floor = sl;
+               }
+               else
+               {
+                  double sh = FindLastSwingHigh(VirtualSwingLookbackBars, VirtualSwingMaxLookback);
+                  // Accept only a swing high BELOW entry and ABOVE current ask.
+                  if(sh > 0.0 && sh < m_active_links[i].broker_entry_price && sh > current_price)
+                     structural_floor = sh;
+               }
+            }
+
             m_active_links[i].virtual_breakeven_locked = true;
-            if(m_active_links[i].direction == FALCON_DIRECTION_BUY)
-               m_active_links[i].virtual_protection_floor_price = m_active_links[i].broker_entry_price + be_buffer;
+            if(structural_floor > 0.0)
+            {
+               m_active_links[i].virtual_protection_floor_price = structural_floor;
+               m_active_links[i].virtual_breakeven_mode = "STRUCTURAL";
+            }
             else
-               m_active_links[i].virtual_protection_floor_price = m_active_links[i].broker_entry_price - be_buffer;
+            {
+               if(m_active_links[i].direction == FALCON_DIRECTION_BUY)
+                  m_active_links[i].virtual_protection_floor_price = m_active_links[i].broker_entry_price + be_buffer;
+               else
+                  m_active_links[i].virtual_protection_floor_price = m_active_links[i].broker_entry_price - be_buffer;
+               m_active_links[i].virtual_breakeven_mode = "FIXED_FALLBACK";
+            }
          }
 
          // 4.4 Arm trailing once profit crosses VirtualTrailingStartPoints.
