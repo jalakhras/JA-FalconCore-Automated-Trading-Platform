@@ -4,7 +4,7 @@
 //|                     Version: v0.57.4 - Refactor Branch (R0.2) |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
-#property version   "0.57.4"
+#property version   "0.57"
 #property strict
 
 // ==================================================================
