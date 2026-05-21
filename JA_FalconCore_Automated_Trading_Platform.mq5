@@ -39,6 +39,7 @@
 // move the 12 Apply* method bodies into this class, and R0.7d will
 // wire the call into RegisterClosedTrade.
 #include "Risk/FalconTradeLifecycleContract.mqh"
+#include "Risk/FalconRiskLifecycleProcessorInputs.mqh"   // R0.7b-fix: 11 macros needed by the processor
 #include "Risk/FalconRiskLifecycleProcessor.mqh"
 
 // ==================================================================
@@ -108,8 +109,10 @@
 // before the corresponding close-safety action. Close time is resolved from
 // broker/server symbol sessions; fallback is 23:58 only when broker sessions are unavailable.
 // ==================================================================
-#define FALCON_SESSION_BOUNDARY_DEFAULT_CHECKPOINT_MINUTES 3
-#define FALCON_SESSION_BOUNDARY_ACTION_TO_CHECKPOINT_GAP_MINUTES 2
+// R0.7b-fix: FALCON_SESSION_BOUNDARY_DEFAULT_CHECKPOINT_MINUTES (3) and
+// FALCON_SESSION_BOUNDARY_ACTION_TO_CHECKPOINT_GAP_MINUTES (2) moved to
+// Risk/FalconRiskLifecycleProcessorInputs.mqh so they precede the
+// processor's #include point.
 #define FALCON_SESSION_BOUNDARY_CHECKPOINT_MODE    "FOUNDATION_ONLY_NO_RUNTIME_RESTORE"
 #define FALCON_SESSION_BOUNDARY_CHECKPOINT_POLICY  "DYNAMIC_CHECKPOINT_AFTER_USER_CLOSE_SAFETY_BEFORE_BROKER_CLOSE_BLOCKED_ENTRIES_NOT_RECOVERY_OPEN"
 
@@ -1030,7 +1033,7 @@ string FalconTsprStateFileName(const ulong ticket)
 #define FALCON_SSBL_LIMITS_POLICY                     "CACHE_STOPS_FREEZE_VOLUME_LIMITS;VALIDATE_BEFORE_SEND_OR_MODIFY"
 #define FALCON_SSBL_ORDER_SEND_POLICY                 "ORDER_SEND_HARD_BLOCKED;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY"
 #define FALCON_SSBL_NEXT_PHASE                        "v0.43.0_OnTradeTransactionDrivenStateUpdates"
-#define FALCON_SSBL_MAX_SPREAD_POINTS                 120
+// R0.7b-fix: FALCON_SSBL_MAX_SPREAD_POINTS (120) moved to Risk/FalconRiskLifecycleProcessorInputs.mqh.
 // v0.49.0a: calibrated from v0.49.0 report where US100_Spot FVG spreads were 110-115 broker points; 25 rejected 436/436 trades.
 #define FALCON_SSBL_MAX_SLIPPAGE_POINTS               20
 #define FALCON_SSBL_STOPS_BUFFER_POINTS               2
@@ -1698,7 +1701,7 @@ double g_falcon_session_start_balance = 0.0;
 #define FALCON_LCRF_POLICY                        "MEASUREMENT_ONLY;NO_ENTRY_CHANGE;NO_EXIT_CHANGE;NO_EMERGENCY_CHANGE;NO_TIER_CHANGE;NO_REJECTION_YET"
 #define FALCON_LCRF_ORDER_SEND_POLICY             "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
 #define FALCON_LCRF_DEFAULT_SINGLE_TRADE_CAP_PCT  50.0
-#define FALCON_LCRF_BORDERLINE_MULTIPLIER         1.20
+// R0.7b-fix: FALCON_LCRF_BORDERLINE_MULTIPLIER (1.20) moved to Risk/FalconRiskLifecycleProcessorInputs.mqh.
 #define FALCON_LCRF_NEXT_PHASE                    "v0.55.3b_DynamicLotSizingSafetyRampMaxGrowthCap"
 
 
@@ -1713,15 +1716,15 @@ double g_falcon_session_start_balance = 0.0;
 // ==================================================================
 #define FALCON_STLC_STATUS                        "DYNAMIC_CAPITAL_AWARE_SINGLE_TRADE_LOSS_CAP_FIX"
 #define FALCON_STLC_DECISION                      "ENFORCE_DYNAMIC_CAPITAL_RELATIVE_SINGLE_TRADE_CAP_AFTER_EACH_PAPER_TRADE"
-#define FALCON_STLC_RUNTIME_ENFORCED              true
+// R0.7b-fix: FALCON_STLC_RUNTIME_ENFORCED (true) moved to Risk/FalconRiskLifecycleProcessorInputs.mqh.
 #define FALCON_STLC_SCOPE                         "LOTSIZINGMANAGER;DYNAMIC_CAPITAL;MIN_LOT;SINGLE_TRADE_CAP;PAPER_EQUITY_CURVE;NO_AUTO_PROMOTION"
 #define FALCON_STLC_POLICY                        "DYNAMIC_CAPITAL_AWARE_ENFORCEMENT;STRICT_CAP_REMAINS_MEASUREMENT;RISK_FEASIBILITY_UPDATES_AFTER_EACH_TRADE;PROMOTION_STILL_EARNED;NO_ORDER_SEND"
 #define FALCON_STLC_ORDER_SEND_POLICY             "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"
 #define FALCON_STLC_DRAWDOWN_CAP_MULTIPLIER       2.0
 #define FALCON_STLC_ABSOLUTE_MAX_R                50.0
 #define FALCON_STLC_DYNAMIC_MAX_RISK_PCT          50.0
-#define FALCON_STLC_DYNAMIC_CAPITAL_FLOOR_USD     1.0
-#define FALCON_STLC_DYNAMIC_CAPITAL_MODE          "PAPER_RISK_CAPITAL_BEFORE_TRADE_UPDATES_AFTER_EACH_CLOSED_TRADE"
+// R0.7b-fix: FALCON_STLC_DYNAMIC_CAPITAL_FLOOR_USD (1.0) and
+// FALCON_STLC_DYNAMIC_CAPITAL_MODE (string) moved to Risk/FalconRiskLifecycleProcessorInputs.mqh.
 #define FALCON_STLC_NEXT_PHASE                    "v0.55.3b_DynamicLotSizingSafetyRampMaxGrowthCap"
 
 
@@ -1737,9 +1740,9 @@ double g_falcon_session_start_balance = 0.0;
 // enforcement build, but this candidate does not alter historical Paper
 // entries yet. No OrderSend, BrokerModify, or RuntimeSL change.
 // ==================================================================
-#define FALCON_DLM_STATUS                         "DYNAMIC_LOTSIZING_SAFETY_RAMP_MAX_GROWTH_CAP"
+// R0.7b-fix: FALCON_DLM_STATUS (string) moved to Risk/FalconRiskLifecycleProcessorInputs.mqh.
 #define FALCON_DLM_DECISION                       "APPLY_DYNAMIC_LOT_TO_PAPER_USD_WITH_TIER_CAP_CAPITAL_CAP_AND_GROWTH_RAMP"
-#define FALCON_DLM_RUNTIME_ENFORCED               true
+// R0.7b-fix: FALCON_DLM_RUNTIME_ENFORCED (true) moved to Risk/FalconRiskLifecycleProcessorInputs.mqh.
 #define FALCON_DLM_SCOPE                          "LOTSIZINGMANAGER;USEFIXEDLOT;DYNAMIC_CAPITAL;STRUCTURAL_RISK;BROKER_MIN_MAX_STEP;PAPER_RUNTIME_APPLICATION;TIER_MAX_LOT;CAPITAL_MAX_LOT;GROWTH_RAMP"
 #define FALCON_DLM_POLICY                         "USE_FIXED_LOT_TRUE_PRESERVES_FIXEDLOT;USE_FIXED_LOT_FALSE_APPLIES_DYNAMIC_LOT_WITH_SAFETY_RAMP;CAPITAL_UPDATES_AFTER_EACH_TRADE;TIER_CAP;CAPITAL_CAP;MAX_GROWTH_CAP;NO_BROKER_EXECUTION"
 #define FALCON_DLM_ORDER_SEND_POLICY              "ORDER_SEND_HARD_BLOCKED;PAPER_ONLY;NO_DEMO;NO_LIVE;NO_BROKER_MODIFY;NO_RUNTIME_SL_CHANGE"

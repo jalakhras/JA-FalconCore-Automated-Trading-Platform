@@ -1949,19 +1949,10 @@ public:
       return (price > 0.0);
    }
 
-   double FalconForceCloseOverrideNetUsd(const FalconTradeLifecycleRecord &record, double force_close_price)
-   {
-      double active_lot = record.falcon_dlm_active_lot;
-      if(active_lot <= 0.0)
-         active_lot = record.lot_size;
-      double raw_points = FalconRawIndexPoints(record.direction, record.entry_price, force_close_price);
-      return FalconEstimateUsdByRawPoints(raw_points, active_lot, m_symbol_context);
-   }
-
-   double FalconForceCloseOverrideNetPoints(const FalconTradeLifecycleRecord &record, double force_close_price)
-   {
-      return FalconRawIndexPoints(record.direction, record.entry_price, force_close_price);
-   }
+   // R0.7b-fix: FalconForceCloseOverrideNetUsd and FalconForceCloseOverrideNetPoints
+   // moved to Risk/FalconRiskLifecycleProcessor.mqh (private members of
+   // CFalconRiskLifecycleProcessor). They are pure Risk-policy helpers,
+   // not Reporting-side logic.
 
    bool FalconWasTradeActiveDuringBoundaryCheckpointWindow(const FalconTradeLifecycleRecord &record, datetime checkpoint_time, datetime close_time)
    {
@@ -4603,17 +4594,9 @@ private:
    }
 
 
-   double CurrentPaperRiskCapitalBeforeTrade()
-   {
-      double capital = FalconEffectiveCapitalForTier();
-      if(m_tle_equity > 0.0)
-         capital = m_tle_equity;
-      if(capital <= 0.0 && ManualCapital > 0.0)
-         capital = ManualCapital;
-      if(capital <= 0.0)
-         capital = FALCON_STLC_DYNAMIC_CAPITAL_FLOOR_USD;
-      return capital;
-   }
+   // R0.7b-fix: CurrentPaperRiskCapitalBeforeTrade moved to
+   // Risk/FalconRiskLifecycleProcessor.mqh (private member of
+   // CFalconRiskLifecycleProcessor). Pure Risk-policy helper.
 
    void ApplyCapitalTierFoundation(FalconTradeLifecycleRecord &record)
    {

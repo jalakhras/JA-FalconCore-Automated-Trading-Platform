@@ -66,8 +66,10 @@
 // --- Section 2: FVG Micro engine magic number (main .mq5 L845) ---
 #define FC_MAGIC_FVG_MICRO                             1100001
 
-// --- Section 3: Dynamic Lot Sizing Bridge constants (main .mq5 L1749-1750) ---
-#define FALCON_DLM_CAPITAL_USD_PER_001_LOT        250.0
-#define FALCON_DLM_MAX_LOT_GROWTH_MULTIPLIER      1.20
+// --- Section 3: Dynamic Lot Sizing constants moved to Risk/ in R0.7b-fix ---
+// FALCON_DLM_CAPITAL_USD_PER_001_LOT and FALCON_DLM_MAX_LOT_GROWTH_MULTIPLIER
+// now live in Risk/FalconRiskLifecycleProcessorInputs.mqh because the DLM
+// logic itself was ported into CFalconRiskLifecycleProcessor in R0.7b. The
+// constants travel with the logic.
 
 #endif // FALCON_EXECUTION_INPUTS_MQH
