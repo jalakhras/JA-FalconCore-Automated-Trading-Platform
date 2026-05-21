@@ -137,29 +137,43 @@ public:
 
       if(EnableMainReport)
       {
+         // CORE - always-on when EnableMainReport=true. The R0.6b
+         // diagnostic switches do NOT gate these two.
          WriteTradeHeader();
          WriteSummaryHeader();
          if(!FalconReportProfileIsLockParity())
          {
-            WriteTierTransitionsHeader();
-            WriteEmergencyTriggersHeader();
-            WritePaperStateSnapshotHeader();
-            WriteBrokerExecutionLifecycleHeader();
-            WriteBrokerTradeManagementEventTimelineHeader();
-            WriteBrokerRebasedPaperComparisonHeader();
-            WriteBrokerPaperTradeReconciliationHeader();
-            WriteBrokerContractRealityAudit();
+            // EnableTierEmergencyReports group (R0.6b).
+            if(EnableTierEmergencyReports)
+            {
+               WriteTierTransitionsHeader();
+               WriteEmergencyTriggersHeader();
+               WritePaperStateSnapshotHeader();
+            }
+            // EnableBrokerReports group (R0.6b).
+            if(EnableBrokerReports)
+            {
+               WriteBrokerExecutionLifecycleHeader();
+               WriteBrokerTradeManagementEventTimelineHeader();
+               WriteBrokerRebasedPaperComparisonHeader();
+               WriteBrokerPaperTradeReconciliationHeader();
+               WriteBrokerContractRealityAudit();
+            }
          }
          // v0.57.0: Lock Parity Executability Decomposer header.
-         WriteLockParityDecompositionHeader();
+         // R0.6b: gated by EnableLockParityReports group switch.
+         if(EnableLockParityReports)
+            WriteLockParityDecompositionHeader();
          // v0.57.2: Virtual Trailing Exit Bridge header. Only emit the file when the
          // bridge can actually fire (tester-only managed close path) so LOCKPARITY
          // without execution stays at exactly 4 CSVs.
-         if(EnableVirtualTrailingBridge && EnableRealExecution && MQLInfoInteger(MQL_TESTER))
+         // R0.6b: additionally gated by EnableVirtualTrailingReport group switch.
+         if(EnableVirtualTrailingReport && EnableVirtualTrailingBridge && EnableRealExecution && MQLInfoInteger(MQL_TESTER))
             WriteVirtualTrailingExitLifecycleHeader();
       }
 
-      if(ForceCreateReportFilesOnInit)
+      // R0.6b: gated by EnableDebugDiagnostics group switch.
+      if(EnableDebugDiagnostics && ForceCreateReportFilesOnInit)
          WriteReportCreationGuaranteeFile();
 
       m_initialized = true;
@@ -414,6 +428,7 @@ public:
 
    void AppendBrokerRebasedPaperComparisonRecord(const FalconTradeLifecycleRecord &record)
    {
+      if(!EnableBrokerReports) return; // R0.6b group gate
       if(FalconReportProfileIsLockParity()) return;
       int handle = FileOpen(m_broker_rebased_paper_comparison_file, FalconReportReadWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
@@ -489,6 +504,7 @@ public:
 
    void AppendBrokerExecutionLifecycleAuditRecord(const FalconTradeLifecycleRecord &record)
    {
+      if(!EnableBrokerReports) return; // R0.6b group gate
       if(FalconReportProfileIsLockParity()) return;
       int handle = FileOpen(m_broker_execution_lifecycle_file, FalconReportReadWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
@@ -547,6 +563,7 @@ public:
 
    void AppendBrokerEntryBridgeLifecycleRecord(const FalconBrokerTradeLink &link)
    {
+      if(!EnableBrokerReports) return; // R0.6b group gate
       int handle = FileOpen(m_broker_execution_lifecycle_file, FalconReportReadWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -607,6 +624,7 @@ public:
                                                     const string exit_status,
                                                     const string exit_reason)
    {
+      if(!EnableBrokerReports) return; // R0.6b group gate
       int handle = FileOpen(m_broker_execution_lifecycle_file, FalconReportReadWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -672,6 +690,7 @@ public:
                                                const string close_status,
                                                const string close_reason)
    {
+      if(!EnableBrokerReports) return; // R0.6b group gate
       int handle = FileOpen(m_broker_execution_lifecycle_file, FalconReportReadWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -732,6 +751,7 @@ public:
                                                   const string reconciliation_status,
                                                   const string reconciliation_reason)
    {
+      if(!EnableBrokerReports) return; // R0.6b group gate
       if(FalconReportProfileIsLockParity()) return;
       int handle = FileOpen(m_broker_paper_reconciliation_file, FalconReportReadWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
@@ -990,6 +1010,7 @@ public:
                                                   const string reconciliation_status,
                                                   const string reconciliation_reason)
    {
+      if(!EnableBrokerReports) return; // R0.6b group gate
       if(FalconReportProfileIsLockParity()) return;
       // v0.56.9: A broker-only trade is a LOCK-parity violation until proven otherwise.
       // These rows make the reconciliation complete even when a broker entry/exit has
@@ -1109,6 +1130,7 @@ public:
                                                  const string status,
                                                  const string reason)
    {
+      if(!EnableBrokerReports) return; // R0.6b group gate
       int handle = FileOpen(m_broker_tm_timeline_file, FalconReportReadWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -1158,6 +1180,7 @@ public:
 
    void AppendBrokerTradeManagementTimelineForRecord(const FalconTradeLifecycleRecord &record)
    {
+      if(!EnableBrokerReports) return; // R0.6b group gate
       if(FalconReportProfileIsLockParity()) return;
       FalconRunnerBarPathStats barpath_stats;
       bool path_ok = FalconBuildRunnerBarPathStats(record, barpath_stats);
@@ -1326,6 +1349,7 @@ public:
 
    void WriteBrokerContractRealityAudit()
    {
+      if(!EnableBrokerReports) return; // R0.6b group gate
       int handle = FileOpen(m_broker_contract_reality_audit_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -1412,8 +1436,15 @@ public:
 
    void AppendPaperStateSnapshotRecord(const FalconTradeLifecycleRecord &record)
    {
-      if(FalconReportProfileIsLockParity()) return;
+      // R0.6b: increment the per-trade evaluation counter BEFORE the
+      // group gate so the diagnostic computation continues regardless
+      // of whether the file is written. Per spec: "أطفئ كتابة الملفات
+      // فقط لا الحسابات." The file-write-conditional counters
+      // (paper_state_snapshot_write_failures, paper_state_snapshot_written_rows)
+      // remain inside the gate further below.
       m_totals.paper_state_snapshot_evaluated_trades++;
+      if(!EnableTierEmergencyReports) return; // R0.6b group gate
+      if(FalconReportProfileIsLockParity()) return;
 
       datetime session_boundary_close_time = 0;
       datetime session_boundary_checkpoint_time = 0;
@@ -1473,6 +1504,7 @@ public:
 
    void AppendEmergencyTriggerEvent(const FalconTradeLifecycleRecord &record)
    {
+      if(!EnableTierEmergencyReports) return; // R0.6b group gate
       if(FalconReportProfileIsLockParity()) return;
       if(!EnableMainReport)
          return;
@@ -1522,6 +1554,7 @@ public:
                                   const double win_rate,
                                   const double net_r)
    {
+      if(!EnableTierEmergencyReports) return; // R0.6b group gate
       if(FalconReportProfileIsLockParity()) return;
       if(!EnableMainReport)
          return;
@@ -3404,6 +3437,7 @@ public:
    // ==================================================================
    void WriteLockParityDecompositionHeader()
    {
+      if(!EnableLockParityReports) return; // R0.6b group gate
       int handle = FileOpen(m_lock_parity_decomp_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -3637,6 +3671,7 @@ public:
 
    void AppendLockParityDecompositionRecord(const FalconTradeLifecycleRecord &record)
    {
+      if(!EnableLockParityReports) return; // R0.6b group gate
       // Layer deltas. d_other is residual that makes the per-trade chain closed by construction.
       double d_guard       = record.paper_guard_net_usd                          - record.net_usd;
       double d_protection  = record.paper_protection_net_usd                     - record.paper_guard_net_usd;
@@ -3853,6 +3888,7 @@ public:
 
    void WriteLockParityExecutabilityRollup()
    {
+      if(!EnableLockParityReports) return; // R0.6b group gate
       int handle = FileOpen(m_lock_parity_rollup_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -3917,6 +3953,7 @@ public:
    // ==================================================================
    void WriteVirtualTrailingExitLifecycleHeader()
    {
+      if(!EnableVirtualTrailingReport) return; // R0.6b group gate
       int handle = FileOpen(m_virtual_trailing_exit_lifecycle_file, FalconReportWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -3941,6 +3978,7 @@ public:
                                                  const uint broker_close_retcode,
                                                  const string virtual_trailing_status)
    {
+      if(!EnableVirtualTrailingReport) return; // R0.6b group gate
       // v0.57.3: derive RealizedPointsAtExit and EstimatedUsdAtExit from the link
       // and the report writer's symbol context. Caller doesn't need to compute either.
       double realized_points_at_exit = FalconRawIndexPoints(link.direction,

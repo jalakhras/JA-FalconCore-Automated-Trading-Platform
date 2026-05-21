@@ -1813,18 +1813,48 @@ input bool EnableStrategy_TwoLiquidityLines15M       = false; // استراتي�
 input bool EnableStrategy_GoldenLiquidity5MEntry     = false; // استراتيجية مناطق السيولة الذهبية ودخول الخمس دقائق.
 
 // ==================================================================
-// 04 - Reporting / التقارير
-// v0.18.6 cleanup: one profile controls diagnostic reports.
-// Default STANDARD keeps only essential files for normal tests.
+// 04 - Reporting Core / تقارير النواة الدائمة
+// Two reports are always produced when EnableMainReport=true: the
+// per-trade TradeLifecycle.csv and the run-level Summary.csv. They
+// carry the canonical numerical outcome (RawNetUSD, FinalWorkingNetUSD,
+// broker net) and are NOT gated by any of the R0.6b diagnostic group
+// switches.
+//
+// ReportProfile is preserved as a coarse preset (MINIMAL / STANDARD /
+// DEBUG / LOCKPARITY) that further refines what is emitted WITHIN an
+// enabled diagnostic group. See group "05 - Diagnostic Reports" below
+// for the master ON/OFF switches added in R0.6b. Coordination rule:
+// a diagnostic report runs iff (its group switch is true) AND (its
+// existing ReportProfile-derived gate, if any, allows it).
 // ==================================================================
-input group "04 - Reporting / التقارير";
-input bool                       EnableMainReport              = true;
-input ENUM_FALCON_REPORT_PROFILE ReportProfile                 = FALCON_REPORT_LOCKPARITY;
-input string                     ReportModeTag                 = "EmergencyServerStopEnvelopeLockParityProbe"; // v0.56.9b: safety restoration after v0.56.9 naked-order probe; no broker order may be sent without server SL/TP; filenames include ExecutionON/ExecutionOFF plus lot mode and period tags.
-input bool                       UseCommonFilesFolderForReports = true;
-input bool                       EnableVerboseExpertsLog       = true;
-input bool                       EnableFastRuntimeSmokeMode    = true;
-input int                        RuntimeDiagnosticsEveryNTicks = 1000;
+input group "04 - Reporting Core / تقارير النواة الدائمة";
+input bool                       EnableMainReport              = true;    // ON = produce TradeLifecycle.csv + Summary.csv (the always-on core).
+input ENUM_FALCON_REPORT_PROFILE ReportProfile                 = FALCON_REPORT_MINIMAL;    // R0.6b: narrowest core mode. With all R0.6b diagnostic switches false, default run emits only TradeLifecycle.csv + Summary.csv.
+input string                     ReportModeTag                 = "EmergencyServerStopEnvelopeLockParityProbe"; // Embedded in filenames + Summary header.
+input bool                       UseCommonFilesFolderForReports = true;   // ON = write into MQL5/Files (Common) instead of per-terminal Files/.
+input bool                       EnableVerboseExpertsLog       = true;    // ON = verbose CFalconLogger output to the Experts tab.
+input bool                       EnableFastRuntimeSmokeMode    = true;    // ON = condense runtime smoke probes for faster ticks.
+input int                        RuntimeDiagnosticsEveryNTicks = 1000;    // Sampling cadence for runtime diagnostic probes (tick units).
+
+// ==================================================================
+// 05 - Diagnostic Reports / التقارير التشخيصية
+// R0.6b: master ON/OFF switches for the ~28 non-core diagnostic CSVs,
+// grouped into 6 coherent buckets. ALL DEFAULT FALSE - a stock run
+// produces only the core (TradeLifecycle + Summary). Turn a switch ON
+// to revive its bucket. The new switches ARE COMPOSED with the pre-
+// existing ReportProfile presets: the existing per-report gates inside
+// the writer remain in place, and a group is silenced if EITHER its
+// new switch is FALSE or its existing ReportProfile gate already says
+// no. See Docs/ReviewNotes/R0_6b_Review_Notes.md for the bucket-to-
+// report classification table.
+// ==================================================================
+input group "05 - Diagnostic Reports / التقارير التشخيصية";
+input bool   EnableBrokerReports          = false;  // تقارير البروكر (5): ExecutionLifecycle، TradeManagementEventTimeline، ContractRealityAudit، RebasedPaperComparison، PaperTradeReconciliation.
+input bool   EnableLockParityReports      = false;  // تحليل Lock Parity (2): ExecutabilityDecomposition، ExecutabilityRollup. منطق Lock Parity الداخلي يبقى يعمل بلا تغيير.
+input bool   EnableVirtualTrailingReport  = false;  // الـ Virtual Trailing (1): VirtualTrailingExitLifecycle. (يبقى مشروطًا أيضًا بـ EnableVirtualTrailingBridge + tester-only.)
+input bool   EnableTierEmergencyReports   = false;  // حالة الصفقة (3): TierTransitions، EmergencyTriggers، PaperStateSnapshot. عدّادات m_totals.* تبقى تعمل (R0.6b: نطفئ كتابة الملف، لا الحساب).
+input bool   EnableStrategyRegistryReport = false;  // سجل الاستراتيجيات (1): StrategyRegistryDiagnostics فقط — جرد الاستراتيجيات وحالة كل واحدة.
+input bool   EnableDebugDiagnostics       = false;  // التشخيص العميق (~17): StrategyAdapter، 5 FVG-Micro debug، Market/CandleCache/Evidence/Shadow/NoLookahead، ReportCalibration، RuntimeReportVerification، FvgMicroSmokeTest، FvgMicroRuntimeReportAudit، ReportCreationGuarantee.
 
 
 
@@ -1872,22 +1902,37 @@ string FalconReportProfileToString()
 
 
 // Diagnostic report gates. Normal tests should not create diagnostic report spam.
-#define EnableMarketDiagnosticsReport                         (FalconReportProfileIsDebug())
-#define EnableCandleCacheDiagnosticsReport                    (FalconReportProfileIsDebug())
-#define EnableEvidenceDiagnosticsReport                       (FalconReportProfileIsDebug())
-#define EnableShadowDiagnosticsReport                         (FalconReportProfileIsDebug())
-#define EnableNoLookaheadDiagnosticsReport                    (FalconReportProfileIsDebug())
-#define EnableStrategyRegistryDiagnosticsReport               (FalconReportProfileIsStandardOrDebug())
-#define EnableStrategyAdapterDiagnosticsReport                (FalconReportProfileIsDebug())
-#define EnableFvgMicroDetectorDiagnosticsReport               (FalconReportProfileIsDebug())
-#define EnableFvgMicroCandidateDiagnosticsReport              (FalconReportProfileIsDebug())
-#define EnableFvgMicroRetestWatcherDiagnosticsReport          (FalconReportProfileIsDebug())
-#define EnableFvgMicroTradePlanStagingDiagnosticsReport       (FalconReportProfileIsDebug())
-#define EnableFvgMicroLifecycleSimulationDiagnosticsReport    (FalconReportProfileIsDebug())
-#define EnableReportCalibrationDiagnosticsReport              (FalconReportProfileIsDebug())
-#define EnableRuntimeReportVerificationReport                 (FalconReportProfileIsDebug())
-#define EnableFvgMicroSmokeTestDiagnosticsReport              (FalconReportProfileIsDebug())
-#define EnableFvgMicroRuntimeReportAuditReport                (FalconReportProfileIsDebug())
+// R0.6b: each gate now ANDs with its R0.6b group switch from input
+// group "05 - Diagnostic Reports". With all 6 group switches default
+// FALSE and ReportProfile default MINIMAL, a stock run emits only
+// the core (TradeLifecycle + Summary). ReportProfile is preserved as
+// a coarse preset that further refines emission WITHIN an enabled
+// group (e.g. DEBUG-only Market/Cache/etc. still requires DEBUG even
+// when its DebugDiagnostics group is on).
+//
+// Group mapping (R0.6b):
+//   - EnableStrategyRegistryReport gates ONLY the StrategyRegistry CSV.
+//   - EnableDebugDiagnostics       gates StrategyAdapter + the 5 FVG-Micro
+//                                  debug CSVs + 5 deep-debug diagnostics
+//                                  + ReportCalibration / RuntimeVerification
+//                                  / SmokeTest / RuntimeReportAudit /
+//                                  ReportCreationGuarantee.
+#define EnableMarketDiagnosticsReport                         (EnableDebugDiagnostics       && FalconReportProfileIsDebug())
+#define EnableCandleCacheDiagnosticsReport                    (EnableDebugDiagnostics       && FalconReportProfileIsDebug())
+#define EnableEvidenceDiagnosticsReport                       (EnableDebugDiagnostics       && FalconReportProfileIsDebug())
+#define EnableShadowDiagnosticsReport                         (EnableDebugDiagnostics       && FalconReportProfileIsDebug())
+#define EnableNoLookaheadDiagnosticsReport                    (EnableDebugDiagnostics       && FalconReportProfileIsDebug())
+#define EnableStrategyRegistryDiagnosticsReport               (EnableStrategyRegistryReport && FalconReportProfileIsStandardOrDebug())
+#define EnableStrategyAdapterDiagnosticsReport                (EnableDebugDiagnostics       && FalconReportProfileIsDebug())
+#define EnableFvgMicroDetectorDiagnosticsReport               (EnableDebugDiagnostics       && FalconReportProfileIsDebug())
+#define EnableFvgMicroCandidateDiagnosticsReport              (EnableDebugDiagnostics       && FalconReportProfileIsDebug())
+#define EnableFvgMicroRetestWatcherDiagnosticsReport          (EnableDebugDiagnostics       && FalconReportProfileIsDebug())
+#define EnableFvgMicroTradePlanStagingDiagnosticsReport       (EnableDebugDiagnostics       && FalconReportProfileIsDebug())
+#define EnableFvgMicroLifecycleSimulationDiagnosticsReport    (EnableDebugDiagnostics       && FalconReportProfileIsDebug())
+#define EnableReportCalibrationDiagnosticsReport              (EnableDebugDiagnostics       && FalconReportProfileIsDebug())
+#define EnableRuntimeReportVerificationReport                 (EnableDebugDiagnostics       && FalconReportProfileIsDebug())
+#define EnableFvgMicroSmokeTestDiagnosticsReport              (EnableDebugDiagnostics       && FalconReportProfileIsDebug())
+#define EnableFvgMicroRuntimeReportAuditReport                (EnableDebugDiagnostics       && FalconReportProfileIsDebug())
 
 // R0.2-fix: UseClosedCandlesOnly and PrimaryContextTimeframe moved to
 // Core/FalconCoreInputs.mqh so they are defined BEFORE the Core class
@@ -3705,6 +3750,7 @@ void FalconWriteAutoPeriodManifest(const string trigger,
                                    const int missing_count,
                                    const int failed_count)
 {
+   if(!EnableDebugDiagnostics) return; // R0.6b group gate - manifest is debug-grade metadata
    if(FalconReportProfileIsLockParity()) return;
    string manifest_name = FalconBuildReportFileNameWithTags("AutoPeriodManifest",
                                                             FalconEffectiveReportFromDateTag(),
