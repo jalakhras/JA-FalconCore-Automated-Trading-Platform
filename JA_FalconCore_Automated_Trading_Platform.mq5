@@ -1,7 +1,7 @@
 //+------------------------------------------------------------------+
 //|                     JA_FalconCore_Automated_Trading_Platform.mq5 |
 //|                     JA FalconCore Automated Trading Platform      |
-//|                     Version: v0.57.4 - Refactor Branch (R0.2) |
+//|  Version: v0.57.4 base — Refactor in progress (branch: refactor)  |
 //+------------------------------------------------------------------+
 #property copyright "JA FalconCore Automated Trading Platform"
 #property version   "1.00"
