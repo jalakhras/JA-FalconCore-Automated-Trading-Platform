@@ -28,6 +28,18 @@
 #include "Risk/FalconRiskInputs.mqh"     // R0.3: FALCON_ARCH_* and FALCON_*_STATUS macros used by Risk classes
 #include "Risk/FalconRiskFoundation.mqh"
 #include "Risk/FalconRiskTradeManagement.mqh"
+// R0.7a: foundation for the Apply* peel. Two new Risk-layer files.
+// FalconTradeLifecycleContract.mqh documents the data bus (the two
+// structs FalconTradeLifecycleRecord + FalconReportTotals live in
+// Core/ and are NOT moved in R0.7a). FalconRiskLifecycleProcessor.mqh
+// hosts an empty CFalconRiskLifecycleProcessor with a single
+// placeholder method ApplyTradeLifecycleChain(record). The class is
+// declared but NOT instantiated nor called anywhere in R0.7a -
+// behavior is byte-identical to R0.6b. R0.7b/c/d will gradually
+// move the 12 Apply* method bodies into this class, and R0.7d will
+// wire the call into RegisterClosedTrade.
+#include "Risk/FalconTradeLifecycleContract.mqh"
+#include "Risk/FalconRiskLifecycleProcessor.mqh"
 
 // ==================================================================
 // R0.4: Execution layer #include block (after Risk)
