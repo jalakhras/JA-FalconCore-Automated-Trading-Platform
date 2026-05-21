@@ -6,6 +6,7 @@
 #property copyright "JA FalconCore Automated Trading Platform"
 #property version   "1.600"
 #property strict
+#include "Core/FalconCore_Placeholder.mqh"
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
 #define EA_VERSION_TAG "v0.57.4"
