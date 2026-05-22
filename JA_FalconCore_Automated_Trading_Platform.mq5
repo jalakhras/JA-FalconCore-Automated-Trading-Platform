@@ -87,6 +87,14 @@
 #include "Strategies/S00_ScalpFvgMicro/S00_ScalpFvgMicroInputs.mqh"
 #include "Strategies/S00_ScalpFvgMicro/S00_FvgQualityFilter.mqh"
 #include "Strategies/S00_ScalpFvgMicro/S00_FvgDetector.mqh"
+// R1.1b: paper-isolated entry logic for the S00 strategy. The trade-plan
+// builder (stop / target / 1:2 gate) plus the per-FVG state machine that
+// confirms revisit, opens the paper trade, and tracks SL / TP / timeout.
+// Both files are self-contained inside Strategies/S00_ScalpFvgMicro/ and
+// do not call into Risk / Reporting / Execution - the legacy FixedLot
+// April numbers stay locked.
+#include "Strategies/S00_ScalpFvgMicro/S00_TradePlan.mqh"
+#include "Strategies/S00_ScalpFvgMicro/S00_EntryLogic.mqh"
 
 
 // ==================================================================
@@ -6033,6 +6041,12 @@ void OnTick()
    // emits S00_FvgDetection_Diagnostics.csv rows (zero lookahead - see
    // Strategies/S00_ScalpFvgMicro/S00_FvgDetector.mqh header).
    g_s00_fvg_detector.EvaluateOnNewBar(g_market_context);
+   // R1.1b: S00 entry logic - per-FVG state machine + single open
+   // paper trade. Self-gates on Enable_S00_FvgScalp. Paper-isolated:
+   // never calls into g_report_writer / g_broker_entry_bridge /
+   // g_shadow_executor, so the legacy 585.17 / 1104.89 / 157.49
+   // FixedLot April numbers stay locked.
+   g_s00_entry_logic.EvaluateOnNewBar(g_market_context);
 
    // Future pipeline:
    // MarketContext -> CandleCache -> Narrative -> StrategyEngine -> Evidence -> Guard -> TradePlan -> Shadow/Paper/Demo/Live Executor -> ReportWriter

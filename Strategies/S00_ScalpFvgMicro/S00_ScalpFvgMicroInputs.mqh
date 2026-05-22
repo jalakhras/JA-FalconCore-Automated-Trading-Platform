@@ -41,6 +41,10 @@ input double S00_MaxGap            = 6000.0;  // Maximum FVG size - rejects abno
 input double S00_GapAtrMult        = 0.5;     // FVG strength filter: gap >= ATR x this value
 input int    S00_TrendMA           = 50;      // Trend filter SMA period (M5)
 input int    S00_GapExpiry         = 20;      // Bars before an untouched FVG expires
+input double S00_MinConfirmBody    = 50.0;    // Minimum confirmation candle body (points)
+input double S00_StopBuffer        = 30.0;    // Stop distance beyond FVG edge (points)
+input int    S00_SwingLookback     = 30;      // Bars scanned for nearest swing (target)
+input int    S00_MaxTradeBars      = 24;      // Bars before an open trade is force-closed
 input bool   S00_DiagReport        = false;   // S00 FVG detection diagnostic report (on/off)
 
 #endif // FALCON_S00_SCALPFVGMICRO_INPUTS_MQH

@@ -160,22 +160,29 @@ public:
    //----------------------------------------------------------------
    // R1.1a entry point. Called from OnTick.
    //
-   // SELF-GATED on S00_DiagReport: when the diagnostic
-   // is off (the default), this is a pure no-op - zero candle reads,
-   // zero allocations, zero observable side effects. That is the
-   // guarantee that FixedLot April still produces 585.17 / 1104.89 /
-   // 157.49 byte-identical post-R1.1a.
+   // Gate widened in R1.1b: detection runs whenever either consumer
+   // is on -
+   //   - Enable_S00_FvgScalp == true  : the entry logic in
+   //                                    CS00EntryLogic needs the
+   //                                    active FVG list.
+   //   - S00_DiagReport == true       : the diagnostic CSV needs
+   //                                    every accepted / rejected
+   //                                    FVG row.
+   // When both are off, the method is a pure no-op - zero candle
+   // reads, zero allocations, zero side effects.
    //
-   // When the diagnostic is on, runs at most once per new closed M5
-   // bar (dedupe via m_last_evaluated_bar_time) and appends one row
-   // per detected 3-candle FVG window - whether accepted or rejected
-   // by the filters.
+   // The diagnostic CSV write is gated separately on S00_DiagReport
+   // (further below) so the strategy can run without producing the
+   // detection report.
+   //
+   // Runs at most once per closed M5 bar (dedupe via
+   // m_last_evaluated_bar_time).
    //----------------------------------------------------------------
    void EvaluateOnNewBar(CFalconMarketContext &market_context)
    {
-      if(!S00_DiagReport)           return;
-      if(!EnsureIndicatorHandles()) return;
-      if(m_diag_file_name == "")
+      if(!Enable_S00_FvgScalp && !S00_DiagReport) return;
+      if(!EnsureIndicatorHandles())               return;
+      if(S00_DiagReport && m_diag_file_name == "")
          m_diag_file_name = FalconBuildReportFileName("S00_FvgDetection_Diagnostics");
 
       // CLOSED M5 bars: shift=3 (C1, oldest), shift=2 (C2, impulse),
@@ -249,7 +256,10 @@ public:
          rec.reject_reason = reject_reason;
       }
 
-      AppendDiagnosticsRow(rec, c3.close);
+      // R1.1b: CSV write gated separately - the strategy can run without
+      // producing the detection diagnostic report.
+      if(S00_DiagReport)
+         AppendDiagnosticsRow(rec, c3.close);
    }
 
    //----------------------------------------------------------------

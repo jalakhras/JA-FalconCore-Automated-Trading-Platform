@@ -7,7 +7,7 @@
 #define FALCON_CONSTANTS_MQH
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "R1_1a_labels"
+#define EA_VERSION_TAG "R1_1b"
 #define EA_BUILD_TAG   "StructuralBreakeven"
 
 #define FALCON_MTF_COUNT       6

@@ -133,6 +133,24 @@ Three permanent rules for MQL5 inputs. They apply to all new strategies (S00, S0
 
 ---
 
+## From R1.1b (entry logic + stop + target + 1:2 gate)
+
+38. **Entry has a one-bar built-in delay vs. spec wording.** The spec §2.3 says "entry on the open of the next bar." We implement this by waiting until bar T+1 is itself a CLOSED bar (shift=1 on the subsequent OnTick), then using `bar1.open` as entry price. This adds 5 minutes (the M5 bar length) from confirmation-detected to entry-recorded. The alternative — entering at "current tick price" on the very next tick after T closes — would require live-bar reads that the zero-lookahead rule forbids. The delay is the explicit cost of staying lookahead-safe; same-bar SL/TP checks recover most of it.
+
+39. **Same-bar SL+TP tie-break is conservative (assume SL fills first).** Without tick-level intra-bar order, we cannot know which side was hit first when both `bar.low <= SL` and `bar.high >= TP` happen on the same bar. R1.1b assumes SL — this systematically underweights winners on bars that close inside the gap-target window. Acceptable for R1.1b's primary goal (show S00 trades, get directional signal). R1.1c (runner) may revisit if it materially distorts results.
+
+40. **Swing-target scan walks 3-bar swings starting at k=2** to keep both neighbors closed (k-1 = 1 is also a closed bar; k+1 stays well within history). k=1 is excluded by construction. Result: the *most recent* qualifying swing is at minimum shift=2 from the entry bar — i.e., at most 10 minutes before entry on M5. For very fresh structure (entry right after a swing forms), the target may be further back than what a chart-eyeballing trader would mark. Worth re-checking after the first April trade report.
+
+41. **`m_active_trade` is a struct field, not a heap object** — keeping the single-trade-at-a-time rule statically enforced. If R1.1c wants to grow this into the multi-leg runner (initial leg + runner leg), one option is a small `m_legs[2]` array on the same class. Either way, no separate ledger / shadow-record store is needed for paper-only S00.
+
+42. **`S00_GapExpiry` counts bars from formation, including the formation bar itself.** First call after a new FVG lands sees `bars_elapsed_since_formation` go from 0 to 1 in the same OnTick where the detector pushed the gap. So with default `S00_GapExpiry = 20`, a gap stays watched for up to ~19 closed bars beyond its formation bar. Worth a small note in the eventual operator-facing docs.
+
+43. **The trade diagnostic CSV writes one row per CLOSED trade.** Open trades don't appear until they close (SL / TP / timeout). For a long backtest that ends mid-trade, the very last trade may be missing from the CSV. R1.1b does not implement a "force-close on OnDeinit" sweep; R1.1c can add one along with the runner/protect logic.
+
+44. **The paper-trade isolation pattern is reusable for S01..** Each new strategy will want its own `Enable_S0X_*` switch, its own state class, its own diagnostic CSV, and zero calls into the legacy Risk/Reporting/Execution pipeline. R1.1b establishes the template: gate the per-tick hook on the strategy switch, maintain state inside the strategy class, write diagnostics through `FalconBuildReportFileName(...)` for consistent naming. Document this pattern in the architecture doc once R1.1c is in.
+
+---
+
 ## Conventions for adding to this file
 
 - One bullet per idea. Keep it terse.
