@@ -50,6 +50,22 @@ Improvement ideas observed during the refactor. **None of these are implemented.
 
 ---
 
+## From R0.8c (globals reduction by classification)
+
+18. **Localized statics still carry the `g_` prefix.** R0.8c moved 9 file-scope globals into their owner functions as `static int g_fvg_quality_distribution_count = 0;` etc. — preserving the legacy name avoided touching the read/write sites and minimized diff. A future cosmetic commit could rename them to drop the misleading prefix. Not load-bearing; do it when you'd also be touching those functions for unrelated reasons.
+
+19. **The 48 deleted telemetry counters were a recurring pattern: instrument-first, hook-up-later, never-finished.** Each counter block was added with a comment promising it would land in the Summary report — and never did. Consider a rule for future telemetry: don't add the counter until you have the reporting consumer (or a tracked TODO with a deadline). Removing instrumentation later is cheaper than auditing dead state forever.
+
+20. **`g_report_period_initialized` / `_finalized` booleans were orphan state.** They look like the residue of an aborted state-machine: `Initialize` sets initialized=true, finalized=false; `Finalize` sets finalized=true. But nothing ever reads either — the calling code uses null-string checks on the tags instead. Suggests the state-machine version was never wired up and the field checks were rewritten the simple way without removing the booleans. Future similar patterns are worth grepping for.
+
+21. **The surviving 4 runtime singletons (`g_is_initialized`, `g_runtime_tick_counter`, `g_last_processed_m5_closed_candle_time`, `g_last_staged_fvg_candidate_id`) plus `g_falcon_session_start_balance`) could all be fields on a small `CFalconRuntimeState` class.** That would drop the file-scope global count to ~25 (mostly layer singletons + report period state). Out of scope for R0.8c (the spec is explicit: A class is untouched), but a clean R0.9 candidate when there's appetite for a small structural change.
+
+22. **`FalconOttuRouteTransaction` now has an empty body.** Its caller (`OnTradeTransaction` L5961) still invokes it. If the OnTradeTransaction surface ever gets a real broker-event router, this is the natural home; otherwise it can be deleted along with its call site in a follow-up. Left in place per R0.8c's minimum-touch rule.
+
+23. **`FalconRegisterFvgMicroCandidateMetrics` and `FalconRegisterFvgQualityCalibrationMetrics` became one-line wrappers** that just forward to the next layer. They could collapse into the call chain — but that's a function-signature change spread across multiple call sites. Defer until the FVG telemetry path is being touched for a real reason.
+
+---
+
 ## Conventions for adding to this file
 
 - One bullet per idea. Keep it terse.
