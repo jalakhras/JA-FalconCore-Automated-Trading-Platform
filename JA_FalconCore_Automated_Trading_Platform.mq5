@@ -1139,12 +1139,6 @@ bool FalconOttuSourcePolicyReady()
    return (StringLen(FALCON_OTTU_SOURCE_POLICY) > 0 && StringLen(FALCON_OTTU_STATE_POLICY) > 0);
 }
 
-// R0.9: kept intentionally as the documented OnTradeTransaction router.
-// The g_ottu_* counters are currently un-consumed by any reporting writer,
-// but the routing surface (DEAL_ADD / POSITION / unknown) is the natural
-// home for any future broker-event side-effect (e.g. a Summary aggregator
-// or a diagnostic CSV). See Docs/Ideas_Backlog.md #22 for the open question
-// of whether to surface these counts to a writer or retire them entirely.
 void FalconOttuRouteTransaction(const MqlTradeTransaction &trans)
 {
    g_ottu_transactions_observed++;
