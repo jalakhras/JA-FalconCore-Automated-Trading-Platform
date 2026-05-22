@@ -113,6 +113,8 @@ Three permanent rules for MQL5 inputs. They apply to all new strategies (S00, S0
 
 3. **New names are short, clear, and carry the strategy prefix (`S00_`, `S01_`, …).** Six chars of meaningful content (`S00_MinGap`) beats fifteen of repetition (`MinGapPoints`). Cleaning up confusing **pre-refactor** input names (e.g. the project-wide ones from `Enable*Reports` blocks) is a separate deferred sweep — do not mix it with strategy-level renames.
 
+4. **The trailing display comment on an input is part of its name.** In MQL5, the text after `// …` on an `input` line is what the operator sees in the parameter dialog — the variable name is invisible there. So the display comment must be a **clean functional description**: short English, present tense, what the operator decides with this knob. **Forbidden:** phase tags (`R1.1a`, `v0.57…`), development notes (`declared now`, `wired in R1.1b`, `Reserved for …`), incomplete sentences, references to internal symbols only the implementer would recognize. Discovered the hard way in R1.1a-labels — `S00_DiagReport`'s comment was so noisy the operator couldn't tell what the switch did.
+
 ## From R1.1a-fix (MaxGap filter + input cleanup)
 
 33. **April diagnostics surfaced anomalous gaps up to ~31,437 points** that passed all three R1.1a filters because the filters are floor-only (SIZE / ATR thrust / TREND). These are holiday session gaps and data-feed errors, not tradable patterns. The R1.1a-fix `S00_MaxGap = 6000` ceiling is calibrated to keep ~92% of accepted gaps (sits above the 90th percentile and below the outlier tail). The 6000 number is a starting point — re-tune once a wider data window (April + May + June) is available. Rejected gaps carry the `MAXSIZE` reason in the diagnostic CSV.
@@ -120,6 +122,14 @@ Three permanent rules for MQL5 inputs. They apply to all new strategies (S00, S0
 34. **`Enable_S00_FvgScalp` is declared but not wired yet.** R1.1a-fix puts it in its correct group (`STRATEGIES`) so the operator's view of the parameter dialog matches the eventual reality. R1.1b is the phase that wires it — at which point detector + entry logic will gate on the switch instead of on `S00_DiagReport`.
 
 35. **Filter chain order is now SIZE → MAXSIZE → ATR → TREND** (short-circuit, first failure wins). SIZE and MAXSIZE come first because they are pure-data checks with no indicator warm-up dependency — they always fire when relevant. ATR/TREND retain the warm-up skip pattern from R1.1a (zero ATR or zero MA ⇒ skip the filter so SIZE/MAXSIZE remain the gatekeepers).
+
+---
+
+## From R1.1a-labels (display-comment cleanup for S00 inputs)
+
+36. **A dedicated R1.x phase will rename, regroup, and re-comment the entire pre-refactor input surface.** Today there are still ~46 project-wide inputs from before R0 (`EnableMainReport`, `ReportProfile`, `EnableVirtualTrailingReport`, the R0.6b group switches, `MaxTradesPerDay`, etc.). Their names mix verbosity with TLA acronyms, their groups are sequence-numbered (`"01 - …"`, `"02 - …"`) rather than purpose-grouped, and several of their trailing comments carry version tags that have aged out of meaning. **High priority — independent phase. Must not be mixed with strategy build work** (R1.1b/c) so the diff stays reviewable. Naming will follow the three "Input design rules" + the R1.1a-labels rule 4 (clean functional display comments).
+
+37. **MQL5 has no compile-time check that the display comment matches reality.** Phase tags and stale TODOs in comments will accumulate again unless caught at code review. Consider a lightweight grep gate in CI / pre-commit that scans `Strategies/**/*.mqh` for `input.*//.*R1\.|input.*//.*v0\.` and similar phase / version markers — fails the commit if any input line carries a phase tag in its trailing comment. *Low priority — observation only.*
 
 ---
 

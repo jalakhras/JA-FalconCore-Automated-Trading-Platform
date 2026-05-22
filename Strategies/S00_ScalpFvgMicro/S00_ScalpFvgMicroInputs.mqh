@@ -30,17 +30,17 @@
 // switches will land here as they come online.
 //------------------------------------------------------------------
 input group "═══ STRATEGIES ═══";
-input bool   Enable_S00_FvgScalp   = true;    // R1.1a-fix: declared now; wired to the chain in R1.1b. R1.1a-fix is still detection-only.
+input bool   Enable_S00_FvgScalp   = true;    // Enable the S00 FVG Scalp strategy
 
 //------------------------------------------------------------------
 // S00 FVG Scalp parameters. Six inputs - tuned by test, not by guess.
 //------------------------------------------------------------------
 input group "── S00 FVG Scalp ──";
-input double S00_MinGap            = 30.0;    // SIZE filter floor (points).
-input double S00_MaxGap            = 6000.0;  // R1.1a-fix: MAXSIZE filter ceiling (points). Rejects holiday/data outliers; April keeps ~92% of accepted gaps, sits above the 90th pct.
-input double S00_GapAtrMult        = 0.5;     // ATR filter: gap >= ATR(M5) x multiplier.
-input int    S00_TrendMA           = 50;      // TREND filter: SMA(M5, close) period.
-input int    S00_GapExpiry         = 20;      // Reserved for R1.1b (gap expiry, bars).
-input bool   S00_DiagReport        = false;   // R0.6b-style gate: off by default. When true, R1.1a writes S00_FvgDetection_Diagnostics.csv.
+input double S00_MinGap            = 30.0;    // Minimum FVG size to trade (points)
+input double S00_MaxGap            = 6000.0;  // Maximum FVG size - rejects abnormal gaps (points)
+input double S00_GapAtrMult        = 0.5;     // FVG strength filter: gap >= ATR x this value
+input int    S00_TrendMA           = 50;      // Trend filter SMA period (M5)
+input int    S00_GapExpiry         = 20;      // Bars before an untouched FVG expires
+input bool   S00_DiagReport        = false;   // S00 FVG detection diagnostic report (on/off)
 
 #endif // FALCON_S00_SCALPFVGMICRO_INPUTS_MQH

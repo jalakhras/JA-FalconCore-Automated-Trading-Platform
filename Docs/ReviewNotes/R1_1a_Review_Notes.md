@@ -1,10 +1,12 @@
 # R1.1a — S00 ScalpFvgMicro: FVG Detection + Three Quality Filters
 
-**Branch:** `refactor` &nbsp;|&nbsp; **Base:** R0.9 (commit `d0c880f`) &nbsp;|&nbsp; **Last updated:** R1.1a-fix.
+**Branch:** `refactor` &nbsp;|&nbsp; **Base:** R0.9 (commit `d0c880f`) &nbsp;|&nbsp; **Last updated:** R1.1a-labels.
 
 R1.1a opens R1.x — the strategy work that the R0 refactor cleared the path for. Scope is tightly bounded per spec §0 ("R1.1a builds the eye — the part that *sees* valid gaps; no trades"). Detection + filtering + a diagnostic CSV. The strategy is not activated; the existing FixedLot April numbers stay locked.
 
-> **R1.1a-fix update (this section header):** April diagnostics on R1.1a surfaced two issues — anomalous outlier gaps that passed the floor-only filters, and unwieldy input naming. R1.1a-fix addresses both inside this same phase before R1.1b lands the entry logic. See §11 for the fix details and §2 for the re-verified lookahead audit.
+> **R1.1a-fix update:** April diagnostics on R1.1a surfaced two issues — anomalous outlier gaps that passed the floor-only filters, and unwieldy input naming. R1.1a-fix addresses both inside this same phase before R1.1b lands the entry logic. See §11 for the fix details.
+>
+> **R1.1a-labels update:** R1.1a-fix produced clean variable names but the trailing display comments on the seven S00 inputs were still cluttered with phase tags and dev-notes (`R1.1a-fix: declared now; wired to the chain in R1.1b`, etc.) — and MT5 shows that comment text, not the variable name, in the parameter dialog. R1.1a-labels rewrites those seven comments only. Comment-only, no variable / value / logic / group changes. See §12.
 
 ---
 
@@ -270,4 +272,59 @@ The R1.1a-fix spec is explicit that the rename applies only to the six new S00 i
 
 ---
 
-*End of R1.1a review notes (now including the R1.1a-fix calibration + naming pass). Eye built — does not blink at the live bar; rejects outliers above 6000 points; six inputs in two groups; settled-standard ATR period demoted to `#define`. Numbers stay locked at the R0.8b baseline. R1.1b is next.*
+## 12. R1.1a-labels (display-comment cleanup for the seven S00 inputs)
+
+### 12.1 Why this pass exists
+
+The R1.1a-fix commit produced clean **variable names** but the trailing display comments (the text after `// …` on each `input` line) still carried R1.1a-fix-internal phrasing:
+
+```
+input bool Enable_S00_FvgScalp = true;   // R1.1a-fix: declared now; wired to the chain in R1.1b. R1.1a-fix is still detection-only.
+input bool S00_DiagReport      = false;  // R0.6b-style gate: off by default. When true, R1.1a writes S00_FvgDetection_Diagnostics.csv.
+```
+
+These are **the strings MetaTrader 5 displays in the parameter dialog** — the variable name itself is invisible there. So `Enable_S00_FvgScalp` shows up to the operator as the literal sentence above, which mixes phase tags, internal dev notes (`declared now`, `wired in …`), and incomplete thoughts. An operator opening the inputs dialog cannot tell what `S00_DiagReport` actually controls without reading the source.
+
+### 12.2 Scope — comment text only
+
+R1.1a-labels rewrites the seven trailing comments to clean functional descriptions per the spec §1 table:
+
+| Variable (unchanged) | Old display comment | New display comment |
+|---|---|---|
+| `Enable_S00_FvgScalp` | `R1.1a-fix: declared now; wired to the chain in R1.1b. R1.1a-fix is still detection-only.` | `Enable the S00 FVG Scalp strategy` |
+| `S00_MinGap` | `SIZE filter floor (points).` | `Minimum FVG size to trade (points)` |
+| `S00_MaxGap` | `R1.1a-fix: MAXSIZE filter ceiling (points). Rejects holiday/data outliers; April keeps ~92% of accepted gaps, sits above the 90th pct.` | `Maximum FVG size - rejects abnormal gaps (points)` |
+| `S00_GapAtrMult` | `ATR filter: gap >= ATR(M5) x multiplier.` | `FVG strength filter: gap >= ATR x this value` |
+| `S00_TrendMA` | `TREND filter: SMA(M5, close) period.` | `Trend filter SMA period (M5)` |
+| `S00_GapExpiry` | `Reserved for R1.1b (gap expiry, bars).` | `Bars before an untouched FVG expires` |
+| `S00_DiagReport` | `R0.6b-style gate: off by default. When true, R1.1a writes S00_FvgDetection_Diagnostics.csv.` | `S00 FVG detection diagnostic report (on/off)` |
+
+### 12.3 What did NOT change
+
+- **No variable name** modified. `Enable_S00_FvgScalp`, `S00_MinGap`, `S00_MaxGap`, `S00_GapAtrMult`, `S00_TrendMA`, `S00_GapExpiry`, `S00_DiagReport` — all identical to R1.1a-fix.
+- **No default value** modified.
+- **No input group** moved or renamed. `═══ STRATEGIES ═══` still sits above `── S00 FVG Scalp ──`, exactly the order R1.1a-fix established.
+- **No `#define`** changed.
+- **No project-wide pre-refactor input** touched. The 46+ legacy inputs (`EnableMainReport`, `ReportProfile`, R0.6b group switches, …) keep their existing comments — cleaning them is a separate dedicated R1.x phase per `Docs/Ideas_Backlog.md` #36.
+- **No code in `S00_FvgDetector.mqh` or `S00_FvgQualityFilter.mqh`** touched. They reference the variables by name, and names are unchanged, so they are spared this pass entirely.
+- **Lookahead surface** — re-checked, identical to R1.1a-fix. No new read sites. Same `start=1` CopyBuffer reads and `shift >= 1` candle reads.
+
+### 12.4 Behavior expectation
+
+R1.1a-labels is a **pure cosmetic display change** — the MQL5 compiler treats trailing `// …` comments as discardable text. The compiled `.ex5` differs from R1.1a-fix only in the embedded `EA_VERSION_TAG` literal (`R1_1a_fix` → `R1_1a_labels`, which only affects report filenames).
+
+**FixedLot April backtest:** `RawNetUSD = 585.17`, `FinalWorkingNetUSD = 1104.89`, broker net `157.49` — locked, unchanged from R0.8b → R0.9 → R1.1a → R1.1a-fix → R1.1a-labels.
+
+### 12.5 Touch surface (R1.1a-labels only)
+
+| File | Change |
+|---|---|
+| `Strategies/S00_ScalpFvgMicro/S00_ScalpFvgMicroInputs.mqh` | Seven trailing-comment edits per §12.2 table. Zero structural change. |
+| `Core/FalconConstants.mqh` | `EA_VERSION_TAG`: `R1_1a_fix` → `R1_1a_labels`. |
+| `Docs/Ideas_Backlog.md` | "Input design rules" extended with rule 4 (display comments are part of the operator-visible name); new items 36-37 (dedicated R1.x phase for pre-refactor input cleanup; optional CI grep gate for phase tags in comments). |
+| `Docs/ReviewNotes/R1_1a_Review_Notes.md` | This §12 added; header note updated. |
+| `Docs/Specs/JA_FalconCore_R1_1a_labels_SPEC.md` | Added (moved from root per convention). |
+
+---
+
+*End of R1.1a review notes (now including R1.1a-fix calibration + naming pass, plus R1.1a-labels display-comment cleanup). Eye built — does not blink at the live bar; rejects outliers above 6000 points; seven inputs in two groups with clean operator-facing labels; settled-standard ATR period demoted to `#define`. Numbers stay locked at the R0.8b baseline. R1.1b is next.*
