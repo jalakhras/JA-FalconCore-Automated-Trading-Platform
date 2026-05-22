@@ -1,6 +1,6 @@
 # R1.1b — S00 ScalpFvgMicro: Entry Logic + Stop + Target + 1:2 Gate
 
-**Branch:** `refactor` &nbsp;|&nbsp; **Base:** R1.1a-labels (commit `8787b48`) &nbsp;|&nbsp; **Last updated:** R1.1b-diag.
+**Branch:** `refactor` &nbsp;|&nbsp; **Base:** R1.1a-labels (commit `8787b48`) &nbsp;|&nbsp; **Last updated:** R1.1b-purity.
 
 R1.1a built the *eye* — FVG detection + quality filters. R1.1b builds the *hand* — the per-FVG state machine that opens a paper trade when the spec's revisit-and-confirm pattern is satisfied, with a stop just past the gap edge, a target at the nearest swing, and an explicit 1:2 cost gate that refuses entries with insufficient room. S00 stays **paper-isolated**: no broker orders, no calls into the legacy Risk / Reporting / Execution pipeline, no touch on the existing R0.8b chain numbers.
 
@@ -314,4 +314,80 @@ Same 9 call sites as post-R1.1b (Detector × 3, TradePlan × 6, EntryLogic × 1)
 
 ---
 
-*End of R1.1b review notes (now including the R1.1b-diag observability pass). The hand is built and now wears a glove with sensors — does not blink at the live bar, refuses entries with room less than 1:2, and writes 20 columns per closed trade so we can see WHY each one died. R1.1c (runner + protect) waits until we read the data and decide what to actually fix.*
+## 14. R1.1b-purity (confirmation candle purity gate)
+
+### 14.1 Why this pass exists
+
+The R1.1b-diag April CSV exposed that several losing trades had nominally "passing" confirmation candles whose large body sat inside a much larger range — a candle that prints `body=80pt` against `range=300pt` is mostly wick, indicating indecision (the bar opened, ran one way, ran the other, closed somewhere in between). The R1.1b body-points filter (`S00_MinConfirmBody`) accepted those because the body alone was big enough; it lacked any sense of "how much of the candle is body."
+
+R1.1b-purity adds a second gate alongside the body filter:
+
+```
+purity = |close - open| / (high - low)
+purity must be >= S00_MinConfirmPurity   (default 0.35)
+```
+
+A candle with purity `≥ 0.35` has at least 35% of its range as body — a "clean" candle. Choppy bars with body buried inside long wicks get rejected.
+
+### 14.2 What changed (per the user prompt)
+
+| File | Change |
+|---|---|
+| `Strategies/S00_ScalpFvgMicro/S00_ScalpFvgMicroInputs.mqh` | One new input added immediately after `S00_MinConfirmBody`: `S00_MinConfirmPurity = 0.35` with the display comment `Minimum confirmation candle purity (body / range)`. Stays in the existing `── S00 FVG Scalp ──` group. |
+| `Strategies/S00_ScalpFvgMicro/S00_EntryLogic.mqh` | `IsConfirmationCandle` gains the purity gate **after** the body gate, **before** the direction gate. Both conditions must pass. Degenerate bars (`high == low`) are rejected up front (would divide by zero). Bodies + range read from the same `bar` parameter the caller (step 3d) is already holding; no new candle read site. |
+| `Core/FalconConstants.mqh` | `EA_VERSION_TAG`: `R1_1b_diag` → `R1_1b_purity`. |
+
+What stayed identical:
+- FVG detection (`S00_FvgDetector.mqh`) — untouched.
+- The three quality filters in `S00_FvgQualityFilter.mqh` (SIZE / MAXSIZE / ATR / TREND) — untouched.
+- Invalidation, expiry, stop placement, target search, 1:2 ratio gate — untouched.
+- Same-bar fill ordering (SL first on tie) — untouched.
+- MFE / MAE tracking + the 20-column trades CSV — untouched.
+- Paper isolation — S00 still doesn't call into Risk / Reporting / Execution.
+
+### 14.3 Lookahead re-check
+
+The new computation reads `bar.open`, `bar.close`, `bar.high`, `bar.low` — all fields of the same `FalconCandleSnapshot` that the caller already passed in from `GetCandleSnapshot(PERIOD_M5, 1, bar1)` at the top of `EvaluateOnNewBar`. No new `GetCandleSnapshot` / `CopyBuffer` / `iClose` call. The lookahead audit table from §2 still holds — same 9 read sites as post-R1.1b-diag, none of them touched.
+
+### 14.4 Behavior expectation
+
+The 26 April trades from R1.1b / R1.1b-diag will NOT all reproduce — R1.1b-purity tightens the confirmation gate, so the subset of trades whose confirmation candle had purity `< 0.35` will be filtered out. Expected outcome:
+- **Fewer trades** (some confirmations no longer qualify).
+- **Higher win rate** if the filtered-out trades were systematically losers.
+- **Lower total exposure** to the choppy-confirmation failure mode.
+
+The actual numbers will come from the next April run. The `S00_MinConfirmPurity = 0.35` default is a starting point per the spec's "tuned by test" principle.
+
+### 14.5 What did NOT happen
+
+- No change to the FVG detection geometry or its filters.
+- No new diagnostic column. R1.1b-purity is a *filter change*; the existing `ConfirmBodyPoints` + `ConfirmRangePoints` columns from R1.1b-diag already let an analyst compute purity from the CSV. Adding a separate "ConfirmPurity" column would duplicate data.
+- No address of the orthogonal "entry location" failure mode (`PenetrationDepth` / `EntryVsGapMid`). Logged as Backlog #52: a `S00_MaxPenetrationFraction` gate is the natural follow-up if the April + May data shows deep-penetration setups underperform.
+- No SPEC file was found on disk under the name `JA_FalconCore_R1_1b_purity_SPEC.md` at execution time. The implementation followed the user's prompt verbatim. The two backlog items the prompt referenced as "§6" — the wave-analysis strategy vision and the `PenetrationDepth` observation — were captured as `Docs/Ideas_Backlog.md` #51 and #52 from the prompt's wording.
+
+### 14.6 Touch surface (R1.1b-purity only)
+
+| File | Change |
+|---|---|
+| `Strategies/S00_ScalpFvgMicro/S00_ScalpFvgMicroInputs.mqh` | +1 line: `S00_MinConfirmPurity = 0.35`. |
+| `Strategies/S00_ScalpFvgMicro/S00_EntryLogic.mqh` | `IsConfirmationCandle` body extended with the purity gate + a header comment block explaining the gate. ~15 lines net. |
+| `Core/FalconConstants.mqh` | `EA_VERSION_TAG` bump. |
+| `Docs/Ideas_Backlog.md` | Items 51, 52 added (wave-analysis vision; `PenetrationDepth` follow-up). |
+| `Docs/ReviewNotes/R1_1b_Review_Notes.md` | This §14 added; header note updated. |
+
+### 14.7 Acceptance status
+
+| Criterion | Status |
+|---|---|
+| `IsConfirmationCandle` adds a purity gate alongside the body gate | ✓ §14.2 |
+| Both conditions must pass | ✓ short-circuit `if(purity < S00_MinConfirmPurity) return false;` between body check and direction return |
+| Input `S00_MinConfirmPurity` exists with default 0.35, clean label, in S00 group | ✓ |
+| No change to FVG detection / filters / invalidation / expiry / stop / target / 1:2 | ✓ §14.2 + §14.5 |
+| No lookahead | ✓ §14.3 |
+| Paper isolation preserved | ✓ |
+| `EA_VERSION_TAG = R1_1b_purity` | ✓ |
+| Review notes + Backlog updated | ✓ |
+
+---
+
+*End of R1.1b review notes (now including the R1.1b-diag observability pass and the R1.1b-purity confirmation-candle filter). The hand is built, the glove has sensors, and the trigger now requires a clean candle rather than just a wide one. R1.1c (runner + protect) waits until the data tells us what to fix next.*

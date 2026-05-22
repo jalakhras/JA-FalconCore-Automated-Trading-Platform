@@ -145,13 +145,36 @@ private:
       return (bar.low <= tf.fvg.ce && bar.high >= tf.fvg.ce);
    }
 
-   // Confirmation candle: correct direction + minimum body size.
+   // Confirmation candle: correct direction + minimum body size +
+   // minimum purity (R1.1b-purity).
+   //
+   // R1.1b-purity adds a second gate alongside the body-size gate:
+   //   purity = |close - open| / (high - low)
+   //   purity must be >= S00_MinConfirmPurity for the candle to qualify.
+   //
+   // Rationale: the R1.1b-diag April CSV showed that many failed
+   // entries had large bodies that nonetheless lived inside larger
+   // wicks - a candle that prints body=80pt but range=300pt is mostly
+   // wick, indicating indecision rather than commitment. The purity
+   // ratio filters those out without changing the body floor.
+   //
+   // No lookahead: `bar` here is the closed M5 bar at shift=1 passed
+   // in by the caller (step 3d). The new computation reads only the
+   // bar's already-closed open / close / high / low.
    bool IsConfirmationCandle(const ENUM_S00_FVG_DIRECTION dir,
                              const FalconCandleSnapshot &bar) const
    {
-      const double point = (_Point > 0.0 ? _Point : 1.0);
-      const double body_points = MathAbs(bar.close - bar.open) / point;
+      const double point      = (_Point > 0.0 ? _Point : 1.0);
+      const double body_abs   = MathAbs(bar.close - bar.open);
+      const double body_points = body_abs / point;
       if(body_points < S00_MinConfirmBody) return false;
+
+      // R1.1b-purity gate.
+      const double range = bar.high - bar.low;
+      if(range <= 0.0) return false;     // degenerate / dotted bar; reject
+      const double purity = body_abs / range;
+      if(purity < S00_MinConfirmPurity) return false;
+
       if(dir == S00_FVG_DIR_BULLISH) return (bar.close > bar.open);
       if(dir == S00_FVG_DIR_BEARISH) return (bar.open > bar.close);
       return false;

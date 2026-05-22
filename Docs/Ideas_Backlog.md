@@ -167,6 +167,14 @@ Three permanent rules for MQL5 inputs. They apply to all new strategies (S00, S0
 
 ---
 
+## From R1.1b-purity (confirmation candle purity gate)
+
+51. **Wave-analysis strategy vision.** The current S00 reads each FVG as a single revisit-and-continue pattern. The R1.1b April diagnostic CSV — especially the new `PenetrationDepth` and `ConfirmRangePoints` columns — hints that the same gap can sit inside very different multi-bar wave structures (sharp impulse + shallow pullback vs. messy choppy approach + reversal candle inside the gap). A future strategy could classify gaps by the *wave context* before deciding to trade them: e.g., reject a long when the approach to CE came down in three clean impulse legs (likely continuation of the down-move, not a reversal). Out of scope for R1.1b/c — but worth keeping in view as the analysis tooling matures. The pattern would be: aggregate the diagnostic CSV across many runs → cluster trade outcomes by wave-structure features → propose explicit wave classifications as inputs.
+
+52. **`PenetrationDepth` observation.** R1.1b-purity introduces a body-vs-range filter on the confirmation candle, which addresses the "weak signal" failure mode surfaced by the R1.1b diagnostic. It does NOT yet address the orthogonal "bad entry location" failure mode that `PenetrationDepth` and `EntryVsGapMid` expose. The natural follow-up is a `S00_MaxPenetrationFraction` gate (rejecting setups where price already penetrated >X% of the gap before confirmation) — but only after the April + May data shows that deep-penetration setups underperform shallow-penetration setups by a margin worth the added complexity. **Defer until the data is in.** Keep `PenetrationDepth` in the CSV regardless; it's the input to that decision.
+
+---
+
 ## Conventions for adding to this file
 
 - One bullet per idea. Keep it terse.
