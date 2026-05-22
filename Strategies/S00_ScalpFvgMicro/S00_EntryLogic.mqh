@@ -3,6 +3,15 @@
 //| R1.1b - per-FVG state machine: revisit, confirm, entry-pending;  |
 //| single open paper trade with SL / TP / timeout; trades CSV.      |
 //|                                                                  |
+//| R1.2b - the strategy is no longer strictly paper-isolated. At    |
+//| trade open (step 3e), if all three gates pass (MQL_TESTER +      |
+//| EnableRealExecution + S00_RealExecution), a single               |
+//| TryOpenFromShadowRecord call is made via g_broker_entry_bridge   |
+//| using FC_MAGIC_FVG_MICRO. With any gate shut (default), the file |
+//| stays paper-only verbatim - no bridge call, no broker order.     |
+//| The close path is still paper-only in R1.2b (R1.2c will wire     |
+//| real close + dual reporting).                                    |
+//|                                                                  |
 //| State machine per active FVG (pulled from CS00FvgDetector):      |
 //|   WAITING_REVISIT -> REVISITED -> ENTRY_PENDING -> DROPPED       |
 //|                                                                  |
@@ -105,6 +114,20 @@ struct S00PaperTrade
    //   No partial close, no trailing - one knob, one effect.
    bool                        breakeven_armed;         // has the BE protection fired?
    datetime                    breakeven_arm_bar_time;  // bar.time at which BE armed
+   // R1.2b: real broker execution result. Populated at trade open
+   // when all three gates pass (MQL_TESTER + EnableRealExecution +
+   // S00_RealExecution); stays false / 0.0 when any gate is shut.
+   //   real_entry_attempted = the bridge.TryOpenFromShadowRecord
+   //                          call was issued at open.
+   //   real_entry_accepted  = bridge returned true (OrderSend done).
+   //   real_entry_price     = ASK (BUY) or BID (SELL) captured at
+   //                          submission; matches the bridge's own
+   //                          price read in the tester frame.
+   //   real_entry_slippage  = real_entry_price - paper entry_price.
+   bool                        real_entry_attempted;
+   bool                        real_entry_accepted;
+   double                      real_entry_price;
+   double                      real_entry_slippage;
 };
 
 class CS00EntryLogic
@@ -218,7 +241,14 @@ private:
             // R1.2a - fixed-lot size captured at trade open. Paper
             // trades carry this for the eventual real-execution
             // ticket; no broker order is sent in R1.2a.
-            "LotSize";
+            "LotSize,"
+            // R1.2b - real broker fill price + slippage. Populated
+            // only when the three real-execution gates passed AND
+            // the bridge accepted the order; empty otherwise. The
+            // slippage column is the first hard signal of broker
+            // cost (the R1.2b purpose: see first real numbers
+            // before committing R1.2c to the dual-report).
+            "RealEntryPrice,RealEntrySlippage";
       FileWriteString(handle, header + "\r\n");
       FileClose(handle);
       m_trades_header_written = true;
@@ -268,7 +298,10 @@ private:
             // R1.1c-fix column
             (t.breakeven_armed ? "YES" : "NO")                + "," +
             // R1.2a column
-            DoubleToString(t.lot_size,                     2);
+            DoubleToString(t.lot_size,                     2) + "," +
+            // R1.2b columns - empty unless the bridge accepted
+            (t.real_entry_accepted ? DoubleToString(t.real_entry_price, _Digits) : "") + "," +
+            (t.real_entry_accepted ? DoubleToString(t.real_entry_slippage, 1)    : "");
       FileWriteString(handle, row + "\r\n");
       FileClose(handle);
    }
@@ -419,11 +452,16 @@ public:
    //   - Enable_S00_FvgScalp == false  -> pure no-op.
    //   - Once per new closed M5 bar    -> dedupe via m_last_bar_time.
    //
-   // PAPER ISOLATION (spec §6): this method NEVER calls into the
-   // legacy g_report_writer / g_broker_entry_bridge / g_shadow_executor
-   // pipeline. S00's trades are kept in m_active_trade and (optionally)
-   // written to S00_Trades_Diagnostics.csv only. The legacy FixedLot
-   // April numbers therefore remain locked.
+   // PAPER ISOLATION (spec §6) - and where R1.2b breaks it: when ALL
+   // three real-execution gates pass (MQL_TESTER + EnableRealExecution
+   // + S00_RealExecution), step 3e issues a single
+   // g_broker_entry_bridge.TryOpenFromShadowRecord(...) call and
+   // captures the real fill price / slippage onto m_active_trade.
+   // With ANY gate shut (the default), this method is paper-isolated
+   // verbatim - no bridge call, no broker order - so the legacy
+   // FixedLot April numbers stay locked at 585.17 / 1104.89 / 157.49.
+   // The close path is still paper-only in R1.2b (R1.2c will wire
+   // real close + dual paper-vs-real reporting).
    //----------------------------------------------------------------
    void EvaluateOnNewBar(CFalconMarketContext &market_context)
    {
@@ -586,6 +624,74 @@ public:
             m_active_trade.bars_from_fvg_to_entry   = (int)((m_active_trade.entry_time - m_tracked[i].fvg.formation_time) / 300);
             m_active_trade.mfe_points = 0.0;
             m_active_trade.mae_points = 0.0;
+
+            // R1.2b: real broker execution wiring. Three gates -
+            // MQL_TESTER + EnableRealExecution + S00_RealExecution -
+            // ALL must pass for an order to leave the strategy.
+            //   Gates 1 + 2 are also enforced inside the bridge
+            //   (TesterEntryAllowed); we check all three here so the
+            //   call site itself documents the safety contract.
+            // The bridge call sits BEFORE the same-bar SL/TP check
+            // below: a same-bar fill still gets its real-entry data
+            // into the CSV row written by CloseActiveTrade.
+            // Magic number: FC_MAGIC_FVG_MICRO (the same magic used
+            //   by the legacy FVG_MICRO_RETEST strategy). With
+            //   S00_RealExecution = true the legacy strategy is
+            //   forced dark by R1.2a's coexistence gate, so the magic
+            //   is uniquely S00's during the run - no collision.
+            // R1.2c will wire the real close + dual paper-vs-real
+            //   report; R1.2b ships entry only.
+            // MQL5 two-pass parse resolves g_broker_entry_bridge /
+            //   g_report_writer (declared further down in main .mq5)
+            //   inside this class method body, same pattern the
+            //   detector uses for FalconBuildReportFileName.
+            m_active_trade.real_entry_attempted = false;
+            m_active_trade.real_entry_accepted  = false;
+            m_active_trade.real_entry_price     = 0.0;
+            m_active_trade.real_entry_slippage  = 0.0;
+            if(MQLInfoInteger(MQL_TESTER)
+               && EnableRealExecution
+               && S00_RealExecution)
+            {
+               FalconShadowTradeRecord s00_record;
+               ZeroMemory(s00_record);
+               s00_record.shadow_id     = "S00_SCALP_FVG_" + IntegerToString((long)m_active_trade.entry_time);
+               s00_record.strategy_id   = "S00_SCALP_FVG";
+               s00_record.strategy_name = "S00 Scalp FVG Micro";
+               s00_record.engine_id     = "S00_SCALP_FVG";
+               s00_record.direction     = (m_active_trade.direction == S00_FVG_DIR_BULLISH
+                                            ? FALCON_DIRECTION_BUY : FALCON_DIRECTION_SELL);
+               s00_record.status        = FALCON_SHADOW_RECORD_STAGED;
+               s00_record.entry_time    = m_active_trade.entry_time;
+               s00_record.lot_size      = m_active_trade.lot_size;
+               s00_record.entry_price   = m_active_trade.entry_price;
+               s00_record.structural_sl = m_active_trade.stop_loss;
+               // S00 trades a single TP. Mirror it across tp1/tp2/tp3
+               // so the bridge's plan validator (which reads all
+               // three) sees a consistent target. Multi-leg / runner
+               // is out of scope for R1.2b.
+               s00_record.tp1           = m_active_trade.target;
+               s00_record.tp2           = m_active_trade.target;
+               s00_record.tp3           = m_active_trade.target;
+               s00_record.is_closed     = false;
+
+               // Capture ASK/BID NOW so the value matches what the
+               // bridge reads a few statements later (same OnTick,
+               // same tick frame). In the tester this is the
+               // canonical fill price for a market deal.
+               const double request_price = (s00_record.direction == FALCON_DIRECTION_BUY
+                                              ? SymbolInfoDouble(_Symbol, SYMBOL_ASK)
+                                              : SymbolInfoDouble(_Symbol, SYMBOL_BID));
+
+               m_active_trade.real_entry_attempted = true;
+               const bool accepted = g_broker_entry_bridge.TryOpenFromShadowRecord(s00_record, g_report_writer);
+               m_active_trade.real_entry_accepted = accepted;
+               if(accepted && request_price > 0.0)
+               {
+                  m_active_trade.real_entry_price    = request_price;
+                  m_active_trade.real_entry_slippage = request_price - m_active_trade.entry_price;
+               }
+            }
 
             // FVG consumed.
             m_tracked[i].state       = S00_TRACK_DROPPED;
