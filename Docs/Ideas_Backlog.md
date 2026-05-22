@@ -83,7 +83,23 @@ Improvement ideas observed during the refactor. **None of these are implemented.
 
 25. **R0.8c re-attempt opportunity.** The classification + cleanup approach (48 dead, 9 localize) was correct; the rollback was a tooling/process decision, not a logic disagreement (the review notes survived, the EA_VERSION_TAG stayed bumped). If a future maintenance window opens with bandwidth for re-verification, the same diff is reapplyable from the R0.8c review-notes table. **Deferred — post-R0.**
 
-26. **Two `Strategies/` files are placeholders** (`FalconStrategies_Placeholder.mqh`, `Strategies/S00_ScalpFvgMicro/FalconScalpFvgMicro_Placeholder.mqh`). Same for `TradeManagement/FalconTradeManagement_Placeholder.mqh`. These exist as folder-shape markers so the layout matches the spec. R1.x will populate the S00 scalp strategy; the placeholder file pattern can be retired then. *Observational, no action needed.*
+26. **Two `Strategies/` files are placeholders** (`FalconStrategies_Placeholder.mqh`, `Strategies/S00_ScalpFvgMicro/FalconScalpFvgMicro_Placeholder.mqh`). Same for `TradeManagement/FalconTradeManagement_Placeholder.mqh`. These exist as folder-shape markers so the layout matches the spec. R1.x will populate the S00 scalp strategy; the placeholder file pattern can be retired then. *Observational, no action needed.* **R1.1a partial:** `Strategies/S00_ScalpFvgMicro/` now contains real R1.1a files (`S00_*.mqh` + `ScalpFvgMicro_SPEC.md`). The `FalconScalpFvgMicro_Placeholder.mqh` shell can be retired in R1.1b/c when the strategy class formally lands.
+
+---
+
+## From R1.1a (FVG detection + three quality filters)
+
+27. **R1.1a entry point is a self-gated one-line OnTick hook.** `g_s00_fvg_detector.EvaluateOnNewBar(g_market_context)` self-checks `EnableFvgDetectionDiagnostics` and dedupes per closed M5 bar. This is the minimum-touch wiring that satisfies both "the strategy is not activated by default" and "running with the diagnostic on must produce the CSV". When R1.1b lands the entry logic, this hook will become the strategy's main per-tick driver — at which point the self-gate moves to a higher-level `EnableScalpFvgMicroStrategy` switch.
+
+28. **ATR/MA handles are lazy-initialized inside the detector.** First call to `EvaluateOnNewBar` allocates them via `iATR` / `iMA`. There is no `OnDeinit`-side `IndicatorRelease(handle)`. MQL5 cleans up indicator handles on EA unload, but for the strategy's long-term hygiene, an explicit `Deinit()` method on `CS00FvgDetector` that releases the handles is a small win. **Deferred — R1.1b.**
+
+29. **The active-FVG list (`m_active_fvgs`) is an unbounded array.** R1.1a only ever appends. R1.1b will need a sweep on each new bar that retires gaps past `GapExpiryBars` or invalidated by close-through. Until R1.1b lands, the array grows over a backtest run — measure memory if a full-year backtest is attempted with the diagnostic on.
+
+30. **The diagnostic CSV writes one row per detected gap pattern, not one row per bar.** Bars with no 3-candle gap produce nothing. This matches the spec's intent ("صفّ لكل فجوة مكتشَفة") but means analysts comparing "FVG/bar density" must compute the bar count separately from MT5's tester report. Worth a one-line note in the eventual analysis tooling.
+
+31. **The trend filter (3.3) treats `trend_ma_m5 == 0` as "skip filter".** Same for ATR (3.2). This keeps the SIZE filter (3.1) as the meaningful gatekeeper during indicator warm-up bars (first `max(AtrPeriod, TrendMaPeriod)` closed bars after Init), which is the safest default. Worth re-evaluating once R1.1b's entry logic depends on these filters being authoritative — a "warm-up complete" flag may be useful.
+
+32. **MQL5 input naming.** R1.1a uses unprefixed names (`MinGapPoints`, `AtrPeriod`, etc.) because the spec listed them unprefixed. Future strategies (S01, S02) will need their own filter parameters — at that point a `S00_` prefix sweep is the natural ergonomics fix. **Deferred — R1.x as strategies multiply.**
 
 ---
 

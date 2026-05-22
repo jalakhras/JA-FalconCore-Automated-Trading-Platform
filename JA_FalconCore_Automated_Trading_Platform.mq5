@@ -77,6 +77,17 @@
 #include "Router/FalconStrategyRegistry.mqh"
 #include "Router/FalconStrategyAdapterShell.mqh"
 
+// R1.1a: S00 ScalpFvgMicro strategy - FVG detection + three quality
+// filters. Detection-only in R1.1a (no entry, no trades). Inputs
+// must precede the class .mqh files (used at class scope). The
+// detector references FalconBuildReportFileName / FalconReport*CsvFlags
+// / FalconTimeToString defined later in this .mq5; MQL5's two-pass
+// parse handles that forward reference for class-method bodies, same
+// pattern R0.7cd used for g_risk_lifecycle_processor.
+#include "Strategies/S00_ScalpFvgMicro/S00_ScalpFvgMicroInputs.mqh"
+#include "Strategies/S00_ScalpFvgMicro/S00_FvgQualityFilter.mqh"
+#include "Strategies/S00_ScalpFvgMicro/S00_FvgDetector.mqh"
+
 
 // ==================================================================
 // v0.57.0 Lock Parity Executability Decomposer - report names
@@ -6013,6 +6024,15 @@ void OnTick()
       if(should_write_lifecycle_tick_snapshot)
          g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
    }
+
+   // R1.1a: S00 ScalpFvgMicro FVG detection hook. The method
+   // self-gates on EnableFvgDetectionDiagnostics (off by default) and
+   // dedupes per closed M5 bar, so this is a pure no-op in the
+   // default tree - FixedLot April still produces the locked
+   // 585.17 / 1104.89 / 157.49 numbers. When the diagnostic is on, it
+   // emits S00_FvgDetection_Diagnostics.csv rows (zero lookahead - see
+   // Strategies/S00_ScalpFvgMicro/S00_FvgDetector.mqh header).
+   g_s00_fvg_detector.EvaluateOnNewBar(g_market_context);
 
    // Future pipeline:
    // MarketContext -> CandleCache -> Narrative -> StrategyEngine -> Evidence -> Guard -> TradePlan -> Shadow/Paper/Demo/Live Executor -> ReportWriter
