@@ -175,6 +175,12 @@ Three permanent rules for MQL5 inputs. They apply to all new strategies (S00, S0
 
 ---
 
+## From R1.1c (runner + protection unified exit)
+
+53. **Structural trailing as an alternative to ATR trailing.** R1.1c ships ATR-based runner trailing (`max(virtual_stop, close − S00_RunnerTrailAtrMult × ATR, breakeven)`) — chosen as the v1 candidate because it is the simplest, the most diagnosable, and reuses the ATR period already in the strategy. A structural alternative — moving the virtual stop to the last confirmed swing low (bull) / swing high (bear) within a small lookback — is a candidate upgrade if/when the three-month diagnostic (March + April + May) shows the ATR trail either (a) gets stopped too early on healthy pullbacks (lots of `BREAKEVEN` exits with positive MFE shortly after), or (b) gives back too much on choppy reversals (`TRAIL` exits well below the runner's MFE). The decision rule: pick whichever mechanism produces the larger average winner / loser margin on the three-month run, after the headline numbers stabilise. **Deferred — data-driven decision after the first R1.1c three-month backtest.**
+
+---
+
 ## Conventions for adding to this file
 
 - One bullet per idea. Keep it terse.

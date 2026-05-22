@@ -39,7 +39,7 @@ struct S00FvgRecord
    double                gap_low;
    double                gap_size_points;
    double                ce;                    // midpoint = (gap_high + gap_low) / 2
-   double                atr_at_detection;      // ATR(M5, S00_ATR_PERIOD) read from CLOSED bar (price units)
+   double                atr_at_detection;      // ATR(M5, S00_AtrPeriod) read from CLOSED bar (price units)
    double                trend_ma_at_detection; // SMA(M5, S00_TrendMA, close) read from CLOSED bar
    ENUM_S00_FVG_STATUS   status;
    string                reject_reason;         // "" | "SIZE" | "ATR" | "TREND"
@@ -61,7 +61,7 @@ private:
    bool EnsureIndicatorHandles()
    {
       if(m_atr_handle == INVALID_HANDLE)
-         m_atr_handle = iATR(_Symbol, PERIOD_M5, S00_ATR_PERIOD);
+         m_atr_handle = iATR(_Symbol, PERIOD_M5, S00_AtrPeriod);
       if(m_ma_handle == INVALID_HANDLE)
          m_ma_handle  = iMA(_Symbol, PERIOD_M5, S00_TrendMA, 0, MODE_SMA, PRICE_CLOSE);
       return (m_atr_handle != INVALID_HANDLE && m_ma_handle != INVALID_HANDLE);

@@ -31,7 +31,7 @@ public:
    //   MAXSIZE - gap_size_points <= S00_MaxGap (R1.1a-fix: rejects
    //                anomalous holiday/data outliers identified in
    //                April diagnostics, e.g. ~31,437-point gaps).
-   //   ATR     - gap_size_points >= ATR(M5, S00_ATR_PERIOD) [in points]
+   //   ATR     - gap_size_points >= ATR(M5, S00_AtrPeriod) [in points]
    //                                  * S00_GapAtrMult
    //   TREND   - bullish FVG accepted only if spot > trend MA;
    //             bearish FVG accepted only if spot < trend MA.
