@@ -64,22 +64,12 @@ private:
    string              m_lock_parity_rollup_file;
    // v0.57.2: Virtual Trailing Exit Bridge report file.
    string              m_virtual_trailing_exit_lifecycle_file;
-   FalconSymbolContext m_symbol_context;
+   // R0.8b: m_symbol_context, m_tle_* and m_dlm_* moved to
+   // CFalconRiskLifecycleProcessor (single owner). Symbol context is
+   // read here via SymbolContext() forwarding into the processor.
+   // The tle/dlm fields are unused on this side - all reads/writes
+   // happen on the processor through the Apply* chain.
    FalconReportTotals  m_totals;
-
-   // v0.53.1: Three-layer paper emergency state.
-   bool                m_tle_emergency_active;
-   string              m_tle_emergency_reason;
-   int                 m_tle_consecutive_losses;
-   datetime            m_tle_current_day;
-   double              m_tle_daily_r;
-   double              m_tle_equity;
-   double              m_tle_peak_equity;
-   double              m_tle_max_drawdown_pct;
-
-   // v0.55.3b: Dynamic lot sizing safety ramp state.
-   bool                m_dlm_previous_active_lot_ready;
-   double              m_dlm_previous_active_lot;
 
 
    // v0.55.9: Weekly Stability Score summary-only state.
@@ -93,6 +83,11 @@ private:
    bool                m_initialized;
    int                 m_broker_entry_bridge_order_send_attempts;
 
+   // R0.8b: forward to the processor's canonical symbol context.
+   // Returns by value (MQL5 has no return-by-reference); the struct
+   // is small so this is cheap and inlineable.
+   FalconSymbolContext SymbolContext() { return g_risk_lifecycle_processor.SymbolContext(); }
+
 public:
    CFalconReportWriter()
    {
@@ -103,7 +98,10 @@ public:
 
    bool Initialize(const FalconSymbolContext &symbol_context)
    {
-      m_symbol_context     = symbol_context;
+      // R0.8b: symbol context now owned by g_risk_lifecycle_processor.
+      // Main .mq5 OnInit calls g_risk_lifecycle_processor.Initialize
+      // immediately after this method, so SymbolContext() forwarding
+      // below resolves correctly for every subsequent reporting call.
       m_broker_entry_bridge_order_send_attempts = 0;
       m_trade_report_file  = FalconBuildReportFileName("TradeLifecycle");
       m_summary_report_file= FalconBuildReportFileName("Summary");
@@ -339,8 +337,8 @@ public:
       if(MathAbs(record.net_index_points) > 0.0000001)
          return MathAbs(record.net_usd / record.net_index_points);
       double active_lot = FalconRebaseActiveLotForRecord(record);
-      if(m_symbol_context.contract_size > 0.0 && active_lot > 0.0)
-         return MathAbs(m_symbol_context.contract_size * active_lot);
+      if(SymbolContext().contract_size > 0.0 && active_lot > 0.0)
+         return MathAbs(SymbolContext().contract_size * active_lot);
       return 0.0;
    }
 
@@ -380,8 +378,8 @@ public:
 
    double FalconBrokerUsdPerIndexPointFallback(const double lot)
    {
-      if(m_symbol_context.contract_size > 0.0 && lot > 0.0)
-         return MathAbs(m_symbol_context.contract_size * lot);
+      if(SymbolContext().contract_size > 0.0 && lot > 0.0)
+         return MathAbs(SymbolContext().contract_size * lot);
       return 0.0;
    }
 
@@ -464,7 +462,7 @@ public:
       double required_parity_lot = 0.0;
       if(broker_value_one_lot > 0.0 && paper_usd_per_index_point > 0.0)
          required_parity_lot = paper_usd_per_index_point / broker_value_one_lot;
-      bool parity_lot_below_min = (required_parity_lot > 0.0 && m_symbol_context.min_lot > 0.0 && required_parity_lot < m_symbol_context.min_lot);
+      bool parity_lot_below_min = (required_parity_lot > 0.0 && SymbolContext().min_lot > 0.0 && required_parity_lot < SymbolContext().min_lot);
       string rebase_status = FALCON_BELR_REBASED_STATUS;
       if(!ordercalc_available)
          rebase_status = FALCON_BELR_REBASE_ORDERCALC_FALLBACK_STATUS;
@@ -483,9 +481,9 @@ public:
       row += DoubleToString(record.net_index_points, 2) + ",";
       row += DoubleToString(final_points, 2) + ",";
       row += DoubleToString(paper_usd_per_index_point, 6) + ",";
-      row += DoubleToString(m_symbol_context.contract_size, 6) + ",";
-      row += DoubleToString(m_symbol_context.min_lot, 4) + ",";
-      row += DoubleToString(m_symbol_context.lot_step, 4) + ",";
+      row += DoubleToString(SymbolContext().contract_size, 6) + ",";
+      row += DoubleToString(SymbolContext().min_lot, 4) + ",";
+      row += DoubleToString(SymbolContext().lot_step, 4) + ",";
       row += DoubleToString(FALCON_BROKER_REBUILD_REFERENCE_LOT, 4) + ",";
       row += DoubleToString(broker_value_one_lot, 6) + ",";
       row += DoubleToString(broker_value_active_lot, 6) + ",";
@@ -495,7 +493,7 @@ public:
       row += DoubleToString(broker_actual_vs_rebased_final, 4) + ",";
       row += FalconCsvSafe(FALCON_BELR_REBASED_NO_ACTUAL_STATUS) + ",";
       row += DoubleToString(required_parity_lot, 6) + ",";
-      row += DoubleToString(m_symbol_context.min_lot, 4) + ",";
+      row += DoubleToString(SymbolContext().min_lot, 4) + ",";
       row += FalconCsvSafe(FalconBoolToYesNo(parity_lot_below_min)) + ",";
       row += FalconCsvSafe(FalconBoolToYesNo(ordercalc_available)) + ",";
       row += FalconCsvSafe(rebase_status) + ",";
@@ -1481,11 +1479,11 @@ public:
       row += FalconCsvSafe(FalconDirectionToString(record.direction)) + ",";
       row += FalconCsvSafe(FalconTimeToString(record.entry_time)) + ",";
       row += FalconCsvSafe(FalconTimeToString(record.exit_time)) + ",";
-      row += DoubleToString(record.entry_price, m_symbol_context.digits) + ",";
-      row += DoubleToString(record.structural_sl, m_symbol_context.digits) + ",";
-      row += DoubleToString(record.tp1, m_symbol_context.digits) + ",";
-      row += DoubleToString(record.tp2, m_symbol_context.digits) + ",";
-      row += DoubleToString(record.tp3, m_symbol_context.digits) + ",";
+      row += DoubleToString(record.entry_price, SymbolContext().digits) + ",";
+      row += DoubleToString(record.structural_sl, SymbolContext().digits) + ",";
+      row += DoubleToString(record.tp1, SymbolContext().digits) + ",";
+      row += DoubleToString(record.tp2, SymbolContext().digits) + ",";
+      row += DoubleToString(record.tp3, SymbolContext().digits) + ",";
       row += DoubleToString(record.falcon_dlm_active_lot, 2) + ",";
       row += DoubleToString(record.falcon_dynamic_risk_capital_before_trade, 4) + ",";
       row += DoubleToString(record.falcon_dynamic_risk_capital_after_trade, 4) + ",";
@@ -1655,7 +1653,7 @@ public:
          return -1;
 
       string symbols[2];
-      symbols[0] = m_symbol_context.symbol;
+      symbols[0] = SymbolContext().symbol;
       symbols[1] = _Symbol;
 
       for(int s = 0; s < 2; s++)
@@ -1929,25 +1927,25 @@ public:
       if(boundary_time <= 0)
          return false;
 
-      int shift = iBarShift(m_symbol_context.symbol, PERIOD_M1, boundary_time, false);
+      int shift = iBarShift(SymbolContext().symbol, PERIOD_M1, boundary_time, false);
       if(shift < 0)
          shift = iBarShift(_Symbol, PERIOD_M1, boundary_time, false);
       if(shift >= 0)
       {
-         price = iClose(m_symbol_context.symbol, PERIOD_M1, shift);
+         price = iClose(SymbolContext().symbol, PERIOD_M1, shift);
          if(price <= 0.0)
             price = iClose(_Symbol, PERIOD_M1, shift);
          if(price > 0.0)
             return true;
       }
 
-      shift = iBarShift(m_symbol_context.symbol, PERIOD_M5, boundary_time, false);
+      shift = iBarShift(SymbolContext().symbol, PERIOD_M5, boundary_time, false);
       if(shift < 0)
          shift = iBarShift(_Symbol, PERIOD_M5, boundary_time, false);
       if(shift < 0)
          return false;
 
-      price = iClose(m_symbol_context.symbol, PERIOD_M5, shift);
+      price = iClose(SymbolContext().symbol, PERIOD_M5, shift);
       if(price <= 0.0)
          price = iClose(_Symbol, PERIOD_M5, shift);
       return (price > 0.0);
@@ -2254,22 +2252,22 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
-                m_symbol_context.digits,
-                DoubleToString(m_symbol_context.point, 10),
-                DoubleToString(m_symbol_context.tick_size, 10),
-                DoubleToString(m_symbol_context.tick_value, 5),
-                DoubleToString(m_symbol_context.contract_size, 2),
-                (int)m_symbol_context.spread_points,
+                SymbolContext().digits,
+                DoubleToString(SymbolContext().point, 10),
+                DoubleToString(SymbolContext().tick_size, 10),
+                DoubleToString(SymbolContext().tick_value, 5),
+                DoubleToString(SymbolContext().contract_size, 2),
+                (int)SymbolContext().spread_points,
                 (int)quote_context.spread_points,
-                (int)m_symbol_context.stops_level_points,
-                DoubleToString(m_symbol_context.min_lot, 2),
-                DoubleToString(m_symbol_context.max_lot, 2),
-                DoubleToString(m_symbol_context.lot_step, 2),
-                DoubleToString(quote_context.bid, m_symbol_context.digits),
-                DoubleToString(quote_context.ask, m_symbol_context.digits),
-                DoubleToString(quote_context.last, m_symbol_context.digits),
+                (int)SymbolContext().stops_level_points,
+                DoubleToString(SymbolContext().min_lot, 2),
+                DoubleToString(SymbolContext().max_lot, 2),
+                DoubleToString(SymbolContext().lot_step, 2),
+                DoubleToString(quote_context.bid, SymbolContext().digits),
+                DoubleToString(quote_context.ask, SymbolContext().digits),
+                DoubleToString(quote_context.last, SymbolContext().digits),
                 FalconTimeToString(quote_context.tick_time),
                 quote_context.volume,
                 DoubleToString(quote_context.volume_real, 2),
@@ -2277,10 +2275,10 @@ public:
                 FalconTimeframeToString(primary_candle.timeframe),
                 primary_candle.source_shift,
                 FalconTimeToString(primary_candle.time),
-                DoubleToString(primary_candle.open, m_symbol_context.digits),
-                DoubleToString(primary_candle.high, m_symbol_context.digits),
-                DoubleToString(primary_candle.low, m_symbol_context.digits),
-                DoubleToString(primary_candle.close, m_symbol_context.digits),
+                DoubleToString(primary_candle.open, SymbolContext().digits),
+                DoubleToString(primary_candle.high, SymbolContext().digits),
+                DoubleToString(primary_candle.low, SymbolContext().digits),
+                DoubleToString(primary_candle.close, SymbolContext().digits),
                 primary_candle.tick_volume,
                 primary_candle.real_volume,
                 primary_candle.spread,
@@ -2323,7 +2321,7 @@ public:
                    FalconCsvSafe(EA_NAME),
                    FalconCsvSafe(EA_VERSION_TAG),
                    FalconCsvSafe(EA_BUILD_TAG),
-                   FalconCsvSafe(m_symbol_context.symbol),
+                   FalconCsvSafe(SymbolContext().symbol),
                    FalconTimeToString(TimeCurrent()),
                    (UseClosedCandlesOnly ? "true" : "false"),
                    cache.AnalysisShift(),
@@ -2331,10 +2329,10 @@ public:
                    cache.ValidCount(),
                    FalconTimeframeToString(snapshot.timeframe),
                    FalconTimeToString(snapshot.time),
-                   DoubleToString(snapshot.open, m_symbol_context.digits),
-                   DoubleToString(snapshot.high, m_symbol_context.digits),
-                   DoubleToString(snapshot.low, m_symbol_context.digits),
-                   DoubleToString(snapshot.close, m_symbol_context.digits),
+                   DoubleToString(snapshot.open, SymbolContext().digits),
+                   DoubleToString(snapshot.high, SymbolContext().digits),
+                   DoubleToString(snapshot.low, SymbolContext().digits),
+                   DoubleToString(snapshot.close, SymbolContext().digits),
                    snapshot.tick_volume,
                    snapshot.real_volume,
                    snapshot.spread,
@@ -2373,7 +2371,7 @@ public:
                    FalconCsvSafe(EA_NAME),
                    FalconCsvSafe(EA_VERSION_TAG),
                    FalconCsvSafe(EA_BUILD_TAG),
-                   FalconCsvSafe(m_symbol_context.symbol),
+                   FalconCsvSafe(SymbolContext().symbol),
                    FalconTimeToString(TimeCurrent()),
                    record.evidence_id,
                    record.evidence_name,
@@ -2412,7 +2410,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 (EnableShadowMode ? "true" : "false"),
                 (shadow_executor.IsInitialized() ? "true" : "false"),
@@ -2456,7 +2454,7 @@ public:
                    FalconCsvSafe(EA_NAME),
                    FalconCsvSafe(EA_VERSION_TAG),
                    FalconCsvSafe(EA_BUILD_TAG),
-                   FalconCsvSafe(m_symbol_context.symbol),
+                   FalconCsvSafe(SymbolContext().symbol),
                    FalconTimeToString(TimeCurrent()),
                    (runtime_guard.IsInitialized() ? "true" : "false"),
                    runtime_guard.Count(),
@@ -2506,7 +2504,7 @@ public:
                    FalconCsvSafe(EA_NAME),
                    FalconCsvSafe(EA_VERSION_TAG),
                    FalconCsvSafe(EA_BUILD_TAG),
-                   FalconCsvSafe(m_symbol_context.symbol),
+                   FalconCsvSafe(SymbolContext().symbol),
                    FalconTimeToString(TimeCurrent()),
                    (registry.IsInitialized() ? "true" : "false"),
                    registry.CountRegisteredStrategies(),
@@ -2563,7 +2561,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 (adapter.IsInitialized() ? "true" : "false"),
                 snapshot.adapter_id,
@@ -2621,7 +2619,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 (detector.IsInitialized() ? "true" : "false"),
                 snapshot.detector_id,
@@ -2639,25 +2637,25 @@ public:
                 FalconTimeframeToString(snapshot.analysis_timeframe),
                 snapshot.analysis_shift,
                 FalconTimeToString(snapshot.candle_time),
-                DoubleToString(snapshot.candle_open, m_symbol_context.digits),
-                DoubleToString(snapshot.candle_high, m_symbol_context.digits),
-                DoubleToString(snapshot.candle_low, m_symbol_context.digits),
-                DoubleToString(snapshot.candle_close, m_symbol_context.digits),
+                DoubleToString(snapshot.candle_open, SymbolContext().digits),
+                DoubleToString(snapshot.candle_high, SymbolContext().digits),
+                DoubleToString(snapshot.candle_low, SymbolContext().digits),
+                DoubleToString(snapshot.candle_close, SymbolContext().digits),
                 snapshot.candle_tick_volume,
                 (snapshot.fvg_detected ? "true" : "false"),
                 FalconDirectionToString(snapshot.fvg_direction),
                 FalconTimeToString(snapshot.older_candle_time),
                 FalconTimeToString(snapshot.middle_candle_time),
                 FalconTimeToString(snapshot.newer_candle_time),
-                DoubleToString(snapshot.older_candle_high, m_symbol_context.digits),
-                DoubleToString(snapshot.older_candle_low, m_symbol_context.digits),
-                DoubleToString(snapshot.middle_candle_high, m_symbol_context.digits),
-                DoubleToString(snapshot.middle_candle_low, m_symbol_context.digits),
-                DoubleToString(snapshot.newer_candle_high, m_symbol_context.digits),
-                DoubleToString(snapshot.newer_candle_low, m_symbol_context.digits),
-                DoubleToString(snapshot.fvg_lower, m_symbol_context.digits),
-                DoubleToString(snapshot.fvg_upper, m_symbol_context.digits),
-                DoubleToString(snapshot.fvg_size_price, m_symbol_context.digits),
+                DoubleToString(snapshot.older_candle_high, SymbolContext().digits),
+                DoubleToString(snapshot.older_candle_low, SymbolContext().digits),
+                DoubleToString(snapshot.middle_candle_high, SymbolContext().digits),
+                DoubleToString(snapshot.middle_candle_low, SymbolContext().digits),
+                DoubleToString(snapshot.newer_candle_high, SymbolContext().digits),
+                DoubleToString(snapshot.newer_candle_low, SymbolContext().digits),
+                DoubleToString(snapshot.fvg_lower, SymbolContext().digits),
+                DoubleToString(snapshot.fvg_upper, SymbolContext().digits),
+                DoubleToString(snapshot.fvg_size_price, SymbolContext().digits),
                 DoubleToString(snapshot.fvg_size_points, 2),
                 DoubleToString(snapshot.evidence_score, 2),
                 snapshot.evidence_summary,
@@ -2700,7 +2698,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 (builder.IsInitialized() ? "true" : "false"),
                 snapshot.builder_id,
@@ -2722,8 +2720,8 @@ public:
                 FalconDirectionToString(snapshot.direction),
                 FalconTimeframeToString(snapshot.analysis_timeframe),
                 FalconTimeToString(snapshot.setup_time),
-                DoubleToString(snapshot.entry_zone_lower, m_symbol_context.digits),
-                DoubleToString(snapshot.entry_zone_upper, m_symbol_context.digits),
+                DoubleToString(snapshot.entry_zone_lower, SymbolContext().digits),
+                DoubleToString(snapshot.entry_zone_upper, SymbolContext().digits),
                 DoubleToString(snapshot.fvg_size_points, 2),
                 FalconBoolToYesNo(snapshot.quality_filters_enabled),
                 FalconBoolToYesNo(snapshot.quality_filters_passed),
@@ -2772,7 +2770,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 (watcher.IsInitialized() ? "true" : "false"),
                 snapshot.watcher_id,
@@ -2795,16 +2793,16 @@ public:
                 FalconTimeframeToString(snapshot.analysis_timeframe),
                 FalconTimeToString(snapshot.setup_time),
                 FalconTimeToString(snapshot.watch_time),
-                DoubleToString(snapshot.watch_price, m_symbol_context.digits),
-                DoubleToString(snapshot.fvg_lower, m_symbol_context.digits),
-                DoubleToString(snapshot.fvg_upper, m_symbol_context.digits),
+                DoubleToString(snapshot.watch_price, SymbolContext().digits),
+                DoubleToString(snapshot.fvg_lower, SymbolContext().digits),
+                DoubleToString(snapshot.fvg_upper, SymbolContext().digits),
                 DoubleToString(snapshot.fvg_size_points, 2),
                 DoubleToString(snapshot.planned_lot_size, 2),
-                DoubleToString(snapshot.planned_entry_price, m_symbol_context.digits),
-                DoubleToString(snapshot.planned_structural_sl, m_symbol_context.digits),
-                DoubleToString(snapshot.planned_tp1, m_symbol_context.digits),
-                DoubleToString(snapshot.planned_tp2, m_symbol_context.digits),
-                DoubleToString(snapshot.planned_tp3, m_symbol_context.digits),
+                DoubleToString(snapshot.planned_entry_price, SymbolContext().digits),
+                DoubleToString(snapshot.planned_structural_sl, SymbolContext().digits),
+                DoubleToString(snapshot.planned_tp1, SymbolContext().digits),
+                DoubleToString(snapshot.planned_tp2, SymbolContext().digits),
+                DoubleToString(snapshot.planned_tp3, SymbolContext().digits),
                 snapshot.retest_reason,
                 snapshot.block_reason,
                 snapshot.skeleton_notes,
@@ -2843,7 +2841,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 (stager.IsInitialized() ? "true" : "false"),
                 snapshot.stager_id,
@@ -2869,11 +2867,11 @@ public:
                 FalconTimeToString(snapshot.setup_time),
                 FalconTimeToString(snapshot.staging_time),
                 DoubleToString(snapshot.lot_size, 2),
-                DoubleToString(snapshot.entry_price, m_symbol_context.digits),
-                DoubleToString(snapshot.structural_sl, m_symbol_context.digits),
-                DoubleToString(snapshot.tp1, m_symbol_context.digits),
-                DoubleToString(snapshot.tp2, m_symbol_context.digits),
-                DoubleToString(snapshot.tp3, m_symbol_context.digits),
+                DoubleToString(snapshot.entry_price, SymbolContext().digits),
+                DoubleToString(snapshot.structural_sl, SymbolContext().digits),
+                DoubleToString(snapshot.tp1, SymbolContext().digits),
+                DoubleToString(snapshot.tp2, SymbolContext().digits),
+                DoubleToString(snapshot.tp3, SymbolContext().digits),
                 snapshot.risk_profile,
                 snapshot.management_profile,
                 snapshot.validation_reason,
@@ -2913,7 +2911,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 snapshot.simulator_id,
                 FalconShadowLifecycleStatusToString(snapshot.lifecycle_status),
@@ -2933,13 +2931,13 @@ public:
                 FalconTimeToString(snapshot.entry_time),
                 FalconTimeToString(snapshot.evaluation_time),
                 snapshot.elapsed_seconds,
-                DoubleToString(snapshot.entry_price, m_symbol_context.digits),
-                DoubleToString(snapshot.structural_sl, m_symbol_context.digits),
-                DoubleToString(snapshot.tp1, m_symbol_context.digits),
-                DoubleToString(snapshot.tp2, m_symbol_context.digits),
-                DoubleToString(snapshot.tp3, m_symbol_context.digits),
-                DoubleToString(snapshot.current_price, m_symbol_context.digits),
-                DoubleToString(snapshot.simulated_exit_price, m_symbol_context.digits),
+                DoubleToString(snapshot.entry_price, SymbolContext().digits),
+                DoubleToString(snapshot.structural_sl, SymbolContext().digits),
+                DoubleToString(snapshot.tp1, SymbolContext().digits),
+                DoubleToString(snapshot.tp2, SymbolContext().digits),
+                DoubleToString(snapshot.tp3, SymbolContext().digits),
+                DoubleToString(snapshot.current_price, SymbolContext().digits),
+                DoubleToString(snapshot.simulated_exit_price, SymbolContext().digits),
                 FalconOutcomeToString(snapshot.simulated_outcome),
                 DoubleToString(snapshot.profit_index_points, 2),
                 DoubleToString(snapshot.loss_index_points, 2),
@@ -2976,7 +2974,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 "TradeLifecycleSchema",
                 "PASS",
@@ -2990,7 +2988,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 "SummarySchema",
                 "PASS",
@@ -3004,7 +3002,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 "ShadowLifecycleCalibration",
                 "WATCH",
@@ -3018,7 +3016,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 "DiagnosticInputsInventory",
                 "WATCH",
@@ -3032,7 +3030,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 "ExecutionSafety",
                 "PASS",
@@ -3046,7 +3044,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 "CleanupGateRule",
                 "ACTIVE",
@@ -3081,7 +3079,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 trigger,
                 "ExecutionSafety",
@@ -3093,7 +3091,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 trigger,
                 "ShadowPipelineShape",
@@ -3105,7 +3103,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 trigger,
                 "TradeLifecycleRows",
@@ -3117,7 +3115,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 trigger,
                 "ReportVerification",
@@ -3129,7 +3127,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 trigger,
                 "DiagnosticCleanupGate",
@@ -3207,7 +3205,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 trigger,
                 "ClosedShadowTradesSoFar",
@@ -3223,7 +3221,7 @@ public:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 trigger,
                 "DiagnosticCleanupGate",
@@ -3602,8 +3600,8 @@ public:
       row += FalconCsvSafe(FalconDirectionToString(record.direction)) + ",";
       row += FalconCsvSafe(FalconTimeToString(record.entry_time)) + ",";
       row += FalconCsvSafe(FalconTimeToString(record.exit_time)) + ",";
-      row += DoubleToString(record.entry_price, m_symbol_context.digits) + ",";
-      row += DoubleToString(record.exit_price, m_symbol_context.digits) + ",";
+      row += DoubleToString(record.entry_price, SymbolContext().digits) + ",";
+      row += DoubleToString(record.exit_price, SymbolContext().digits) + ",";
       row += DoubleToString(record.lot_size, 2) + ",";
       row += DoubleToString(LockParityActiveLot(record), 2) + ",";
 
@@ -3616,7 +3614,7 @@ public:
       row += DoubleToString(record.paper_protection_net_usd, 4) + ",";
       row += DoubleToString(d_protection, 4) + ",";
       row += FalconCsvSafe(c_protection) + ",";
-      row += DoubleToString(record.paper_protection_level, m_symbol_context.digits) + ",";
+      row += DoubleToString(record.paper_protection_level, SymbolContext().digits) + ",";
 
       row += DoubleToString(record.paper_runner_net_usd, 4) + ",";
       row += DoubleToString(d_runner, 4) + ",";
@@ -3638,7 +3636,7 @@ public:
                                  probe_runner_vs_actual_points,
                                  probe_path_data_valid);
       row += DoubleToString(probe_captured_points, 2) + ",";
-      row += DoubleToString(probe_runner_exit_price, m_symbol_context.digits) + ",";
+      row += DoubleToString(probe_runner_exit_price, SymbolContext().digits) + ",";
       row += DoubleToString(probe_max_favorable_points, 2) + ",";
       row += FalconCsvSafe(probe_within_path ? "YES" : "NO") + ",";
       row += DoubleToString(probe_runner_vs_actual_points, 2) + ",";
@@ -3852,9 +3850,10 @@ public:
                                                            link.broker_entry_price,
                                                            exit_price);
       double lot_for_usd = (link.accepted_lot > 0.0) ? link.accepted_lot : link.requested_lot;
+      FalconSymbolContext _sc = SymbolContext();
       double estimated_usd_at_exit = FalconEstimateUsdByRawPoints(realized_points_at_exit,
                                                                  lot_for_usd,
-                                                                 m_symbol_context);
+                                                                 _sc);
       int handle = FileOpen(m_virtual_trailing_exit_lifecycle_file, FalconReportReadWriteCsvFlags(), ',');
       if(handle == INVALID_HANDLE)
       {
@@ -3872,11 +3871,11 @@ public:
       row += FalconCsvSafe(link.trade_id) + ",";
       row += FalconCsvSafe(FalconDirectionToString(link.direction)) + ",";
       row += FalconCsvSafe(FalconTimeToString(link.broker_entry_time)) + ",";
-      row += DoubleToString(link.broker_entry_price, m_symbol_context.digits) + ",";
+      row += DoubleToString(link.broker_entry_price, SymbolContext().digits) + ",";
       row += FalconCsvSafe(FalconTimeToString(exit_time)) + ",";
-      row += DoubleToString(exit_price, m_symbol_context.digits) + ",";
-      row += DoubleToString(link.virtual_peak_favorable_price, m_symbol_context.digits) + ",";
-      row += DoubleToString(link.virtual_trailing_stop_price, m_symbol_context.digits) + ",";
+      row += DoubleToString(exit_price, SymbolContext().digits) + ",";
+      row += DoubleToString(link.virtual_peak_favorable_price, SymbolContext().digits) + ",";
+      row += DoubleToString(link.virtual_trailing_stop_price, SymbolContext().digits) + ",";
       row += FalconCsvSafe(link.virtual_breakeven_locked ? "YES" : "NO") + ",";
       row += FalconCsvSafe(link.virtual_breakeven_mode) + ",";
       row += FalconCsvSafe(link.virtual_trailing_active ? "YES" : "NO") + ",";
@@ -3896,14 +3895,15 @@ public:
       if(!m_initialized || !EnableMainReport)
          return;
 
-      FalconFinalizeTradeMetrics(record, m_symbol_context);
+      FalconSymbolContext _sc = SymbolContext();
+      FalconFinalizeTradeMetrics(record, _sc);
       // R0.7cd: the 12-step Apply* chain has moved to
       // CFalconRiskLifecycleProcessor. One call replaces the 12
       // inline calls that used to live here. The chain order inside
       // ApplyTradeLifecycleChain matches the pre-R0.7cd live order
       // byte-for-byte; see Risk/FalconRiskLifecycleProcessor.mqh for
       // the documented order and the discrepancy note.
-      g_risk_lifecycle_processor.ApplyTradeLifecycleChain(record);
+      g_risk_lifecycle_processor.ApplyTradeLifecycleChain(record, m_totals);
       // R0.7cd: emergency hook. The processor's Apply #11 populates
       // record.falcon_emergency_* fields but does NOT write the CSV
       // (Risk doesn't call Reporting). This single post-chain call
@@ -4058,7 +4058,7 @@ public:
       summary_row += FalconCsvSafe(EA_NAME) + ",";
       summary_row += FalconCsvSafe(EA_VERSION_TAG) + ",";
       summary_row += FalconCsvSafe(EA_BUILD_TAG) + ",";
-      summary_row += FalconCsvSafe(m_symbol_context.symbol) + ",";
+      summary_row += FalconCsvSafe(SymbolContext().symbol) + ",";
       summary_row += FalconCsvSafe(FalconTimeToString(TimeCurrent())) + ",";
       summary_row += FalconCsvSafe(FalconReportProfileToString()) + ",";
       summary_row += FalconCsvSafe(FalconEffectiveReportFromDateTag()) + ",";
@@ -4208,7 +4208,7 @@ private:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 trigger,
                 report_key,
@@ -4246,7 +4246,7 @@ private:
                 EA_NAME,
                 EA_VERSION_TAG,
                 EA_BUILD_TAG,
-                m_symbol_context.symbol,
+                SymbolContext().symbol,
                 FalconTimeToString(TimeCurrent()),
                 trigger,
                 audit_item,
@@ -4259,114 +4259,12 @@ private:
                 notes);
    }
 
-   double FalconDynamicTierMaxLot(const string tier_name)
-   {
-      if(tier_name == "MICRO")    return 0.01;
-      if(tier_name == "TINY")     return 0.03;
-      if(tier_name == "SMALL")    return 0.10;
-      if(tier_name == "MEDIUM")   return 0.30;
-      if(tier_name == "STANDARD") return 1.00;
-      if(tier_name == "LARGE")    return 2.00;
-      return MathMax(0.01, m_symbol_context.min_lot);
-   }
-
-   double FalconDynamicCapitalMaxLot(const double effective_capital)
-   {
-      double min_lot = m_symbol_context.min_lot;
-      if(min_lot <= 0.0) min_lot = 0.01;
-      if(effective_capital <= 0.0)
-         return min_lot;
-
-      // Internal safety formula: each 0.01 lot should be backed by ~250 USD of dynamic paper capital.
-      // This allows dynamic growth, but prevents a small account equity curve from jumping straight into oversized lots.
-      double raw_capital_lot = (effective_capital / FALCON_DLM_CAPITAL_USD_PER_001_LOT) * 0.01;
-      int min_floor = 0;
-      int max_cap = 0;
-      return FalconNormalizeDynamicLotToBroker(raw_capital_lot, min_floor, max_cap);
-   }
-
-   double FalconDynamicGrowthRampMaxLot()
-   {
-      double min_lot = m_symbol_context.min_lot;
-      double step = m_symbol_context.lot_step;
-      if(step <= 0.0) step = 0.01;
-      if(min_lot <= 0.0) min_lot = step;
-
-      if(!m_dlm_previous_active_lot_ready || m_dlm_previous_active_lot <= 0.0)
-         return min_lot;
-
-      double ramp_cap = (m_dlm_previous_active_lot * FALCON_DLM_MAX_LOT_GROWTH_MULTIPLIER) + step;
-      if(ramp_cap < min_lot)
-         ramp_cap = min_lot;
-
-      int min_floor = 0;
-      int max_cap = 0;
-      return FalconNormalizeDynamicLotToBroker(ramp_cap, min_floor, max_cap);
-   }
-
-   double FalconNormalizeDynamicLotToBroker(const double raw_lot, int &min_floor_applied, int &max_cap_applied)
-   {
-      min_floor_applied = 0;
-      max_cap_applied = 0;
-
-      double lot = raw_lot;
-      double min_lot = m_symbol_context.min_lot;
-      double max_lot = m_symbol_context.max_lot;
-      double step = m_symbol_context.lot_step;
-
-      if(step <= 0.0) step = 0.01;
-      if(min_lot <= 0.0) min_lot = step;
-      if(max_lot <= 0.0) max_lot = MathMax(min_lot, lot);
-
-      if(lot <= 0.0)
-         lot = min_lot;
-
-      double stepped_lot = MathFloor(lot / step) * step;
-      if(stepped_lot <= 0.0)
-         stepped_lot = min_lot;
-
-      if(stepped_lot < min_lot)
-      {
-         stepped_lot = min_lot;
-         min_floor_applied = 1;
-      }
-      if(stepped_lot > max_lot)
-      {
-         stepped_lot = max_lot;
-         max_cap_applied = 1;
-      }
-
-      return NormalizeDouble(stepped_lot, 2);
-   }
-
-   void FalconRefreshUsdMetricsForActiveLot(FalconTradeLifecycleRecord &record, const double active_lot)
-   {
-      if(active_lot <= 0.0)
-         return;
-
-      record.lot_size = active_lot;
-      record.net_usd = FalconEstimateUsdByRawPoints(record.net_index_points, active_lot, m_symbol_context);
-      if(record.net_usd > 0.0)
-      {
-         record.profit_usd = record.net_usd;
-         record.loss_usd = 0.0;
-      }
-      else if(record.net_usd < 0.0)
-      {
-         record.profit_usd = 0.0;
-         record.loss_usd = MathAbs(record.net_usd);
-      }
-      else
-      {
-         record.profit_usd = 0.0;
-         record.loss_usd = 0.0;
-      }
-
-      record.fvg_quality_shadow_guard_sim_net_usd = FalconEstimateUsdByRawPoints(record.fvg_quality_shadow_guard_sim_net_points, active_lot, m_symbol_context);
-      record.paper_guard_net_usd = FalconEstimateUsdByRawPoints(record.paper_guard_net_index_points, active_lot, m_symbol_context);
-      record.paper_protection_net_usd = FalconEstimateUsdByRawPoints(record.paper_protection_net_index_points, active_lot, m_symbol_context);
-      record.paper_runner_net_usd = FalconEstimateUsdByRawPoints(record.paper_runner_net_index_points, active_lot, m_symbol_context);
-   }
+   // R0.8b: FalconDynamicTierMaxLot, FalconDynamicCapitalMaxLot,
+   // FalconDynamicGrowthRampMaxLot, FalconNormalizeDynamicLotToBroker,
+   // and FalconRefreshUsdMetricsForActiveLot removed. They were
+   // orphan duplicates of the live copies in
+   // Risk/FalconRiskLifecycleProcessor.mqh and had no remaining caller
+   // inside ReportWriter after the R0.7cd Apply* peel.
 
    void ResetTotals()
    {
@@ -4696,16 +4594,10 @@ m_totals.total_trades                = 0;
       m_totals.lock_parity_runner_non_executable_usd = 0.0;
       m_totals.lock_parity_accounting_only_usd = 0.0;
 
-      m_tle_emergency_active = false;
-      m_tle_emergency_reason = "NONE";
-      m_tle_consecutive_losses = 0;
-      m_tle_current_day = 0;
-      m_tle_daily_r = 0.0;
-      m_tle_equity = 0.0;
-      m_tle_peak_equity = 0.0;
-      m_tle_max_drawdown_pct = 0.0;
-      m_dlm_previous_active_lot_ready = false;
-      m_dlm_previous_active_lot = 0.0;
+      // R0.8b: m_tle_* and m_dlm_* resets removed - these fields no
+      // longer live on ReportWriter. CFalconRiskLifecycleProcessor::
+      // Initialize seeds them on the canonical owner (called from
+      // OnInit immediately after this object's Initialize).
    }
 
    void UpdateTotals(const FalconTradeLifecycleRecord &record)

@@ -5862,6 +5862,11 @@ int OnInit()
       return INIT_FAILED;
    g_strategy_registry.PrintRegistryState();
    g_report_writer.Initialize(symbol_context);
+   // R0.8b: seed the canonical Risk state owner. Same symbol_context,
+   // same call site, immediately after g_report_writer.Initialize so
+   // ReportWriter's SymbolContext() forwarder resolves correctly on
+   // every subsequent call.
+   g_risk_lifecycle_processor.Initialize(symbol_context);
    g_broker_entry_bridge.Initialize();
    g_report_writer.WriteMarketDiagnosticsSnapshot(g_market_context.GetQuoteContext(), g_market_context.GetPrimaryCandleSnapshot());
    g_report_writer.WriteStrategyRegistryDiagnosticsSnapshot(g_strategy_registry);

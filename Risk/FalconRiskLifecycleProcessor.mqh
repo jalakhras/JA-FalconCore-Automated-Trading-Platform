@@ -72,14 +72,16 @@ class CFalconRiskLifecycleProcessor
 {
 private:
    //================================================================
-   // SCAFFOLDING state members - mirrored from CFalconReportWriter.
-   // Dormant in R0.7b. R0.7d will retire these in favor of a
-   // reference/pointer to the canonical ReportWriter instance.
+   // R0.8b: canonical owners of Risk state. ReportWriter no longer
+   // carries copies of these; it reads symbol context via
+   // SymbolContext() and the chain consumes/produces FalconReportTotals
+   // through the totals parameter on ApplyTradeLifecycleChain.
+   // m_totals does NOT live here - it belongs to ReportWriter and is
+   // passed by reference into the chain.
    //================================================================
-   FalconReportTotals  m_totals;
    FalconSymbolContext m_symbol_context;
 
-   // v0.53.1: Three-layer paper emergency state (mirrored).
+   // v0.53.1: Three-layer paper emergency state (canonical owner).
    bool                m_tle_emergency_active;
    string              m_tle_emergency_reason;
    int                 m_tle_consecutive_losses;
@@ -89,7 +91,7 @@ private:
    double              m_tle_peak_equity;
    double              m_tle_max_drawdown_pct;
 
-   // v0.55.3b: Dynamic lot sizing safety ramp state (mirrored).
+   // v0.55.3b: Dynamic lot sizing safety ramp state (canonical owner).
    bool                m_dlm_previous_active_lot_ready;
    double              m_dlm_previous_active_lot;
 
@@ -678,12 +680,13 @@ private:
       record.close_reason = "SESSION_BOUNDARY_USER_NO_NEW_ENTRY_BLOCKED";
    }
 
-   void ApplyDailyWeekendForceCloseUserOverridePaperEnforcement(FalconTradeLifecycleRecord &record)
+   void ApplyDailyWeekendForceCloseUserOverridePaperEnforcement(FalconTradeLifecycleRecord &record,
+                                                                FalconReportTotals &totals)
    {
       // v0.55.12a: optional user safety override.
       // Defaults are OFF because validation showed profit reduction. The user may enable this only as a safety override.
       // When enabled, a qualifying open Paper trade is force-closed before Emergency and Capital Flow.
-      m_totals.force_close_override_evaluated_trades++;
+      totals.force_close_override_evaluated_trades++;
 
       if(!CloseTradesBeforeDailyClose && !CloseTradesBeforeWeekend)
          return;
@@ -729,7 +732,7 @@ private:
       double force_close_price = 0.0;
       if(!FalconTryGetBoundaryClosePrice(boundary_time, force_close_price))
       {
-         m_totals.force_close_override_missing_price_trades++;
+         totals.force_close_override_missing_price_trades++;
          record.falcon_market_close_reason = "FORCE_CLOSE_BOUNDARY_PRICE_MISSING";
          return;
       }
@@ -753,15 +756,15 @@ private:
       record.falcon_single_trade_loss_cap_impact_points = after_points - record.falcon_single_trade_loss_cap_before_net_points;
       record.falcon_single_trade_loss_cap_impact_usd = after_usd - record.falcon_single_trade_loss_cap_before_net_usd;
 
-      m_totals.force_close_override_closed_trades++;
+      totals.force_close_override_closed_trades++;
       if(use_weekend)
-         m_totals.force_close_override_weekend_closed_trades++;
+         totals.force_close_override_weekend_closed_trades++;
       else if(use_daily)
-         m_totals.force_close_override_daily_closed_trades++;
-      m_totals.force_close_override_price_ok_trades++;
-      m_totals.force_close_override_before_net_usd += before_usd;
-      m_totals.force_close_override_after_net_usd += after_usd;
-      m_totals.force_close_override_impact_usd += (after_usd - before_usd);
+         totals.force_close_override_daily_closed_trades++;
+      totals.force_close_override_price_ok_trades++;
+      totals.force_close_override_before_net_usd += before_usd;
+      totals.force_close_override_after_net_usd += after_usd;
+      totals.force_close_override_impact_usd += (after_usd - before_usd);
    }
 
    void ApplyPaperRuntimeGuardApplication(FalconTradeLifecycleRecord &record)
@@ -1546,6 +1549,40 @@ private:
 
 public:
    //================================================================
+   // R0.8b: Initialize - seeds the canonical Risk state. Called from
+   // OnInit at the same point ReportWriter is initialized so that the
+   // processor's m_symbol_context and m_tle_* / m_dlm_* fields start
+   // from the same baseline ReportWriter's old copies started from.
+   // Replaces the implicit default-zero initialization the processor
+   // had between R0.7cd and R0.8a, which was the root cause of the
+   // R0.7cd FinalWorkingNetUSD=0 regression (m_tle_emergency_active
+   // could latch and never reset because nothing on the ReportWriter
+   // side touched THIS object's copy).
+   //================================================================
+   void Initialize(const FalconSymbolContext &symbol_context)
+   {
+      m_symbol_context = symbol_context;
+
+      // Mirror CFalconReportWriter::ResetTotals (R0.7cd L4699-4708) seed values.
+      m_tle_emergency_active = false;
+      m_tle_emergency_reason = "NONE";
+      m_tle_consecutive_losses = 0;
+      m_tle_current_day = 0;
+      m_tle_daily_r = 0.0;
+      m_tle_equity = 0.0;
+      m_tle_peak_equity = 0.0;
+      m_tle_max_drawdown_pct = 0.0;
+      m_dlm_previous_active_lot_ready = false;
+      m_dlm_previous_active_lot = 0.0;
+   }
+
+   // R0.8b: getter so CFalconReportWriter and other callers read the
+   // canonical symbol context from the processor instead of carrying
+   // their own copy. Returns by value (MQL5 does not return by
+   // reference); the struct is small so this is cheap.
+   FalconSymbolContext SymbolContext() { return m_symbol_context; }
+
+   //================================================================
    // ApplyTradeLifecycleChain - the public entry point. Calls the
    // 12 ported Apply* methods on `this` in the LOAD-BEARING ACTUAL
    // order observed inside CFalconReportWriter::RegisterClosedTrade
@@ -1579,21 +1616,26 @@ public:
    //     state that #1 / #2 applied.
    //   * #3 (FVG quality guard sim) is a pre-chain filter - runs first.
    //   * #12 (capital flow classification) is post-chain annotation.
+   //
+   // R0.8b: takes FalconReportTotals &totals so #2 (the only step that
+   // mutates totals) writes into the ReportWriter's m_totals via the
+   // passed reference instead of a private scaffolding copy.
    //================================================================
-   void ApplyTradeLifecycleChain(FalconTradeLifecycleRecord &record)
+   void ApplyTradeLifecycleChain(FalconTradeLifecycleRecord &record,
+                                 FalconReportTotals &totals)
    {
-      ApplyFvgQualityShadowGuardSimulation(record);                     // #3
-      ApplyPaperRuntimeGuardApplication(record);                        // #4
-      ApplyPaperRuntimeSmartSLProtectionApplication(record);            // #5
-      ApplyPaperRuntimeRunnerApplication(record);                       // #6
-      ApplyCapitalTierFoundation(record);                               // #7
-      ApplyLowCapitalRiskFeasibilityFoundation(record);                 // #8
-      ApplyDynamicLotSizingModel(record);                               // #10
-      ApplyCalibratedSingleTradeLossCapEnforcement(record);             // #9
-      ApplyNoNewEntryUserOverridePaperEnforcement(record);              // #1
-      ApplyDailyWeekendForceCloseUserOverridePaperEnforcement(record);  // #2
-      ApplyThreeLayerEmergencyApplication(record);                      // #11
-      ApplyCapitalFlowSourceClassification(record);                     // #12
+      ApplyFvgQualityShadowGuardSimulation(record);                            // #3
+      ApplyPaperRuntimeGuardApplication(record);                               // #4
+      ApplyPaperRuntimeSmartSLProtectionApplication(record);                   // #5
+      ApplyPaperRuntimeRunnerApplication(record);                              // #6
+      ApplyCapitalTierFoundation(record);                                      // #7
+      ApplyLowCapitalRiskFeasibilityFoundation(record);                        // #8
+      ApplyDynamicLotSizingModel(record);                                      // #10
+      ApplyCalibratedSingleTradeLossCapEnforcement(record);                    // #9
+      ApplyNoNewEntryUserOverridePaperEnforcement(record);                     // #1
+      ApplyDailyWeekendForceCloseUserOverridePaperEnforcement(record, totals); // #2
+      ApplyThreeLayerEmergencyApplication(record);                             // #11
+      ApplyCapitalFlowSourceClassification(record);                            // #12
    }
 };
 
