@@ -1,197 +1,175 @@
-# R1.1c — S00 ScalpFvgMicro: Runner + Protection (Unified Exit Logic)
+# R1.1c — S00 ScalpFvgMicro: Protection (Fixed-Threshold Breakeven)
 
-**Branch:** `refactor` &nbsp;|&nbsp; **Base:** R1.1b-purity (commit `45e486f`) &nbsp;|&nbsp; **Working tree before commit.**
+**Branch:** `refactor` &nbsp;|&nbsp; **Base:** R1.1c (commit `4067f6c`, now rolled back) &nbsp;|&nbsp; **Final form:** R1.1c-fix.
 
-R1.1c is the exit-side counterpart to the R1.1b/diag/purity entry work. The May April-CSV diagnostic identified the failure mode as "exit, not entry" — winning trades reversed before any take-profit captured the favorable excursion (no protection), and runs that could have extended to a liquidity target were cut at fixed 1:2 (no runner). R1.1c implements the unified two-half model from `R1_1c_Runner_Protection_SPEC.md` + `ScalpFvgMicro_SPEC §6–§7`: one trigger at `+S00_ProtectTriggerR × R`, two simultaneous events (insurance close, runner stop → breakeven), then ATR trailing on the runner half. S00 stays paper-isolated; no entry, FVG-detection, filter, invalidation, expiry, structural-stop, or target logic is touched.
+R1.1c originally attempted a half-cut-at-+1R + runner-ATR-trail mechanism. The three-month backtest exposed two opposing failures (see §1). **R1.1c-fix rips the runner out** and replaces it with the simplest possible protection: when unrealised profit reaches a *fixed* `S00_BreakevenTrigger` points, the stop moves to entry. No split. No partial close. No trailing. One knob, one effect. That is the form this file documents.
+
+> A self-contained §0 below summarises why the R1.1c attempt was rolled back, so the file remains a complete record. The active spec is `Docs/Specs/JA_FalconCore_R1_1c_fix_SPEC.md`; the rolled-back design is documented in `Docs/Specs/JA_FalconCore_R1_1c_SPEC.md` and remains useful as historical context for the data-driven decision recorded in `Ideas_Backlog.md` #53.
 
 ---
 
-## 1. What was built (per spec §1 → §2)
+## 0. Why R1.1c was rolled back
+
+The R1.1c three-month paper run took the total from +5,641 points (R1.1b-purity baseline) to **−1,083** points. The data revealed two opposing failures:
+
+1. **Half-cut clipped large winners.** S00 lives on the rare large winner (the three-month mean winner was ~4,250 points). Closing half of every trade at +1R systematically capped those winners. A trade that should have been +5,150 came in at +3,370.
+
+2. **1R protection didn't fire when it mattered.** The breakeven trigger was tied to the structural stop's distance (R = |entry − stop_loss|). When R was large (wide stops on volatile setups), trades could reach a meaningful unrealised profit (e.g. +5,307 points) and reverse all the way back without ever passing 1R — so the protection never armed. A trade that printed +5,307 then collapsed to −5,768 went unprotected.
+
+Both failures came from the SAME design choice: tying both the cut and the protection to R. A simulation pass on the same March + April + May data showed that a **fixed-points** breakeven threshold (no cut, no trailing) makes the three months profitable together. Thresholds in the 500–1,000 range all worked; ~700–800 was the cluster centre with no overfitting to any single month.
+
+R1.1c-fix implements the simpler design. The R1.1c half-cut and ATR-trail mechanisms are deleted, not preserved as toggles — they failed on the data and the spec is explicit that complexity is added back later, only by test (Ideas_Backlog #54 / #55 / #56).
+
+---
+
+## 1. What was built (per `JA_FalconCore_R1_1c_fix_SPEC.md` §1 → §2)
 
 | Item | Path | Notes |
 |---|---|---|
-| 4 new inputs + 1 promoted + 1 renamed | `Strategies/S00_ScalpFvgMicro/S00_ScalpFvgMicroInputs.mqh` | `S00_RunnerSplitPct = 50.0`, `S00_ProtectTriggerR = 1.0`, `S00_RunnerTrailAtrMult = 2.0`. Promoted `#define S00_ATR_PERIOD 14` → `input int S00_AtrPeriod = 14` (single source for the strength filter AND the runner trail). Renamed `S00_MaxTradeBars` → `S00_MaxTradeDurationBars` to match the SPEC wording. All in the existing `── S00 FVG Scalp ──` group; clean R1.1a-labels-style display comments. |
-| Detector / filter rename ripple | `Strategies/S00_ScalpFvgMicro/S00_FvgDetector.mqh` + `S00_FvgQualityFilter.mqh` | Mechanical replace `S00_ATR_PERIOD` → `S00_AtrPeriod` (3 sites: 1 `iATR` call + 2 comment references). Zero logic change. |
-| Two-half trade struct + enum | `S00_EntryLogic.mqh` (`S00PaperTrade` + `ENUM_S00_TRADE_EXIT_REASON`) | Added 8 fields to `S00PaperTrade`: `r_price`, `protect_trigger_level`, `trigger_fired`, `trigger_bar_time`, `insurance_exit_*` (3), `runner_virtual_stop`, `runner_open`. Added 2 enum members: `S00_EXIT_TRAIL = 4`, `S00_EXIT_BREAKEVEN = 5`. |
-| ATR handle + cache | `S00_EntryLogic.mqh` | `m_runner_atr_handle` lazy-allocated against `(S_M5, S00_AtrPeriod)`; `ReadRunnerAtr(bar_time)` caches the value per bar to avoid redundant `CopyBuffer` calls. Closed-bar read (`start=1`). |
-| Trigger event | `S00_EntryLogic.mqh::FireTriggerEvent(bar)` | Sets `trigger_fired = true`, records `trigger_bar_time`, captures the insurance half's exit at `protect_trigger_level`, moves `runner_virtual_stop` to `entry_price` (breakeven). Runner exit eval is deferred to the NEXT bar (skip-on-trigger-bar rule). |
-| Virtual-stop update | `S00_EntryLogic.mqh::UpdateRunnerVirtualStop(bar)` | After trigger: `vs = max(vs, close − mult × ATR, breakeven)` for bullish (and `min` mirror for bearish). Ratchets monotonically toward the favorable direction; the breakeven floor enforces the spec's "trade as a whole cannot become net negative". |
-| Unified per-bar evaluator | `S00_EntryLogic.mqh::RunExitEvaluation(bar)` | Single entry point handling both pre-trigger and post-trigger phases, with the spec's pessimistic ordering. Returns true if the trade fully closed. |
-| Close paths | `S00_EntryLogic.mqh::CloseFullTrade(...)` / `CloseRunnerOnly(...)` | Replaces the old `CloseActiveTrade`. `CloseFullTrade` mirrors insurance fields onto the runner exit so a no-trigger trade reads cleanly (single price); `CloseRunnerOnly` keeps the previously-captured insurance half intact. Both write one CSV row per trade. |
-| CSV header + row | `S00_EntryLogic.mqh::WriteTradesHeader` + `AppendTradeRow` | Added 2 new exit-reason labels (`TRAIL`, `BREAKEVEN`) and 7 R1.1c columns. CSV grew 20 → 27 columns. Details in §4. |
-| OnTick wiring | unchanged | `g_s00_entry_logic.EvaluateOnNewBar(g_market_context)` is the single OnTick hook from R1.1b; no change. |
-| `EA_VERSION_TAG` | `Core/FalconConstants.mqh:10` | `R1_1b_purity` → `R1_1c`. |
+| New input + 3 removed | `Strategies/S00_ScalpFvgMicro/S00_ScalpFvgMicroInputs.mqh` | Added `S00_BreakevenTrigger = 800.0` ("Profit in points that moves stop to entry"). Removed `S00_RunnerSplitPct`, `S00_ProtectTriggerR`, `S00_RunnerTrailAtrMult`. Kept `S00_AtrPeriod` (still feeds the R1.1a strength filter) and `S00_MaxTradeDurationBars` (still gates trade lifetime). All in the existing `── S00 FVG Scalp ──` group with R1.1a-labels-style display comments. |
+| Struct shrunk | `S00_EntryLogic.mqh` (`S00PaperTrade`) | Removed 8 R1.1c fields (`r_price`, `protect_trigger_level`, `trigger_fired`, `trigger_bar_time`, the 3 `insurance_exit_*`, `runner_virtual_stop`, `runner_open`). Added 2 fields: `breakeven_armed`, `breakeven_arm_bar_time`. Net struct delta: −6 fields. |
+| Enum reverted | `S00_EntryLogic.mqh` (`ENUM_S00_TRADE_EXIT_REASON`) | Removed `S00_EXIT_TRAIL = 4` and `S00_EXIT_BREAKEVEN = 5`. Back to the R1.1b-purity set: `NONE` / `TARGET` / `STOP` / `TIMEOUT`. `STOP` now covers both the pre-arm structural stop and the post-arm BE stop — the `BreakevenArmed` CSV column tells the analyst which one fired. |
+| Helpers removed | `S00_EntryLogic.mqh` | Deleted: `EnsureRunnerAtrHandle`, `ReadRunnerAtr`, `FireTriggerEvent`, `UpdateRunnerVirtualStop`, `CloseFullTrade`, `CloseRunnerOnly`. Restored: a single `CloseActiveTrade(exit_time, exit_price, reason)`. The `m_runner_atr_handle` / cache fields on the class are gone. |
+| `RunExitEvaluation` rewritten | `S00_EntryLogic.mqh` | Now a single-phase per-bar evaluator. Pessimistic short-circuit ordering: stop → target → arm BE → timeout. Details in §2. |
+| Step 3e simplified | `S00_EntryLogic.mqh` | Removed the R1.1c init block (`r_price`, `protect_trigger_level`, etc.). Added the two BE init fields. Same-bar fill check still delegates to `RunExitEvaluation(bar1)`. |
+| CSV simplified | `S00_EntryLogic.mqh` (header + row) | Removed the 7 R1.1c columns (`RPoints`, `TriggerFired`, `RunnerExitPrice`, `InsuranceExitTime`, `InsuranceExitPrice`, `InsuranceResultPoints`, `NetResultPoints`). Added 1 column: `BreakevenArmed` (`YES`/`NO`). Header now has 21 columns (20 R1.1b-diag + 1 R1.1c-fix). |
+| Constructor cleanup | `S00_EntryLogic.mqh` | Dropped the R1.1c ATR-handle init. Body shrinks back toward the R1.1b-purity shape. |
+| `EA_VERSION_TAG` | `Core/FalconConstants.mqh:10` | `R1_1c` → `R1_1c_fix`. |
 
-**Net lines:** ~+260 in `S00_EntryLogic.mqh`; ~+5 in `S00_ScalpFvgMicroInputs.mqh`; minimal ripple in detector / filter; 1-line bump in `FalconConstants.mqh`.
+**Net file delta:** `S00_EntryLogic.mqh` shrinks 822 → 636 lines (the R1.1c additions, ~+186, fully removed). `S00_ScalpFvgMicroInputs.mqh` rewritten with one new input + three removed.
 
 ---
 
-## 2. Unified exit evaluator — `RunExitEvaluation(bar)`
+## 2. The exit evaluator — `RunExitEvaluation(bar)`
 
-Called from two sites:
+Called from two sites (unchanged from R1.1c):
 1. `UpdateOpenTradeOnBar(bar)` — once per closed M5 bar (step 2 of `EvaluateOnNewBar`), after `MFE/MAE` refresh + `elapsed_bars++`.
-2. The entry-bar same-bar fill check inside step 3e — *after* `m_active_trade.open = true` and the R1.1c fields are initialised; `elapsed_bars` stays 0 here so the entry bar itself doesn't count toward `S00_MaxTradeDurationBars`.
+2. The entry-bar same-bar fill check inside step 3e — *after* `m_active_trade.open = true` and the BE init fields; `elapsed_bars` stays 0 here so the entry bar itself doesn't count toward `S00_MaxTradeDurationBars`.
 
-### 2.1 Pre-trigger phase (spec §1.3–§1.5 + §1.8)
+### 2.1 Order (short-circuit, first match wins)
 
-Order (short-circuit, first match wins) — **pessimistic**:
+1. **Stop hit** (`bull ? bar.low ≤ stop_loss : bar.high ≥ stop_loss`). Closes at `stop_loss` with reason `STOP`. The `stop_loss` field carries the **current effective stop**: structural pre-arm, entry post-arm. So the same check handles both forms. The `BreakevenArmed` CSV column tells the analyst which form fired:
+   - `ExitReason=STOP, BreakevenArmed=NO` → structural stop (full loss).
+   - `ExitReason=STOP, BreakevenArmed=YES` → BE stop (flat result).
+2. **Target hit** (`bull ? bar.high ≥ target : bar.low ≤ target`). Closes at `target` with reason `TARGET`. Pessimistic same-bar rule: stop has priority over target (step 1 already ran).
+3. **Arm BE** (`!breakeven_armed && hit_trigger`). `trigger_price = entry ± S00_BreakevenTrigger × point`. `hit_trigger = bull ? bar.high ≥ trigger_price : bar.low ≤ trigger_price`. If hit, set `breakeven_armed = true`, record `breakeven_arm_bar_time`, mutate `stop_loss` to `entry_price`. **No exit on this bar** — the new BE stop applies on subsequent bars only (matches the spec wording "بعدها: إن انعكس السعر، تُغلَق عند نقطة الدخول"). The bar that arms BE gets a pass on the new stop.
+4. **Timeout** (`elapsed_bars ≥ S00_MaxTradeDurationBars`). Closes at `bar.close` with reason `TIMEOUT`. Counts from entry — armed or not.
 
-1. **Structural stop hit.** `bull ? bar.low ≤ struct_sl : bar.high ≥ struct_sl`. Closes the full trade at `struct_sl` with reason `STOP`. Pessimistic edge case §1.8: if the bar contains both the structural stop AND the trigger level, the structural stop wins → full loss, trigger does NOT fire. Implemented by checking structural stop first.
-2. **Trigger hit** (`bull ? bar.high ≥ trig_level : bar.low ≤ trig_level`). Fires `FireTriggerEvent(bar)`. Returns false (runner stays open). Per spec, runner exit eval is suppressed for the rest of THIS bar.
-3. **Target hit alone.** `bull ? bar.high ≥ target : bar.low ≤ target`. Closes the full trade at `target` with reason `TARGET`. (Pre-trigger means trigger didn't fire on this bar — target-without-trigger is unusual but possible if the bar overshoots the target without holding above trigger; the SPEC's pessimistic chain places target after trigger in the ordering, so this branch fires only when the trigger didn't.)
-4. **Timeout.** `elapsed_bars ≥ S00_MaxTradeDurationBars` (only reachable on non-entry bars where `elapsed_bars++` ran). Closes at `bar.close` with reason `TIMEOUT`.
+### 2.2 Pessimistic edge case — same-bar structural-stop + BE-trigger
 
-### 2.2 Post-trigger phase (spec §1.6 + §1.7 + §1.8)
+If a bar's range covers both the original structural stop AND the BE trigger price, the structural stop wins (step 1 runs first, returns true). The BE never arms. This matches the R1.1c pessimistic rule and the spirit of the spec: same-bar order is unknowable, so favour the trader's downside.
 
-Skips the trigger bar itself: `if(bar.time == trigger_bar_time) return false;`. Otherwise:
+### 2.3 Pessimistic edge case — same-bar BE-stop + target (post-arm)
 
-1. **Update virtual stop.** `UpdateRunnerVirtualStop(bar)`: refresh ATR for `bar.time`, compute `trail = close ∓ mult × ATR`, ratchet `runner_virtual_stop = max(vs, trail, breakeven)` for bull (mirror for bear). If ATR isn't warm yet (`atr ≤ 0`), the stop stays where it is.
-2. **Virtual stop hit** (`bull ? bar.low ≤ vs : bar.high ≥ vs`). Closes the runner at `vs`. Reason: `TRAIL` if `vs` has ratcheted strictly above (bull) / below (bear) entry, else `BREAKEVEN`. This gives the analysis CSV a clean way to count "stopped at breakeven" vs "stopped after a profitable trail."
-3. **Target hit** (`bull ? bar.high ≥ target : bar.low ≤ target`). Closes the runner at `target` with reason `TARGET`. Pessimistic edge §1.8.4: if the bar contains both the virtual stop and the target, the virtual stop wins.
-4. **Timeout.** Same `elapsed_bars` rule; closes at `bar.close` with reason `TIMEOUT`.
+Once BE has armed, `stop_loss == entry_price`. If a subsequent bar's range covers both `entry_price` (going against the trade) AND `target`, the stop check runs first → close at entry, flat result. The trade doesn't capture the favourable move on that same bar. Pessimistic, matches the trader-safe priority.
 
-### 2.3 Trigger-bar handling
+### 2.4 Same-bar BE arming + reversal to entry — design choice documented
 
-The trigger fires on bar T. On bar T:
-- Pre-trigger eval: structural stop check (no hit), trigger check (hit) → `FireTriggerEvent(bar T)`, return false.
-- Runner exit eval is NOT executed for the rest of bar T (the `if(bar.time == trigger_bar_time) return false;` at the top of the post-trigger branch guarantees this).
-- The CSV row for the trade is not written yet — runner is still open.
+If a single bar's range goes through the trigger price (favorable) AND back through the entry price (reversal), the arm-check is INTENTIONALLY ordered AFTER the stop check at the top of the evaluator. So:
+- Top of evaluator: `hit_stop` checks the pre-arm structural stop (still in `stop_loss`). bar.low > structural_stop → no hit.
+- Step 2: target check.
+- Step 3: BE arms. `stop_loss` mutates to entry.
+- Bar processing ends — the new BE stop is **not** re-checked against this bar's range.
 
-On bar T+1 (first eligible runner exit bar):
-- `is_trigger_bar = (T == T+1) = false` → runner eval proceeds.
-- `UpdateRunnerVirtualStop(bar T+1)`: ATR + trail compute, virtual stop may ratchet up.
-- Stop / target / timeout checks against bar T+1's range.
+The next bar is the first BE-stop-eligible bar. This matches the spec's "بعدها" ("afterwards") wording and avoids double-evaluating the arming bar.
 
-This eliminates the "ordering inside one bar" ambiguity that would otherwise let the runner be unfairly stopped on the same bar its breakeven stop was set.
+### 2.5 Lookahead
 
-### 2.4 Lookahead
+Read sites in `Strategies/S00_ScalpFvgMicro/*.mqh` after R1.1c-fix:
 
-All eval input is closed-bar:
-- `bar` parameter is `bar1` from `GetCandleSnapshot(PERIOD_M5, 1, bar1)` at the top of `EvaluateOnNewBar` — closed.
-- `ReadRunnerAtr` uses `CopyBuffer(handle, 0, 1, 1)` — `start=1` is the closed bar.
+| File | Site | Closed-bar guarantee |
+|---|---|---|
+| `S00_FvgDetector.mqh:74` | `CopyBuffer(m_atr_handle, 0, 1, 1, buf)` | `start=1` (closed ATR bar). Unchanged since R1.1a. |
+| `S00_FvgDetector.mqh:82` | `CopyBuffer(m_ma_handle, 0, 1, 1, buf)` | `start=1` (closed MA bar). Unchanged. |
+| `S00_FvgDetector.mqh:94` | `GetCandleSnapshot(PERIOD_M5, shift, snap)` | Inside `ReadClosedM5`; `shift < 1` returns false. Unchanged. |
+| `S00_TradePlan.mqh:55–57` | swing-high scan (`k-1`, `k`, `k+1` with `k ≥ 2`) | All shifts ≥ 1. Unchanged. |
+| `S00_TradePlan.mqh:79–81` | swing-low scan, mirror | Unchanged. |
+| `S00_EntryLogic.mqh:~426` | `GetCandleSnapshot(PERIOD_M5, 1, bar1)` | `shift=1` (most recent closed). Unchanged. |
 
-No new `iClose`/`iHigh`/`iLow`/`iOpen`/`CopyRates`/`SymbolInfoTick`. Total read-site count in `Strategies/S00_ScalpFvgMicro/*.mqh` after R1.1c: same 9 pre-existing sites (Detector ×3 + TradePlan ×6 + EntryLogic ×1) + 1 new closed-bar `CopyBuffer` for the runner ATR = 10 read sites, all closed-bar.
-
----
-
-## 3. Paper isolation — what R1.1c did NOT touch
-
-R1.1c reads zero of the following legacy contracts/globals:
-- `g_report_writer.*`
-- `g_broker_entry_bridge.*`
-- `g_shadow_executor.*`
-- `g_risk_lifecycle_processor.*`
-- `g_risk_foundation.*`
-- `g_risk_tm_architecture.*`
-
-Zero `OrderSend` / `BrokerModify` / `TRADE_ACTION_SLTP` / `RuntimeSLChanged` anywhere. Every stop movement is on `m_active_trade.runner_virtual_stop` — a local double on `CS00EntryLogic`'s `S00PaperTrade` struct. The structural stop on the broker side is untouched (still the original `plan.stop_loss`); only the *virtual* stop the strategy uses for exit decisions moves.
-
-Therefore: the legacy FixedLot April reproducer (`585.17 / 1104.89 / 157.49`) is unaffected — those numbers come from the legacy chain that R1.1c never reaches.
-
-Per spec §13: the "zero behavior change" rule does NOT apply to R1.1c. The S00 trades themselves *will* change — that's the whole point. Compare against R1.1b-purity baseline, not against R0.8b.
+**9 sites total** — same as R1.1b-purity. The R1.1c runner ATR handle (which added a 10th `CopyBuffer` site at `S00_EntryLogic.mqh`) is gone. Zero `iClose`/`iHigh`/`iLow`/`iOpen`/`CopyRates`/`SymbolInfoTick`. All closed-bar.
 
 ---
 
-## 4. Trade CSV — `S00_Trades_Diagnostics.csv` (now 27 columns)
+## 3. Paper isolation — what R1.1c-fix did NOT touch
 
-The 20 columns from R1.1b-diag are kept verbatim — analysis pipelines written against the post-purity CSV still work. R1.1c **appends** 7 columns:
+R1.1c-fix reads zero of: `g_report_writer`, `g_broker_entry_bridge`, `g_shadow_executor`, `g_risk_lifecycle_processor`, `g_risk_foundation`, `g_risk_tm_architecture`. Zero `OrderSend` / `BrokerModify` / `TRADE_ACTION_SLTP` / `RuntimeSLChanged`. The "stop movement" when BE arms is a write to `m_active_trade.stop_loss` (a `double` field on the `S00PaperTrade` struct) — paper-only. No broker order ever existed for the trade.
+
+Legacy FixedLot April `585.17 / 1104.89 / 157.49` is untouched (the legacy chain that produces those numbers is not reached by S00 in any form).
+
+---
+
+## 4. Trade CSV — `S00_Trades_Diagnostics.csv` (now 21 columns)
+
+The 20 R1.1b-diag columns are preserved verbatim. R1.1c-fix adds **1 column**:
 
 | Column | Meaning |
 |---|---|
-| `RPoints` | `r_price / point` — the 1R distance in points (≡ structural stop distance) |
-| `TriggerFired` | `YES` if the +1R trigger event ran during the trade's life, else `NO` |
-| `RunnerExitPrice` | duplicate of `t.exit_price` for explicit naming (the existing `ResultPoints` column already encodes the runner's signed result; the price was missing from the CSV) |
-| `InsuranceExitTime` | bar time at which the insurance half closed (= trigger bar time when fired; mirrors runner exit time when not fired) |
-| `InsuranceExitPrice` | `protect_trigger_level` when fired; mirrors runner exit price when not fired |
-| `InsuranceResultPoints` | signed points: `(insurance_exit - entry)/point` for bull (mirror for bear). Equals `≈ ProtectTriggerR × RPoints` when the trigger fired cleanly; equals the runner's points when the trigger did not fire (no-trigger case = both halves exit together). |
-| `NetResultPoints` | size-weighted combined result: `split × insurance_points + (1−split) × runner_points`, where `split = S00_RunnerSplitPct / 100`. This is the "net trade points" for size-weighted analysis. When the trigger doesn't fire, both halves share the price so this collapses to the single-leg result. |
+| `BreakevenArmed` | `YES` if the BE protection fired during the trade's life, else `NO`. |
 
-`ExitReason` semantics also extended:
-- Pre-trigger close → existing labels (`STOP`, `TARGET`, `TIMEOUT`).
-- Post-trigger runner close → new labels (`TRAIL`, `BREAKEVEN`, `TARGET`, `TIMEOUT`).
-- `STOP` continues to mean "pre-trigger structural-stop full loss" — a `STOP` row always has `TriggerFired = NO`.
+R1.1c's 7 columns (`RPoints`, `TriggerFired`, `RunnerExitPrice`, `InsuranceExitTime`, `InsuranceExitPrice`, `InsuranceResultPoints`, `NetResultPoints`) are removed. Existing analysis pipelines written against the R1.1b-diag shape still work; R1.1c-specific pipelines need to be re-pointed at the simpler shape.
 
-The spec §11 "runner breakdown" report is computable directly from the CSV: group by trade, filter `TriggerFired = YES`, group runner rows by `ExitReason`, count percentages, compute avg `R = ResultPoints / RPoints`. No separate file needed for R1.1c.
+**Analysis rules with the new column:**
+- `ExitReason=STOP, BreakevenArmed=NO` → structural-stop loss (full R-loss).
+- `ExitReason=STOP, BreakevenArmed=YES` → BE-stop exit (≈ flat result; `ResultPoints` should be near 0).
+- `ExitReason=TARGET, BreakevenArmed=*` → target hit. BE may or may not have armed earlier; doesn't change the outcome.
+- `ExitReason=TIMEOUT, BreakevenArmed=*` → forced close at `bar.close`. If `BreakevenArmed=YES`, the trade exited at whatever the close happened to be (could be slightly above entry, at entry, or somewhere along the way).
 
 ---
 
-## 5. Edge cases — implementation map
-
-| Spec §1.8 case | Implementation |
-|---|---|
-| Structural stop hit before trigger | `RunExitEvaluation` pre-trigger branch, step 1 (struct stop wins). |
-| Trigger + structural stop on same bar | Pre-trigger branch checks struct stop FIRST → pessimistic full loss, trigger does NOT fire. |
-| Runner exit eval skipped on trigger bar | `if(bar.time == trigger_bar_time) return false;` at the top of the post-trigger branch. |
-| Virtual stop + target on same bar (post-trigger) | Post-trigger branch checks `hit_vstop` BEFORE `hit_target` → pessimistic stop wins. |
-| Timeout before trigger | Pre-trigger branch, step 4 → `CloseFullTrade(..., TIMEOUT)`. |
-| Invalidation / expiry of FVG | Untouched (step 3a / 3b of the per-FVG loop in `EvaluateOnNewBar`); R1.1c only governs what happens after entry. |
-| One trade at a time | Enforced upstream in `EvaluateOnNewBar` step 3d/3e (existing R1.1b logic — `if(m_active_trade.open) continue;` and `BUSY` drop reason). R1.1c does not relax this. |
-
----
-
-## 6. What did NOT happen (per spec §3 + §8)
-
-- No change to FVG detection, the four quality filters (SIZE/MAXSIZE/ATR/TREND), confirmation (body + purity), revisit, invalidation, expiry, structural stop, or target.
-- No change to the 1:2 trade-plan gate.
-- No `OrderSend`, no `BrokerModify`, no `TRADE_ACTION_SLTP`, no `RuntimeSLChanged`.
-- No `Apply*` chain reordering (the chain is in `Risk/`, not even called from S00).
-- No new lookahead surface — same 9 read sites + 1 new closed-bar `CopyBuffer`.
-- No tuning. The four defaults (`50.0 / 1.0 / 2.0 / 14`) are starting points per spec §2; tuning is a separate three-period (March + April + May) test the operator runs next.
-
----
-
-## 7. Touch surface (files modified, line-level)
-
-| File | Lines | Why |
-|---|---|---|
-| `Core/FalconConstants.mqh` | +1/−1 | `EA_VERSION_TAG` bump |
-| `Strategies/S00_ScalpFvgMicro/S00_ScalpFvgMicroInputs.mqh` | rewrite (+5 net) | Promote `S00_AtrPeriod`, rename `S00_MaxTradeDurationBars`, add 3 R1.1c inputs, refresh header comment |
-| `Strategies/S00_ScalpFvgMicro/S00_FvgDetector.mqh` | 3 site replaces | `S00_ATR_PERIOD` → `S00_AtrPeriod` |
-| `Strategies/S00_ScalpFvgMicro/S00_FvgQualityFilter.mqh` | 1 comment replace | `S00_ATR_PERIOD` → `S00_AtrPeriod` |
-| `Strategies/S00_ScalpFvgMicro/S00_EntryLogic.mqh` | ~+260 net | R1.1c struct + enum extensions, ATR handle + cache, `FireTriggerEvent` / `UpdateRunnerVirtualStop` / `RunExitEvaluation` / `CloseFullTrade` / `CloseRunnerOnly`, refactored `UpdateOpenTradeOnBar` to delegate, step 3e initialises new fields + calls `RunExitEvaluation` for same-bar fill, CSV header + row extended |
-| `Docs/Ideas_Backlog.md` | +1 item (#53) | Structural trailing as a data-driven alternative to ATR trailing |
-| `Docs/ReviewNotes/R1_1c_Review_Notes.md` | new | this file |
-| `Docs/Specs/JA_FalconCore_R1_1c_SPEC.md` | new (moved from root) | per convention; will be staged in the same commit |
-
-What R1.1c did NOT touch:
-- `Risk/*`, `Reporting/*`, `Execution/*`, `Router/*`, `Evidence/*`, `TradeManagement/*`.
-- `Core/*` other than `EA_VERSION_TAG`.
-- The 12-step `Apply*` chain.
-- Any pre-refactor input.
-- Any existing report writer or CSV path.
-
----
-
-## 8. Acceptance status (per spec §7)
+## 5. Acceptance status (per `JA_FalconCore_R1_1c_fix_SPEC.md` §7)
 
 | Criterion | Status |
 |---|---|
-| Two-half split at entry (`S00_RunnerSplitPct`) | ✓ `r_price` set, virtual stop initialised at structural stop pre-trigger |
-| `+1R` trigger on closed bars only — closes insurance, moves runner to BE | ✓ `RunExitEvaluation` pre-trigger branch + `FireTriggerEvent` |
-| Runner ATR-trailing virtual stop, ratchets monotonically, breakeven floor | ✓ `UpdateRunnerVirtualStop` |
-| Final runner exit by target / trail / timeout | ✓ post-trigger branch + new enum labels |
-| Pessimistic rules (struct+trigger same bar; vstop+target same bar; skip runner eval on trigger bar) | ✓ §2.3 + §5 |
-| 4 inputs added (3 new + 1 promoted) with clean labels in S00 group | ✓ `S00_ScalpFvgMicroInputs.mqh` |
-| No change to entry / FVG / filters / invalidation / expiry / struct stop / target | ✓ §6 + §7 |
-| No `OrderSend` / `BrokerModify` / `TRADE_ACTION_SLTP` / `RuntimeSLChanged` | ✓ §3 |
-| No lookahead | ✓ §2.4 |
-| Trade CSV separates insurance / runner / net | ✓ §4 |
-| `EA_VERSION_TAG = R1_1c` | ✓ |
+| R1.1c runner / 1R protection mechanism removed | ✓ §1 |
+| Protection = `S00_BreakevenTrigger` fixed-points threshold | ✓ §2 |
+| No half-cut, no partial close, no trailing | ✓ no `Split`/`Trail`/`Insurance` code paths remain |
+| No change to FVG detection, filters, entry, purity, structural stop, target | ✓ files outside `S00_EntryLogic.mqh` + the inputs file are untouched (except detector / filter rename ripple from R1.1c, which is also unchanged here) |
+| `S00_BreakevenTrigger` input added, clean label, S00 group | ✓ |
+| No lookahead | ✓ §2.5 |
+| Legacy code unaffected | ✓ §3 |
+| `EA_VERSION_TAG = R1_1c_fix` | ✓ |
+| Review notes + Backlog updated | ✓ this file + #53 strike-through, #54-56 added |
 | Compile `0 errors, 0 warnings` | ⏳ MetaEditor F7 by user |
-| Three-month test (March + April + May) | ⏳ user backtest + analysis |
-| Review Notes + Backlog updated | ✓ |
+| Three-month test (March → today) shows all months profitable | ⏳ user backtest |
 
 ---
 
-## 9. After R1.1c — next steps
+## 6. Touch surface (R1.1c-fix only — relative to R1.1c HEAD `4067f6c`)
 
-1. **Compile** (MetaEditor F7). If anything breaks, the most likely culprit is the `S00_MaxTradeBars` → `S00_MaxTradeDurationBars` rename — `grep -nE "S00_MaxTradeBars\\b"` should return zero hits across the project tree.
-2. **Three-month backtest** (March + April + May 2026, S00 only). Diagnostic CSV must include the 7 new R1.1c columns.
-3. **Runner breakdown analysis** (spec §4): from the trigger-fired subset, count exit reasons (`TARGET / TRAIL / BREAKEVEN / TIMEOUT`) and the average runner `R = ResultPoints / RPoints`. The success criterion is an enlarged winner/loser margin compared to the R1.1b-purity baseline AND positive net after costs across all three months.
-4. **Tune the four defaults** by test: `S00_RunnerSplitPct`, `S00_ProtectTriggerR`, `S00_RunnerTrailAtrMult`, `S00_AtrPeriod`. Per spec §2 + §13: tune over the three-month window jointly — never from a single month.
-5. If runners die at breakeven disproportionately: consider switching to structural trailing per Backlog #53 (already logged), or relaxing `S00_RunnerTrailAtrMult`.
-6. **R1.2** is the next phase — move S00 from paper-isolated to real Strategy Tester execution to measure broker costs against the paper baseline. The two-half CSV from R1.1c is what makes that comparison meaningful.
+| File | Change |
+|---|---|
+| `Strategies/S00_ScalpFvgMicro/S00_ScalpFvgMicroInputs.mqh` | Rewrite: −3 runner inputs, +1 BE input, header note updated |
+| `Strategies/S00_ScalpFvgMicro/S00_EntryLogic.mqh` | −186 net lines (runner mechanism rip-out, simpler evaluator, simpler CSV) |
+| `Core/FalconConstants.mqh` | `EA_VERSION_TAG` bump |
+| `Docs/Ideas_Backlog.md` | #53 struck-through + superseded note; #54, #55, #56 added |
+| `Docs/ReviewNotes/R1_1c_Review_Notes.md` | this file (full rewrite) |
+| `Docs/Specs/JA_FalconCore_R1_1c_fix_SPEC.md` | added (moved from root) |
+
+Untouched: `S00_FvgDetector.mqh`, `S00_FvgQualityFilter.mqh`, `S00_TradePlan.mqh`, `JA_FalconCore_Automated_Trading_Platform.mq5`, anything under `Risk/`, `Reporting/`, `Execution/`, `Router/`, `Core/` (other than the EA_VERSION_TAG line).
 
 ---
 
-*End of R1.1c review notes. The exit logic is unified — one trigger, two events, then the runner trails on ATR. No legacy chain touched, no broker order sent. The two-half CSV is in place; the data now decides.*
+## 7. What did NOT happen (per spec §3 + §8)
+
+- No half-cut, no partial close, no trailing.
+- No protection tied to 1R or any R-multiple. The trigger is pure fixed points.
+- No change to FVG detection, the four quality filters, confirmation (body + purity), revisit, invalidation, expiry, structural stop, or target.
+- No `OrderSend` / `BrokerModify` / `TRADE_ACTION_SLTP` / `RuntimeSLChanged`.
+- No lookahead — 9 read sites, all closed-bar.
+- No new input from a single-month tuning. `S00_BreakevenTrigger = 800` is from a three-month simulation; the spec note's range of 500–1,000 (all working) was preserved by picking the middle (not the top, to avoid overfitting).
+- No Ideas_Backlog item executed beyond R1.1c-fix's strict scope. Trailing-after-BE and partial-cut-at-high-threshold are logged (#54, #55) with the explicit rule (#56) that each is tested alone on top of this baseline.
+
+---
+
+## 8. Next steps
+
+1. **Compile** (MetaEditor F7). Most likely failure points if any: a stale reference to `S00_ProtectTriggerR` / `S00_RunnerSplitPct` / `S00_RunnerTrailAtrMult` somewhere outside the S00 folder. `grep -nrE "S00_(ProtectTriggerR|RunnerSplitPct|RunnerTrailAtrMult|EXIT_TRAIL|EXIT_BREAKEVEN)\b"` should return zero hits in code files.
+2. **Three-month backtest** (March 1 → today, S00 only). Diagnostic CSV must have the 21-column shape and the new `BreakevenArmed` flag populated.
+3. **Analyze** the three months separately (March / April / May / June onwards). Expected per spec §4: all months profitable, total clearly positive (simulation ~+19,000 at 800 threshold).
+4. **Tune** `S00_BreakevenTrigger` across the three-month window jointly — never from a single month. Range to consider: 500–1,000 per the simulation.
+5. If the three-month baseline is confirmed: optionally add ONE enhancement at a time per Backlog #54 (trailing after BE) or #55 (small-fraction cut at a high threshold). Per #56, keep only if the total improves AND no single month regresses.
+6. **R1.2** opens when the paper baseline is locked: move S00 from paper-isolated to real Strategy Tester execution to measure broker costs against the paper baseline.
+
+---
+
+*End of R1.1c review notes. The runner machine was a wrong turn; the data rejected it. R1.1c-fix is the simpler, baseline-correct protection: one fixed-points trigger, one stop move, one trade. The data tells us what — if anything — to add on top.*

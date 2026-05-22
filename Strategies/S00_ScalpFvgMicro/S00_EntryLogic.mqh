@@ -57,18 +57,16 @@ struct S00TrackedFvg
    double                pre_confirm_extreme_price;  // BULLISH: lowest low seen pre-confirm; BEARISH: highest high
 };
 
-// Exit reasons. R1.1c adds TRAIL + BREAKEVEN for the runner-half
-// post-trigger exit; STOP is still used for pre-trigger structural-stop
-// exits (full trade out); TARGET / TIMEOUT cover both pre- and
-// post-trigger exits.
+// Exit reasons. R1.1c-fix: trade is a single unit (no split, no
+// runner). STOP covers both structural and breakeven exits - the
+// `breakeven_armed` flag on the trade record distinguishes them
+// for analysis.
 enum ENUM_S00_TRADE_EXIT_REASON
 {
-   S00_EXIT_NONE      = 0,
-   S00_EXIT_TARGET    = 1,
-   S00_EXIT_STOP      = 2,   // pre-trigger structural stop (full trade)
-   S00_EXIT_TIMEOUT   = 3,
-   S00_EXIT_TRAIL     = 4,   // R1.1c: runner virtual stop above breakeven
-   S00_EXIT_BREAKEVEN = 5    // R1.1c: runner virtual stop at breakeven
+   S00_EXIT_NONE    = 0,
+   S00_EXIT_TARGET  = 1,
+   S00_EXIT_STOP    = 2,
+   S00_EXIT_TIMEOUT = 3
 };
 
 struct S00PaperTrade
@@ -98,23 +96,14 @@ struct S00PaperTrade
    int                         bars_from_fvg_to_entry;    // (entry_time - formation_time) measured in M5 bars
    double                      mfe_points;                // running max favorable excursion in points (>=0)
    double                      mae_points;                // running max adverse excursion in points (>=0)
-   // R1.1c: two-half trade model (Runner + Protection).
-   //   Before trigger: both halves share the structural stop.
-   //   At trigger: insurance half closes at trigger level; runner
-   //               half's virtual stop is moved to breakeven.
-   //   After trigger: runner trails on ATR; exits at TARGET / TRAIL /
-   //                  BREAKEVEN / TIMEOUT.
-   double                      r_price;                   // |entry - structural stop| in price (== "1R")
-   double                      protect_trigger_level;     // entry + R (bull) / entry - R (bear)
-   bool                        trigger_fired;             // has the trigger event run?
-   datetime                    trigger_bar_time;          // bar.time at which trigger fired (used to skip runner eval on the trigger bar)
-   // Insurance half
-   datetime                    insurance_exit_time;
-   double                      insurance_exit_price;
-   double                      insurance_result_points;   // (exit - entry)/point for bull, signed
-   // Runner half
-   double                      runner_virtual_stop;       // current virtual stop for the runner; ratchets up (or down for bear)
-   bool                        runner_open;               // true while the runner is still in the market
+   // R1.1c-fix: single-trade breakeven protection.
+   //   When unrealised profit reaches S00_BreakevenTrigger points,
+   //   stop_loss is moved to entry_price (paper-only - the trade is
+   //   isolated, no broker SL ever existed). The trade then runs to
+   //   target, hits the entry-level stop (flat result), or times out.
+   //   No partial close, no trailing - one knob, one effect.
+   bool                        breakeven_armed;         // has the BE protection fired?
+   datetime                    breakeven_arm_bar_time;  // bar.time at which BE armed
 };
 
 class CS00EntryLogic
@@ -129,14 +118,6 @@ private:
 
    bool              m_trades_header_written;
    string            m_trades_file_name;
-
-   // R1.1c: ATR handle for the runner trailing stop. Same indicator
-   // params the detector uses (M5, S00_AtrPeriod), but kept locally
-   // to avoid cross-class coupling. MQL5 caches indicator handles by
-   // (symbol, timeframe, params) so this does not double the cost.
-   int               m_runner_atr_handle;
-   datetime          m_runner_atr_last_bar_time;
-   double            m_runner_atr_last_value;
 
    //--------------------- detector poll ---------------------
    void PollDetector()
@@ -226,15 +207,13 @@ private:
             "ConfirmBodyPoints,ConfirmRangePoints,EntryVsCE,"
             "EntryVsGapMid,PenetrationDepth,BarsFromFvgToEntry,"
             "MfePoints,MaePoints,"
-            // R1.1c columns - two-half trade model (runner + protection)
-            //   ResultPoints + ExitReason continue to describe the
-            //   RUNNER half (or the full trade if no trigger fired).
-            //   Insurance fields are zero when no trigger fired.
-            //   NetResultPoints is the size-weighted combination using
-            //   S00_RunnerSplitPct.
-            "RPoints,TriggerFired,RunnerExitPrice,"
-            "InsuranceExitTime,InsuranceExitPrice,InsuranceResultPoints,"
-            "NetResultPoints";
+            // R1.1c-fix - single new column: did the BE protection arm?
+            //   StopLoss in the row above reflects the structural stop
+            //   the trade entered with. If BreakevenArmed = YES, the
+            //   effective stop after arming was entry_price - look at
+            //   ResultPoints to see whether the trade exited at flat
+            //   (BE-stop hit) or ran to target.
+            "BreakevenArmed";
       FileWriteString(handle, header + "\r\n");
       FileClose(handle);
       m_trades_header_written = true;
@@ -254,22 +233,11 @@ private:
       string reason_label;
       switch((int)t.exit_reason)
       {
-         case S00_EXIT_TARGET:    reason_label = "TARGET";    break;
-         case S00_EXIT_STOP:      reason_label = "STOP";      break;
-         case S00_EXIT_TIMEOUT:   reason_label = "TIMEOUT";   break;
-         case S00_EXIT_TRAIL:     reason_label = "TRAIL";     break;
-         case S00_EXIT_BREAKEVEN: reason_label = "BREAKEVEN"; break;
-         default:                 reason_label = "NONE";      break;
+         case S00_EXIT_TARGET:  reason_label = "TARGET";  break;
+         case S00_EXIT_STOP:    reason_label = "STOP";    break;
+         case S00_EXIT_TIMEOUT: reason_label = "TIMEOUT"; break;
+         default:               reason_label = "NONE";    break;
       }
-      // R1.1c: size-weighted net (in points). When the trigger fires:
-      //   net = split * insurance_points + (1-split) * runner_points.
-      // When the trigger does NOT fire, insurance mirrors the runner so
-      // the formula still produces the correct single-leg result.
-      const double split = S00_RunnerSplitPct / 100.0;
-      const double net_points =
-            split * t.insurance_result_points + (1.0 - split) * t.result_points;
-      const double pt_for_r = (_Point > 0.0 ? _Point : 1.0);
-      const double r_points = t.r_price / pt_for_r;
       const string row =
             FalconTimeToString(t.entry_time)                  + "," +
             dir_label                                         + "," +
@@ -292,51 +260,17 @@ private:
             IntegerToString(t.bars_from_fvg_to_entry)         + "," +
             DoubleToString(t.mfe_points,                   1) + "," +
             DoubleToString(t.mae_points,                   1) + "," +
-            // R1.1c columns
-            DoubleToString(r_points,                       1) + "," +
-            (t.trigger_fired ? "YES" : "NO")                  + "," +
-            DoubleToString(t.exit_price,            _Digits)  + "," +
-            FalconTimeToString(t.insurance_exit_time)         + "," +
-            DoubleToString(t.insurance_exit_price,  _Digits)  + "," +
-            DoubleToString(t.insurance_result_points,      1) + "," +
-            DoubleToString(net_points,                     1);
+            // R1.1c-fix column
+            (t.breakeven_armed ? "YES" : "NO");
       FileWriteString(handle, row + "\r\n");
       FileClose(handle);
    }
 
-   //--------------------- R1.1c ATR for runner trailing ------
-   bool EnsureRunnerAtrHandle()
-   {
-      if(m_runner_atr_handle == INVALID_HANDLE)
-         m_runner_atr_handle = iATR(_Symbol, PERIOD_M5, S00_AtrPeriod);
-      return (m_runner_atr_handle != INVALID_HANDLE);
-   }
-
-   // Returns ATR value (price units) from the CLOSED bar at shift=1.
-   // start=1 in CopyBuffer = closed bar (start=0 would be the live bar).
-   // Caches the value per bar to avoid redundant CopyBuffer calls in a
-   // single OnTick pass.
-   double ReadRunnerAtr(const datetime bar_time)
-   {
-      if(m_runner_atr_last_bar_time == bar_time)
-         return m_runner_atr_last_value;
-      if(!EnsureRunnerAtrHandle())
-         return 0.0;
-      double buf[];
-      if(CopyBuffer(m_runner_atr_handle, 0, 1, 1, buf) <= 0)
-         return 0.0;
-      m_runner_atr_last_bar_time = bar_time;
-      m_runner_atr_last_value    = buf[0];
-      return buf[0];
-   }
-
    //--------------------- trade close ------------------------
-   // CloseFullTrade: both halves exit at the same price (pre-trigger
-   // close - structural stop / target / timeout). insurance_* fields
-   // mirror the runner's exit so the analyst sees one consistent row.
-   void CloseFullTrade(const datetime exit_time,
-                       const double   exit_price,
-                       const ENUM_S00_TRADE_EXIT_REASON reason)
+   // Single-leg close. Writes one CSV row, clears m_active_trade.open.
+   void CloseActiveTrade(const datetime exit_time,
+                         const double   exit_price,
+                         const ENUM_S00_TRADE_EXIT_REASON reason)
    {
       const double point = (_Point > 0.0 ? _Point : 1.0);
       const double raw   = (m_active_trade.direction == S00_FVG_DIR_BULLISH
@@ -346,188 +280,81 @@ private:
       m_active_trade.exit_time     = exit_time;
       m_active_trade.exit_price    = exit_price;
       m_active_trade.result_points = raw / point;
-      // Insurance half mirrors the runner since the trigger never fired.
-      m_active_trade.insurance_exit_time     = exit_time;
-      m_active_trade.insurance_exit_price    = exit_price;
-      m_active_trade.insurance_result_points = m_active_trade.result_points;
-      m_active_trade.runner_open             = false;
       AppendTradeRow(m_active_trade);
       m_active_trade.open = false;
    }
 
-   // CloseRunnerOnly: runner half exits after the trigger already
-   // closed the insurance half. The insurance_* fields are already
-   // populated from the trigger event.
-   void CloseRunnerOnly(const datetime exit_time,
-                        const double   exit_price,
-                        const ENUM_S00_TRADE_EXIT_REASON reason)
-   {
-      const double point = (_Point > 0.0 ? _Point : 1.0);
-      const double raw   = (m_active_trade.direction == S00_FVG_DIR_BULLISH
-                             ? exit_price - m_active_trade.entry_price
-                             : m_active_trade.entry_price - exit_price);
-      m_active_trade.exit_reason   = reason;
-      m_active_trade.exit_time     = exit_time;
-      m_active_trade.exit_price    = exit_price;
-      m_active_trade.result_points = raw / point;
-      m_active_trade.runner_open   = false;
-      AppendTradeRow(m_active_trade);
-      m_active_trade.open = false;
-   }
-
-   //--------------------- R1.1c trigger event ----------------
-   // Fire the unified +1R trigger: close insurance at trigger level,
-   // move runner's virtual stop to breakeven. Runner exit eval is
-   // deliberately skipped for the rest of THIS bar (spec §1.8 / §9 -
-   // "runner exit evaluation starts from the bar AFTER the trigger").
-   void FireTriggerEvent(const FalconCandleSnapshot &bar)
-   {
-      const double point = (_Point > 0.0 ? _Point : 1.0);
-      const double trig_level = m_active_trade.protect_trigger_level;
-      const double raw   = (m_active_trade.direction == S00_FVG_DIR_BULLISH
-                             ? trig_level - m_active_trade.entry_price
-                             : m_active_trade.entry_price - trig_level);
-      m_active_trade.trigger_fired             = true;
-      m_active_trade.trigger_bar_time          = bar.time;
-      m_active_trade.insurance_exit_time       = bar.time;
-      m_active_trade.insurance_exit_price      = trig_level;
-      m_active_trade.insurance_result_points   = raw / point;
-      m_active_trade.runner_virtual_stop       = m_active_trade.entry_price; // breakeven
-   }
-
-   // Recompute the runner virtual stop after the trigger has fired.
-   // Stop = max(current, close - mult*ATR, breakeven) for BULLISH.
-   // Stop = min(current, close + mult*ATR, breakeven) for BEARISH.
-   // Ratchets monotonically toward the favorable direction; never
-   // moves back toward (or beyond) the unfavorable direction.
-   void UpdateRunnerVirtualStop(const FalconCandleSnapshot &bar)
-   {
-      if(!m_active_trade.trigger_fired) return;
-      const double atr = ReadRunnerAtr(bar.time);
-      if(atr <= 0.0) return;     // ATR not warm; leave stop where it is
-      const double trail_offset = S00_RunnerTrailAtrMult * atr;
-      if(m_active_trade.direction == S00_FVG_DIR_BULLISH)
-      {
-         const double trail_level = bar.close - trail_offset;
-         double candidate = trail_level;
-         if(m_active_trade.entry_price > candidate)        candidate = m_active_trade.entry_price; // floor at BE
-         if(m_active_trade.runner_virtual_stop > candidate) candidate = m_active_trade.runner_virtual_stop;
-         m_active_trade.runner_virtual_stop = candidate;
-      }
-      else if(m_active_trade.direction == S00_FVG_DIR_BEARISH)
-      {
-         const double trail_level = bar.close + trail_offset;
-         double candidate = trail_level;
-         if(m_active_trade.entry_price < candidate)        candidate = m_active_trade.entry_price; // ceiling at BE
-         if(m_active_trade.runner_virtual_stop < candidate) candidate = m_active_trade.runner_virtual_stop;
-         m_active_trade.runner_virtual_stop = candidate;
-      }
-   }
-
-   //--------------------- R1.1c unified exit eval ------------
-   // Single per-bar exit evaluator. Handles pre-trigger + post-trigger
-   // phases in one place. Returns true if the trade was fully closed.
+   //--------------------- R1.1c-fix exit evaluator -----------
+   // Per-bar exit evaluator. Pessimistic short-circuit ordering:
    //
-   // Pre-trigger pessimistic ordering (spec §9):
-   //   structural stop > trigger > target.
-   //   - struct + trigger on same bar -> full loss (struct first).
-   //   - trigger fires alone -> insurance closes, runner waits, runner
-   //                            exit eval is SKIPPED for this bar.
-   //   - target alone (no trigger) -> full trade exits at target.
+   //   1. Stop hit.    stop_loss starts at the structural stop and is
+   //                   mutated in place to entry_price when breakeven
+   //                   arms; the same check therefore handles both the
+   //                   pre-arm structural stop AND the post-arm BE stop.
+   //                   (breakeven_armed = YES on the CSV row tells the
+   //                   analyst which form fired.)
+   //                   Pessimistic same-bar rule: if a bar contains
+   //                   BOTH the structural stop AND the trigger level,
+   //                   the stop wins -> full loss, BE does NOT arm.
+   //   2. Target hit.  Standard close at target.
+   //   3. BE arming.   If !armed and bar's favorable extreme reaches
+   //                   entry +/- S00_BreakevenTrigger * point, arm and
+   //                   move stop_loss to entry_price. No exit on this
+   //                   bar - the new BE stop takes effect on subsequent
+   //                   bars only (the bar that arms is "given a pass",
+   //                   matching spec: "بعدها: إن انعكس السعر، تُغلَق
+   //                   عند نقطة الدخول" - "afterwards", not same-bar).
+   //   4. Timeout.     elapsed_bars >= S00_MaxTradeDurationBars.
    //
-   // Post-trigger pessimistic ordering (spec §9.4):
-   //   virtual stop > target.
-   //   - first eligible bar is the one AFTER the trigger bar.
-   //
-   // Timeout uses elapsed_bars from entry; checked last after no exit.
+   // Returns true if the trade was fully closed.
    bool RunExitEvaluation(const FalconCandleSnapshot &bar)
    {
       if(!m_active_trade.open) return true;
-      const bool bull = (m_active_trade.direction == S00_FVG_DIR_BULLISH);
+      const bool   bull  = (m_active_trade.direction == S00_FVG_DIR_BULLISH);
+      const double point = (_Point > 0.0 ? _Point : 1.0);
+      const double sl    = m_active_trade.stop_loss;       // structural pre-arm, entry post-arm
+      const double tp    = m_active_trade.target;
 
-      if(!m_active_trade.trigger_fired)
+      const bool hit_stop   = (bull ? (bar.low  <= sl) : (bar.high >= sl));
+      const bool hit_target = (bull ? (bar.high >= tp) : (bar.low  <= tp));
+
+      // 1. Stop wins on ties (pessimistic).
+      if(hit_stop)
       {
-         // ============ Pre-trigger ============
-         const double struct_sl   = m_active_trade.stop_loss;
-         const double tp          = m_active_trade.target;
-         const double trig_level  = m_active_trade.protect_trigger_level;
-
-         const bool hit_struct = (bull ? (bar.low  <= struct_sl)
-                                       : (bar.high >= struct_sl));
-         const bool hit_trig   = (bull ? (bar.high >= trig_level)
-                                       : (bar.low  <= trig_level));
-         const bool hit_target = (bull ? (bar.high >= tp)
-                                       : (bar.low  <= tp));
-
-         // Pessimistic: structural stop has priority over everything.
-         if(hit_struct)
-         {
-            CloseFullTrade(bar.time, struct_sl, S00_EXIT_STOP);
-            return true;
-         }
-         // Trigger has priority over target (runner exit eval deferred
-         // to the next bar, so the target check is suppressed for the
-         // runner on the trigger bar itself).
-         if(hit_trig)
-         {
-            FireTriggerEvent(bar);
-            return false;   // runner stays open
-         }
-         // Target alone before any trigger - full trade exits at target.
-         if(hit_target)
-         {
-            CloseFullTrade(bar.time, tp, S00_EXIT_TARGET);
-            return true;
-         }
-         // Timeout (counts from entry).
-         if(m_active_trade.elapsed_bars >= S00_MaxTradeDurationBars)
-         {
-            CloseFullTrade(bar.time, bar.close, S00_EXIT_TIMEOUT);
-            return true;
-         }
-         return false;
+         CloseActiveTrade(bar.time, sl, S00_EXIT_STOP);
+         return true;
       }
-      else
+      // 2. Target.
+      if(hit_target)
       {
-         // ============ Post-trigger (runner phase) ============
-         // Skip the trigger bar itself.
-         if(bar.time == m_active_trade.trigger_bar_time) return false;
-
-         // Refresh the trailing stop using this bar's close + ATR.
-         UpdateRunnerVirtualStop(bar);
-
-         const double vs = m_active_trade.runner_virtual_stop;
-         const double tp = m_active_trade.target;
-
-         const bool hit_vstop  = (bull ? (bar.low  <= vs)
-                                       : (bar.high >= vs));
-         const bool hit_target = (bull ? (bar.high >= tp)
-                                       : (bar.low  <= tp));
-
-         // Pessimistic: virtual stop has priority over target.
-         if(hit_vstop)
-         {
-            // BREAKEVEN reason if the stop is still at entry; TRAIL
-            // if it has ratcheted above (bull) / below (bear) entry.
-            const double eps = (_Point > 0.0 ? _Point : 1e-8);
-            const bool above_be = (bull ? (vs > m_active_trade.entry_price + eps)
-                                         : (vs < m_active_trade.entry_price - eps));
-            CloseRunnerOnly(bar.time, vs, above_be ? S00_EXIT_TRAIL
-                                                   : S00_EXIT_BREAKEVEN);
-            return true;
-         }
-         if(hit_target)
-         {
-            CloseRunnerOnly(bar.time, tp, S00_EXIT_TARGET);
-            return true;
-         }
-         if(m_active_trade.elapsed_bars >= S00_MaxTradeDurationBars)
-         {
-            CloseRunnerOnly(bar.time, bar.close, S00_EXIT_TIMEOUT);
-            return true;
-         }
-         return false;
+         CloseActiveTrade(bar.time, tp, S00_EXIT_TARGET);
+         return true;
       }
+      // 3. Arm BE protection if the bar's favorable excursion reaches
+      //    the trigger threshold. No exit this bar; the new stop
+      //    applies on subsequent bars only.
+      if(!m_active_trade.breakeven_armed && S00_BreakevenTrigger > 0.0)
+      {
+         const double trig_offset = S00_BreakevenTrigger * point;
+         const double trig_price  = (bull
+            ? m_active_trade.entry_price + trig_offset
+            : m_active_trade.entry_price - trig_offset);
+         const bool hit_trigger = (bull ? (bar.high >= trig_price)
+                                        : (bar.low  <= trig_price));
+         if(hit_trigger)
+         {
+            m_active_trade.breakeven_armed        = true;
+            m_active_trade.breakeven_arm_bar_time = bar.time;
+            m_active_trade.stop_loss              = m_active_trade.entry_price;
+         }
+      }
+      // 4. Timeout (counts from entry).
+      if(m_active_trade.elapsed_bars >= S00_MaxTradeDurationBars)
+      {
+         CloseActiveTrade(bar.time, bar.close, S00_EXIT_TIMEOUT);
+         return true;
+      }
+      return false;
    }
 
    // R1.1b-diag: update running MFE / MAE on the active trade against
@@ -576,10 +403,6 @@ public:
       m_active_trade.open          = false;
       m_trades_header_written      = false;
       m_trades_file_name           = "";
-      // R1.1c
-      m_runner_atr_handle          = INVALID_HANDLE;
-      m_runner_atr_last_bar_time   = 0;
-      m_runner_atr_last_value      = 0.0;
    }
 
    //----------------------------------------------------------------
@@ -710,22 +533,13 @@ public:
             m_active_trade.exit_price          = 0.0;
             m_active_trade.result_points       = 0.0;
             m_active_trade.elapsed_bars        = 0;
-            // R1.1c: two-half trade model initialisation.
-            //   R = |entry - structural stop| (price units).
-            //   Trigger level = entry +/- ProtectTriggerR * R.
-            //   Insurance / runner exits left empty until they fire.
-            m_active_trade.r_price                 = MathAbs(plan.entry_price - plan.stop_loss);
-            m_active_trade.protect_trigger_level   =
-               (m_tracked[i].fvg.direction == S00_FVG_DIR_BULLISH
-                ? plan.entry_price + S00_ProtectTriggerR * m_active_trade.r_price
-                : plan.entry_price - S00_ProtectTriggerR * m_active_trade.r_price);
-            m_active_trade.trigger_fired           = false;
-            m_active_trade.trigger_bar_time        = 0;
-            m_active_trade.insurance_exit_time     = 0;
-            m_active_trade.insurance_exit_price    = 0.0;
-            m_active_trade.insurance_result_points = 0.0;
-            m_active_trade.runner_virtual_stop     = plan.stop_loss;  // pre-trigger == structural stop
-            m_active_trade.runner_open             = true;
+            // R1.1c-fix: single breakeven-protection field. The stop
+            // starts at the structural stop and gets mutated to
+            // entry_price by RunExitEvaluation when the +N-points
+            // trigger fires; the flag below records which trades the
+            // protection armed for (for analysis of the CSV).
+            m_active_trade.breakeven_armed         = false;
+            m_active_trade.breakeven_arm_bar_time  = 0;
 
             // R1.1b-diag: capture the entry-quality + execution
             // tracking fields. All derived from already-closed-bar
