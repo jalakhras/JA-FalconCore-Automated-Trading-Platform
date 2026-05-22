@@ -191,6 +191,16 @@ Three permanent rules for MQL5 inputs. They apply to all new strategies (S00, S0
 
 ---
 
+## From R1.2a (real-execution prep: coexistence gate + S00 lot sizing)
+
+57. **Multi-strategy execution system + bridge generalization.** Today `CFalconBrokerEntryBridge` carries a hard-coded `FC_MAGIC_FVG_MICRO = 1100001` magic in ~12 places — every retry path, every ticket-resolve, every modify call. With only one strategy executing for real (the legacy `FVG_MICRO_RETEST`, soon S00), this is fine. The moment a second strategy goes live, the bridge needs: (a) an independent magic per strategy (e.g. `FC_MAGIC_SCALP_FVG_MICRO`, `FC_MAGIC_<S0X>`), and (b) magic-routing inside the bridge so each strategy's tickets are tracked independently. **Build only when two real-executing strategies actually exist** — premature generalization here would balloon the diff without a customer. R1.2a's `S00_RealExecution` gate is deliberately mutually-exclusive (only one strategy at a time) precisely to defer this work.
+
+58. **Removal of the legacy `FVG_MICRO_RETEST` strategy.** Today it is the only source of the `585.17 / 1104.89 / 157.49` FixedLot April verification baseline that every refactor commit checks against. Deleting it before (a) S00 is proven profitable in real execution AND (b) an alternative verification baseline exists would remove the safety net used for every regression check since R0. **Do not delete in R1.2x.** Sequence: prove S00 → establish a new baseline run (e.g. S00 on a fixed historical window producing a checksummed report) → then retire the legacy strategy in a dedicated phase.
+
+59. **Percent-risk lot-sizing mode for S00.** R1.2a ships only fixed-lot sizing (`S00_LotSize`) because it is the simplest and the only one needed to validate the lot-size plumbing before R1.2b's real OrderSend lands. A percent-of-equity (or percent-of-paper-equity) mode is the natural next sizing option once R1.2b is stable. Build it only when there is a concrete reason to size dynamically — fixed-lot is sufficient for the initial demo / live ramp-up. The struct field `S00PaperTrade::lot_size` and the `LotSize` CSV column are already neutral to the sizing mode, so the addition is a pure-input + pure-compute change with no downstream churn.
+
+---
+
 ## Conventions for adding to this file
 
 - One bullet per idea. Keep it terse.

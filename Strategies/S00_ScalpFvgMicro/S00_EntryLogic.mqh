@@ -77,6 +77,7 @@ struct S00PaperTrade
    double                      entry_price;
    double                      stop_loss;
    double                      target;
+   double                      lot_size;                  // R1.2a: computed at open, recorded in CSV. Paper-only - no broker order is sent.
    datetime                    fvg_formation_time;
    double                      fvg_size_points;
    double                      planned_rr_ratio;
@@ -213,7 +214,11 @@ private:
             //   effective stop after arming was entry_price - look at
             //   ResultPoints to see whether the trade exited at flat
             //   (BE-stop hit) or ran to target.
-            "BreakevenArmed";
+            "BreakevenArmed,"
+            // R1.2a - fixed-lot size captured at trade open. Paper
+            // trades carry this for the eventual real-execution
+            // ticket; no broker order is sent in R1.2a.
+            "LotSize";
       FileWriteString(handle, header + "\r\n");
       FileClose(handle);
       m_trades_header_written = true;
@@ -261,7 +266,9 @@ private:
             DoubleToString(t.mfe_points,                   1) + "," +
             DoubleToString(t.mae_points,                   1) + "," +
             // R1.1c-fix column
-            (t.breakeven_armed ? "YES" : "NO");
+            (t.breakeven_armed ? "YES" : "NO")                + "," +
+            // R1.2a column
+            DoubleToString(t.lot_size,                     2);
       FileWriteString(handle, row + "\r\n");
       FileClose(handle);
    }
@@ -525,6 +532,10 @@ public:
             m_active_trade.entry_price         = plan.entry_price;
             m_active_trade.stop_loss           = plan.stop_loss;
             m_active_trade.target              = plan.target;
+            // R1.2a: fixed-lot sizing. Recorded for the CSV + reserved
+            // for R1.2b's real-execution order ticket. Paper-only here;
+            // no broker order is built or sent.
+            m_active_trade.lot_size            = S00_LotSize;
             m_active_trade.fvg_formation_time  = m_tracked[i].fvg.formation_time;
             m_active_trade.fvg_size_points     = m_tracked[i].fvg.gap_size_points;
             m_active_trade.planned_rr_ratio    = plan.target_to_stop_ratio;

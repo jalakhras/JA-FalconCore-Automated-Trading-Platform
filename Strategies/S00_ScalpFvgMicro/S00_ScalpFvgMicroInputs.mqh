@@ -47,6 +47,8 @@ input double S00_StopBuffer            = 30.0;    // Stop distance beyond FVG ed
 input int    S00_SwingLookback         = 30;      // Bars scanned for nearest swing (target)
 input int    S00_MaxTradeDurationBars  = 24;      // Bars before an open trade is force-closed
 input double S00_BreakevenTrigger      = 800.0;   // Profit in points that moves stop to entry
+input bool   S00_RealExecution         = false;   // Enable real broker execution for S00 (Tester only)
+input double S00_LotSize               = 0.01;    // Fixed lot size for S00 trades
 input bool   S00_DiagReport            = false;   // S00 FVG detection diagnostic report (on/off)
 
 #endif // FALCON_S00_SCALPFVGMICRO_INPUTS_MQH

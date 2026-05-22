@@ -5918,13 +5918,21 @@ int OnInit()
    if(!g_fvg_micro_tradeplan_stager.Initialize(g_fvg_micro_retest_watcher, g_runtime_safety_guard, g_shadow_executor))
       return INIT_FAILED;
    g_report_writer.WriteFvgMicroTradePlanStagingDiagnosticsSnapshot(g_fvg_micro_tradeplan_stager);
-   if(g_fvg_micro_tradeplan_stager.GetSnapshot().staged_to_shadow_executor)
+   // R1.2a coexistence gate: when S00_RealExecution = true, the legacy
+   // FVG_MICRO_RETEST execution path is bypassed (entry + managed
+   // close + lifecycle close registration) so S00 owns the broker
+   // surface alone. R1.2a defaults S00_RealExecution = false, so the
+   // calls below execute exactly as pre-R1.2a -> the FixedLot April
+   // baseline 585.17 / 1104.89 / 157.49 is preserved verbatim.
+   if(!S00_RealExecution
+      && g_fvg_micro_tradeplan_stager.GetSnapshot().staged_to_shadow_executor)
       g_broker_entry_bridge.TryOpenFromShadowRecord(g_fvg_micro_tradeplan_stager.GetShadowRecord(), g_report_writer);
 
    if(!g_fvg_micro_lifecycle_simulator.Initialize(g_fvg_micro_tradeplan_stager, g_market_context, g_shadow_executor))
       return INIT_FAILED;
    FalconTradeLifecycleRecord lifecycle_record_on_init;
-   if(g_fvg_micro_lifecycle_simulator.ExtractClosedLifecycleRecord(lifecycle_record_on_init))
+   if(!S00_RealExecution
+      && g_fvg_micro_lifecycle_simulator.ExtractClosedLifecycleRecord(lifecycle_record_on_init))
    {
       g_report_writer.RegisterClosedTrade(lifecycle_record_on_init);
       g_broker_entry_bridge.TryManagedCloseFromLifecycleRecord(lifecycle_record_on_init, g_report_writer);
@@ -5989,48 +5997,59 @@ void OnTick()
    g_runtime_tick_counter++;
    FalconUpdateReportPeriodLastSeen();
 
-   // v0.18.4 refreshes the FVG shadow pipeline during runtime and can close staged Shadow records diagnostically at TP1/SL/timeout.
-   // Broker entry bridge is tester-only and gated by EnableRealExecution=true. Broker close/Demo/Live remain disabled.
-   FalconRunFvgMicroRuntimeShadowPipeline("OnTick_FvgRuntimePipeline");
-
-   // v0.57.2: Virtual Trailing Exit Bridge - per-tick trailing update on every open broker link.
-   // Tester-only. Close via OrderSend(TRADE_ACTION_DEAL) reverse only. No BrokerModify, no
-   // TRADE_ACTION_SLTP, no RuntimeSLChanged. Method short-circuits internally if gates fail;
-   // outer guard here keeps the call a no-op outside the tester.
-   if(EnableVirtualTrailingBridge && EnableRealExecution && MQLInfoInteger(MQL_TESTER))
-      g_broker_entry_bridge.UpdateVirtualTrailingForOpenLinks(g_report_writer);
-
-   g_fvg_micro_lifecycle_simulator.Refresh(g_market_context, g_shadow_executor);
-
-   FalconTradeLifecycleRecord lifecycle_record;
-   if(g_fvg_micro_lifecycle_simulator.ExtractClosedLifecycleRecord(lifecycle_record))
+   // R1.2a coexistence gate: when S00_RealExecution = true, the entire
+   // legacy FVG_MICRO_RETEST pipeline is bypassed for the duration of
+   // this OnTick - both its execution surface (entries through the
+   // bridge, virtual trailing, managed close, lifecycle-close
+   // registration) AND its diagnostics. One strategy owns the broker
+   // surface at a time. R1.2a defaults S00_RealExecution = false, so
+   // the block below executes byte-identically to pre-R1.2a -> the
+   // FixedLot April baseline 585.17 / 1104.89 / 157.49 is preserved.
+   if(!S00_RealExecution)
    {
-      g_report_writer.RegisterClosedTrade(lifecycle_record);
-      g_broker_entry_bridge.TryManagedCloseFromLifecycleRecord(lifecycle_record, g_report_writer);
-      // v0.18.5 performance rule:
-      // TradeLifecycle rows are written immediately, but heavy file-verification/audit snapshots
-      // are not rewritten after every Shadow close. They remain available at OnInit/OnDeinit.
-      if(FALCON_WRITE_HEAVY_RUNTIME_AUDIT_ON_SHADOW_CLOSE)
-      {
-         g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot("OnTick_AfterShadowLifecycleClose");
-         g_report_writer.WriteFvgMicroRuntimeReportAuditSnapshot("OnTick_AfterShadowLifecycleClose");
-         g_report_writer.WriteRuntimeReportVerificationSnapshot("OnTick_AfterShadowLifecycleClose");
-      }
-      g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
-   }
-   else
-   {
-      bool should_write_lifecycle_tick_snapshot = true;
-      if(EnableFastRuntimeSmokeMode)
-      {
-         int safe_interval = RuntimeDiagnosticsEveryNTicks;
-         if(safe_interval < 1)
-            safe_interval = FALCON_RUNTIME_DIAGNOSTICS_DEFAULT_N_TICKS;
-         should_write_lifecycle_tick_snapshot = ((g_runtime_tick_counter % safe_interval) == 0);
-      }
+      // v0.18.4 refreshes the FVG shadow pipeline during runtime and can close staged Shadow records diagnostically at TP1/SL/timeout.
+      // Broker entry bridge is tester-only and gated by EnableRealExecution=true. Broker close/Demo/Live remain disabled.
+      FalconRunFvgMicroRuntimeShadowPipeline("OnTick_FvgRuntimePipeline");
 
-      if(should_write_lifecycle_tick_snapshot)
+      // v0.57.2: Virtual Trailing Exit Bridge - per-tick trailing update on every open broker link.
+      // Tester-only. Close via OrderSend(TRADE_ACTION_DEAL) reverse only. No BrokerModify, no
+      // TRADE_ACTION_SLTP, no RuntimeSLChanged. Method short-circuits internally if gates fail;
+      // outer guard here keeps the call a no-op outside the tester.
+      if(EnableVirtualTrailingBridge && EnableRealExecution && MQLInfoInteger(MQL_TESTER))
+         g_broker_entry_bridge.UpdateVirtualTrailingForOpenLinks(g_report_writer);
+
+      g_fvg_micro_lifecycle_simulator.Refresh(g_market_context, g_shadow_executor);
+
+      FalconTradeLifecycleRecord lifecycle_record;
+      if(g_fvg_micro_lifecycle_simulator.ExtractClosedLifecycleRecord(lifecycle_record))
+      {
+         g_report_writer.RegisterClosedTrade(lifecycle_record);
+         g_broker_entry_bridge.TryManagedCloseFromLifecycleRecord(lifecycle_record, g_report_writer);
+         // v0.18.5 performance rule:
+         // TradeLifecycle rows are written immediately, but heavy file-verification/audit snapshots
+         // are not rewritten after every Shadow close. They remain available at OnInit/OnDeinit.
+         if(FALCON_WRITE_HEAVY_RUNTIME_AUDIT_ON_SHADOW_CLOSE)
+         {
+            g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot("OnTick_AfterShadowLifecycleClose");
+            g_report_writer.WriteFvgMicroRuntimeReportAuditSnapshot("OnTick_AfterShadowLifecycleClose");
+            g_report_writer.WriteRuntimeReportVerificationSnapshot("OnTick_AfterShadowLifecycleClose");
+         }
          g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
+      }
+      else
+      {
+         bool should_write_lifecycle_tick_snapshot = true;
+         if(EnableFastRuntimeSmokeMode)
+         {
+            int safe_interval = RuntimeDiagnosticsEveryNTicks;
+            if(safe_interval < 1)
+               safe_interval = FALCON_RUNTIME_DIAGNOSTICS_DEFAULT_N_TICKS;
+            should_write_lifecycle_tick_snapshot = ((g_runtime_tick_counter % safe_interval) == 0);
+         }
+
+         if(should_write_lifecycle_tick_snapshot)
+            g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
+      }
    }
 
    // R1.1a: S00 ScalpFvgMicro FVG detection hook. The method
