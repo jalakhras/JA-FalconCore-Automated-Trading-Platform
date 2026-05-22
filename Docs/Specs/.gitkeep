@@ -1,0 +1,3 @@
+# Keeps Docs/Specs/ visible in git when no in-flight SPEC file is present.
+# Per R0.5b convention, completed-phase SPECs are deleted after the phase ships;
+# this placeholder ensures the directory remains tracked between phases.

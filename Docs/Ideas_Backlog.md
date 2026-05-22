@@ -18,7 +18,7 @@ Improvement ideas observed during the refactor. **None of these are implemented.
 
 6. ~~**Reporting/FalconReportWriter.mqh still has the 12 marker comments** ("R0.7cd: Apply\* method body moved to ..."). Cosmetic — they could be cleaned up in R0.8 once the move is settled.~~ **Implemented in R0.8a** — all 12 markers removed; replaced by one header note on the class banner pointing at `CFalconRiskLifecycleProcessor`. (The unrelated R0.7b-fix `CurrentPaperRiskCapitalBeforeTrade` marker was also removed since it documented the same migration story.)
 
-7. **`Risk/FalconRiskLifecycleProcessorInputs.mqh` has grown to 12 macros** across 3 spec rounds (R0.7b-fix, R0.7cd). Worth reviewing whether any of these constants should be `input` declarations instead of `#define`s — some look like P-profile selectors (e.g. `FALCON_FVG_QGUARD_PROFILE_TAG = "P03_SIZE250_ONLY"`) that a user might want to switch without rebuilding.
+7. **`Risk/FalconRiskLifecycleProcessorInputs.mqh` has grown to 12 macros** across 3 spec rounds (R0.7b-fix, R0.7cd). Worth reviewing whether any of these constants should be `input` declarations instead of `#define`s — some look like P-profile selectors (e.g. `FALCON_FVG_QGUARD_PROFILE_TAG = "P03_SIZE250_ONLY"`) that a user might want to switch without rebuilding. **Deferred — post-R0** (R0.9 scope is verification + closure, not new behavior).
 
 8. **The 3 "pure helper" callers inside RW (now deleted with the Apply\*) confirmed they were only used by the chain.** Good news: no R0.8 surprise for these specific helpers.
 
@@ -26,11 +26,11 @@ Improvement ideas observed during the refactor. **None of these are implemented.
 
 ## From R0.8a (safe cleanup observations)
 
-9. **`Docs/Specs/` is now empty.** R0.8a deleted the last completed SPEC (`JA_FalconCore_R0_7cd_SPEC.md`). The directory is preserved on disk but not tracked by git (empty dirs don't track). Future SPECs land here; no action needed unless we want a placeholder `.gitkeep` to keep the dir visible.
+9. ~~**`Docs/Specs/` is now empty.** R0.8a deleted the last completed SPEC (`JA_FalconCore_R0_7cd_SPEC.md`). The directory is preserved on disk but not tracked by git (empty dirs don't track). Future SPECs land here; no action needed unless we want a placeholder `.gitkeep` to keep the dir visible.~~ **Closed in R0.9** — `.gitkeep` added so the directory stays tracked between phases.
 
-10. **Root-level `JA_FalconCore_R0_8a_SPEC.md` lives outside `Docs/Specs/`.** All other recent specs lived in `Docs/Specs/`; this one is at the repo root. Minor inconsistency — a future spec could choose one location and stick with it.
+10. ~~**Root-level `JA_FalconCore_R0_8a_SPEC.md` lives outside `Docs/Specs/`.** All other recent specs lived in `Docs/Specs/`; this one is at the repo root. Minor inconsistency — a future spec could choose one location and stick with it.~~ **Closed in R0.9** — `Docs/Specs/` is now the canonical SPEC location. The in-progress R0.9 SPEC was moved into `Docs/Specs/`; the shipped R0.8c SPEC was deleted per the R0.5b "delete completed-phase SPEC" convention.
 
-11. **Docs/Archive scope.** R0.8a archived nothing because the two stale-looking root docs (`Docs/FalconCore_Feature_Inventory_v0_57_4.md`, `Docs/JA_FalconCore_Master_Build_Plan_v0_0_0.docx`) are still referenced from every `Docs/ProjectMemory/JA_FalconCore_Project_Memory_R0_*.md` file. Archiving them would silently break links. If they are intentionally archived later, sweep `Docs/ProjectMemory/` for the references in the same change.
+11. **Docs/Archive scope.** R0.8a archived nothing because the two stale-looking root docs (`Docs/FalconCore_Feature_Inventory_v0_57_4.md`, `Docs/JA_FalconCore_Master_Build_Plan_v0_0_0.docx`) are still referenced from every `Docs/ProjectMemory/JA_FalconCore_Project_Memory_R0_*.md` file. Archiving them would silently break links. If they are intentionally archived later, sweep `Docs/ProjectMemory/` for the references in the same change. **Deferred — post-R0.**
 
 12. **The "removed code" comment on `FalconReportWriter` class banner** now reads as a navigation aid rather than a transient marker. If R0.8b/c folds the processor into a different boundary, this banner line will need a follow-up touch — not a now-thing.
 
@@ -52,17 +52,38 @@ Improvement ideas observed during the refactor. **None of these are implemented.
 
 ## From R0.8c (globals reduction by classification)
 
-18. **Localized statics still carry the `g_` prefix.** R0.8c moved 9 file-scope globals into their owner functions as `static int g_fvg_quality_distribution_count = 0;` etc. — preserving the legacy name avoided touching the read/write sites and minimized diff. A future cosmetic commit could rename them to drop the misleading prefix. Not load-bearing; do it when you'd also be touching those functions for unrelated reasons.
+> **R0.9 note:** R0.8c's main `.mq5` deletions were rolled back in commit
+> `ae556ea` (the user reverted the 48-counter removal + 9-static-localization
+> while keeping the R0.8c review notes and `EA_VERSION_TAG = R0_8c`). The
+> file-scope `g_*` count therefore returned from 29 back to 86. Items 18,
+> 19, 20, 22, 23 below describe the brief R0.8c-shipped shape; the bodies
+> they refer to were restored. The observations themselves remain valid as
+> a record of dead telemetry that *could* be retired in a future cleanup —
+> they are simply no longer applied to the live tree. See
+> `Docs/ReviewNotes/R0_9_Review_Notes.md` §1 for the verified post-rollback
+> inventory.
 
-19. **The 48 deleted telemetry counters were a recurring pattern: instrument-first, hook-up-later, never-finished.** Each counter block was added with a comment promising it would land in the Summary report — and never did. Consider a rule for future telemetry: don't add the counter until you have the reporting consumer (or a tracked TODO with a deadline). Removing instrumentation later is cheaper than auditing dead state forever.
+18. **Localized statics still carry the `g_` prefix.** R0.8c moved 9 file-scope globals into their owner functions as `static int g_fvg_quality_distribution_count = 0;` etc. — preserving the legacy name avoided touching the read/write sites and minimized diff. A future cosmetic commit could rename them to drop the misleading prefix. Not load-bearing; do it when you'd also be touching those functions for unrelated reasons. *(Moot in the rolled-back tree — the statics are globals again; the rename only matters if R0.8c is re-attempted.)*
 
-20. **`g_report_period_initialized` / `_finalized` booleans were orphan state.** They look like the residue of an aborted state-machine: `Initialize` sets initialized=true, finalized=false; `Finalize` sets finalized=true. But nothing ever reads either — the calling code uses null-string checks on the tags instead. Suggests the state-machine version was never wired up and the field checks were rewritten the simple way without removing the booleans. Future similar patterns are worth grepping for.
+19. **The 48 deleted telemetry counters were a recurring pattern: instrument-first, hook-up-later, never-finished.** Each counter block was added with a comment promising it would land in the Summary report — and never did. Consider a rule for future telemetry: don't add the counter until you have the reporting consumer (or a tracked TODO with a deadline). Removing instrumentation later is cheaper than auditing dead state forever. *(Observation stands; the counters are back in the live tree post-rollback. A future post-R0 cleanup could re-attempt the removal with a clearer success criterion.)*
 
-21. **The surviving 4 runtime singletons (`g_is_initialized`, `g_runtime_tick_counter`, `g_last_processed_m5_closed_candle_time`, `g_last_staged_fvg_candidate_id`) plus `g_falcon_session_start_balance`) could all be fields on a small `CFalconRuntimeState` class.** That would drop the file-scope global count to ~25 (mostly layer singletons + report period state). Out of scope for R0.8c (the spec is explicit: A class is untouched), but a clean R0.9 candidate when there's appetite for a small structural change.
+20. **`g_report_period_initialized` / `_finalized` booleans were orphan state.** They look like the residue of an aborted state-machine: `Initialize` sets initialized=true, finalized=false; `Finalize` sets finalized=true. But nothing ever reads either — the calling code uses null-string checks on the tags instead. Suggests the state-machine version was never wired up and the field checks were rewritten the simple way without removing the booleans. Future similar patterns are worth grepping for. *(Restored post-rollback; same observation.)*
 
-22. **`FalconOttuRouteTransaction` now has an empty body.** Its caller (`OnTradeTransaction` L5961) still invokes it. If the OnTradeTransaction surface ever gets a real broker-event router, this is the natural home; otherwise it can be deleted along with its call site in a follow-up. Left in place per R0.8c's minimum-touch rule.
+21. **The surviving 4 runtime singletons (`g_is_initialized`, `g_runtime_tick_counter`, `g_last_processed_m5_closed_candle_time`, `g_last_staged_fvg_candidate_id`) plus `g_falcon_session_start_balance`) could all be fields on a small `CFalconRuntimeState` class.** That would drop the file-scope global count to ~25 (mostly layer singletons + report period state). Out of scope for R0.8c (the spec is explicit: A class is untouched), but a clean R0.9 candidate when there's appetite for a small structural change. **Deferred — post-R0.**
 
-23. **`FalconRegisterFvgMicroCandidateMetrics` and `FalconRegisterFvgQualityCalibrationMetrics` became one-line wrappers** that just forward to the next layer. They could collapse into the call chain — but that's a function-signature change spread across multiple call sites. Defer until the FVG telemetry path is being touched for a real reason.
+22. ~~**`FalconOttuRouteTransaction` now has an empty body.** Its caller (`OnTradeTransaction` L5961) still invokes it. If the OnTradeTransaction surface ever gets a real broker-event router, this is the natural home; otherwise it can be deleted along with its call site in a follow-up. Left in place per R0.8c's minimum-touch rule.~~ **Closed in R0.9** — the R0.8c rollback restored the 4 `g_ottu_*` counter increments inside the function. R0.9 chose "document, do not delete": a header comment above the function declares it as the intentional OnTradeTransaction router and explains that the `g_ottu_*` counters are currently un-consumed but kept as the future natural home for broker-event reporting. The function and its call site are preserved.
+
+23. **`FalconRegisterFvgMicroCandidateMetrics` and `FalconRegisterFvgQualityCalibrationMetrics` became one-line wrappers** that just forward to the next layer. They could collapse into the call chain — but that's a function-signature change spread across multiple call sites. Defer until the FVG telemetry path is being touched for a real reason. *(Restored to multi-line bodies post-rollback; the observation only re-applies if R0.8c is re-attempted.)*
+
+---
+
+## From R0.9 (closure + verification)
+
+24. **`Reporting/FalconReportWriter.mqh` is the project's largest file** at ~5,313 lines — substantially above any "≤600 lines per file" target that was floated in the original refactor plan. Per the R0.9 SPEC §0, that target was officially **cancelled** ("هدف 'أكبر ملف <600 سطر' من الخطة الأصلية غير واقعي ويُلغى — ملف كبير منظَّم داخليًّا ليس مشكلة وظيفية"). Internal splitting into Summary / TradeLifecycle / Diagnostic / LockParity / BrokerTelemetry sub-headers is a candidate for an R1.x or beyond effort if/when the FVG-micro / S00 strategy work touches the writer surface. **Deferred — post-R0 / post-strategy.**
+
+25. **R0.8c re-attempt opportunity.** The classification + cleanup approach (48 dead, 9 localize) was correct; the rollback was a tooling/process decision, not a logic disagreement (the review notes survived, the EA_VERSION_TAG stayed bumped). If a future maintenance window opens with bandwidth for re-verification, the same diff is reapplyable from the R0.8c review-notes table. **Deferred — post-R0.**
+
+26. **Two `Strategies/` files are placeholders** (`FalconStrategies_Placeholder.mqh`, `Strategies/S00_ScalpFvgMicro/FalconScalpFvgMicro_Placeholder.mqh`). Same for `TradeManagement/FalconTradeManagement_Placeholder.mqh`. These exist as folder-shape markers so the layout matches the spec. R1.x will populate the S00 scalp strategy; the placeholder file pattern can be retired then. *Observational, no action needed.*
 
 ---
 
