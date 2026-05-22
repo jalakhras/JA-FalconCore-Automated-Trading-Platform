@@ -164,8 +164,6 @@
 
 // ==================================================================
 // Runtime report period state - v0.18.4
-// R0.8c: removed dead booleans g_report_period_initialized /
-// _finalized - written but never read anywhere in the codebase.
 // ==================================================================
 datetime g_report_period_first_time = 0;
 datetime g_report_period_last_time  = 0;
@@ -173,21 +171,79 @@ string   g_report_initial_from_tag  = "";
 string   g_report_initial_to_tag    = "";
 string   g_report_active_from_tag   = "";
 string   g_report_active_to_tag     = "";
+bool     g_report_period_initialized = false;
+bool     g_report_period_finalized   = false;
 
 // ==================================================================
-// R0.8c: 48 dead telemetry counters removed from this region
-// (v0.19.1 FVG-micro, v0.19.2/3 quality-profile + distribution-totals
-// + spread_le buckets, v0.20.0 retest/hold counters). They were
-// incremented on the analysis paths but never read by any reporting
-// writer or decision-making code. See Docs/ReviewNotes/
-// R0_8c_Review_Notes.md for the full classification table.
-//
-// The running min/max + count aggregates from the distribution and
-// retest blocks were moved to `static` locals inside their owner
-// functions (FalconRegisterFvgQualityDistributionMetrics and
-// FalconRegisterFvgRetestFreshnessHoldMetrics) - same cross-call
-// persistence, scoped to the one function that actually uses them.
+// Compact FVG Micro quality metrics - v0.19.1
+// These counters are intentionally stored in Summary instead of creating
+// another diagnostic report. They help prove whether quality filters are
+// affecting candidates while keeping ReportProfile STANDARD clean.
 // ==================================================================
+int g_fvg_micro_candidate_builder_evaluations = 0;
+int g_fvg_micro_detected_candidates           = 0;
+int g_fvg_micro_quality_evaluated             = 0;
+int g_fvg_micro_quality_passed                = 0;
+int g_fvg_micro_quality_rejected              = 0;
+int g_fvg_micro_rejected_size                 = 0;
+int g_fvg_micro_rejected_spread               = 0;
+int g_fvg_micro_rejected_age                  = 0;
+int g_fvg_micro_shadow_ready_candidates       = 0;
+
+// ==================================================================
+// FVG Micro quality calibration shadow metrics - v0.19.2/v0.19.3
+// These counters simulate stricter quality thresholds WITHOUT changing
+// the live Shadow candidate path. They are reported only in Summary.
+// ==================================================================
+int g_fvg_quality_calibration_evaluated             = 0;
+int g_fvg_quality_profile_balanced_passed           = 0;
+int g_fvg_quality_profile_balanced_rejected         = 0;
+int g_fvg_quality_profile_strict_size_passed        = 0;
+int g_fvg_quality_profile_strict_size_rejected      = 0;
+int g_fvg_quality_profile_tight_spread_passed       = 0;
+int g_fvg_quality_profile_tight_spread_rejected     = 0;
+int g_fvg_quality_profile_strict_combo_passed       = 0;
+int g_fvg_quality_profile_strict_combo_rejected     = 0;
+
+// ==================================================================
+// FVG Micro quality distribution metrics - v0.19.3
+// These are Summary-only metrics. They explain WHY a calibration profile
+// passes/rejects without adding diagnostic CSV files or new inputs.
+// ==================================================================
+int    g_fvg_quality_distribution_count             = 0;
+double g_fvg_quality_size_min_points                = 0.0;
+double g_fvg_quality_size_max_points                = 0.0;
+double g_fvg_quality_size_total_points              = 0.0;
+long   g_fvg_quality_spread_min_points              = -1;
+long   g_fvg_quality_spread_max_points              = 0;
+long   g_fvg_quality_spread_total_points            = 0;
+int    g_fvg_quality_spread_le_50_count             = 0;
+int    g_fvg_quality_spread_le_75_count             = 0;
+int    g_fvg_quality_spread_le_100_count            = 0;
+int    g_fvg_quality_spread_le_150_count            = 0;
+int    g_fvg_quality_spread_le_200_count            = 0;
+
+// ==================================================================
+// FVG Micro retest freshness + hold/reject quality metrics - v0.20.0
+// Summary-only shadow metrics. They DO NOT change entries, SL, TP, staging,
+// or lifecycle behavior. They measure whether FVG retests are fresh and
+// whether the first closed-candle context around retest shows hold/rejection.
+// ==================================================================
+int    g_fvg_retest_watch_evaluated                  = 0;
+int    g_fvg_retest_touched                          = 0;
+int    g_fvg_retest_waiting                          = 0;
+int    g_fvg_retest_fresh                            = 0;
+int    g_fvg_retest_stale                            = 0;
+int    g_fvg_retest_age_min_bars                     = -1;
+int    g_fvg_retest_age_max_bars                     = 0;
+long   g_fvg_retest_age_total_bars                   = 0;
+int    g_fvg_hold_quality_evaluated                  = 0;
+int    g_fvg_hold_quality_strong                     = 0;
+int    g_fvg_hold_quality_neutral                    = 0;
+int    g_fvg_hold_quality_weak                       = 0;
+int    g_fvg_hold_quality_score_min                  = -1;
+int    g_fvg_hold_quality_score_max                  = 0;
+long   g_fvg_hold_quality_score_total                = 0;
 
 #define FALCON_FVG_HOLD_QUALITY_STRONG_SCORE         70
 #define FALCON_FVG_HOLD_QUALITY_NEUTRAL_SCORE        40
@@ -1063,11 +1119,10 @@ bool FalconSsblGuardReady(const bool context_valid,
 #define FALCON_OTTU_NEXT_PHASE                        "v0.44.0_PreInitVerificationPack"
 #define FALCON_OTTU_EVENT_KIND_COUNT                  3
 
-// R0.8c: removed 4 dead OTTU telemetry counters (transactions_observed,
-// deal_events_routed, position_events_routed, unknown_events_ignored).
-// Incremented inside FalconOttuRouteTransaction but never read. The
-// function body became a no-op; the function shell + its call site at
-// OnTradeTransaction are preserved to keep the call surface intact.
+int g_ottu_transactions_observed = 0;
+int g_ottu_deal_events_routed = 0;
+int g_ottu_position_events_routed = 0;
+int g_ottu_unknown_events_ignored = 0;
 
 bool FalconOttuHandlerContractReady()
 {
@@ -1086,8 +1141,21 @@ bool FalconOttuSourcePolicyReady()
 
 void FalconOttuRouteTransaction(const MqlTradeTransaction &trans)
 {
-   // R0.8c: body was 4 dead g_ottu_* counter writes (never read);
-   // function kept because OnTradeTransaction calls it.
+   g_ottu_transactions_observed++;
+
+   if(trans.type == TRADE_TRANSACTION_DEAL_ADD)
+   {
+      g_ottu_deal_events_routed++;
+      return;
+   }
+
+   if(trans.type == TRADE_TRANSACTION_POSITION)
+   {
+      g_ottu_position_events_routed++;
+      return;
+   }
+
+   g_ottu_unknown_events_ignored++;
 }
 
 
@@ -1424,12 +1492,16 @@ bool FalconSpfContextReady(const bool context_valid,
 
 
 // ==================================================================
-// R0.8c: removed 6 dead FVG qguard-runtime telemetry counters
-// (candidate_evaluated/passed/blocked, staged_trades,
-// passed_but_not_staged, rejected_after_pass). They were
-// incremented inside the FVG-micro tradeplan staging dry-run class
-// (~L5057-L5094) but never read. The staging logic itself is preserved.
+// FVG SIZE250 Runtime Candidate counter alignment lock - v0.25.1
+// Actual blocking is limited to Shadow lifecycle staging. No broker orders,
+// no Paper/Demo/Live execution, and no OrderSend are possible in this build.
 // ==================================================================
+int g_fvg_qguard_runtime_candidate_evaluated        = 0;
+int g_fvg_qguard_runtime_candidate_passed           = 0;
+int g_fvg_qguard_runtime_candidate_blocked          = 0;
+int g_fvg_qguard_runtime_staged_trades              = 0;
+int g_fvg_qguard_runtime_passed_but_not_staged      = 0;
+int g_fvg_qguard_runtime_rejected_after_pass        = 0;
 
 
 // ==================================================================
@@ -2023,27 +2095,30 @@ void FalconRegisterFvgQualityDistributionMetrics(const FalconFvgMicroShadowCandi
    const double size_points = snapshot.fvg_size_points;
    const long spread_points = snapshot.quality_current_spread_points;
 
-   // R0.8c: localized from former file-scope globals. Running min/max +
-   // count aggregates persist across calls via `static`; identifier
-   // names preserved for grep-trace continuity. Dead `_total_points`
-   // and `_le_X_count` writes removed.
-   static int    g_fvg_quality_distribution_count   = 0;
-   static double g_fvg_quality_size_min_points      = 0.0;
-   static double g_fvg_quality_size_max_points      = 0.0;
-   static long   g_fvg_quality_spread_min_points    = -1;
-   static long   g_fvg_quality_spread_max_points    = 0;
-
    g_fvg_quality_distribution_count++;
+   g_fvg_quality_size_total_points += size_points;
 
    if(g_fvg_quality_distribution_count == 1 || size_points < g_fvg_quality_size_min_points)
       g_fvg_quality_size_min_points = size_points;
    if(g_fvg_quality_distribution_count == 1 || size_points > g_fvg_quality_size_max_points)
       g_fvg_quality_size_max_points = size_points;
 
+   g_fvg_quality_spread_total_points += spread_points;
    if(g_fvg_quality_spread_min_points < 0 || spread_points < g_fvg_quality_spread_min_points)
       g_fvg_quality_spread_min_points = spread_points;
    if(spread_points > g_fvg_quality_spread_max_points)
       g_fvg_quality_spread_max_points = spread_points;
+
+   if(spread_points <= 50)
+      g_fvg_quality_spread_le_50_count++;
+   if(spread_points <= 75)
+      g_fvg_quality_spread_le_75_count++;
+   if(spread_points <= 100)
+      g_fvg_quality_spread_le_100_count++;
+   if(spread_points <= 150)
+      g_fvg_quality_spread_le_150_count++;
+   if(spread_points <= 200)
+      g_fvg_quality_spread_le_200_count++;
 }
 
 bool FalconFvgQualityCalibrationProfilePassed(const FalconFvgMicroShadowCandidateSnapshot &snapshot,
@@ -2064,21 +2139,74 @@ void FalconRegisterFvgQualityCalibrationMetrics(const FalconFvgMicroShadowCandid
    if(!(snapshot.fvg_detected && snapshot.registry_found && snapshot.input_enabled && snapshot.runtime_safety_ready))
       return;
 
-   // R0.8c: removed 9 dead quality-profile counters (calibration_evaluated +
-   // balanced/strict_size/tight_spread/strict_combo passed+rejected). The
-   // profile pass/reject computations were observed by nothing. The inner
-   // call to FalconRegisterFvgQualityDistributionMetrics is preserved.
+   g_fvg_quality_calibration_evaluated++;
    FalconRegisterFvgQualityDistributionMetrics(snapshot);
+
+   bool balanced_pass = FalconFvgQualityCalibrationProfilePassed(snapshot,
+                                                                 FALCON_FVG_CALIB_BALANCED_MIN_SIZE_POINTS,
+                                                                 FALCON_FVG_CALIB_BALANCED_MAX_SPREAD_POINTS);
+   if(balanced_pass)
+      g_fvg_quality_profile_balanced_passed++;
+   else
+      g_fvg_quality_profile_balanced_rejected++;
+
+   bool strict_size_pass = FalconFvgQualityCalibrationProfilePassed(snapshot,
+                                                                    FALCON_FVG_CALIB_STRICT_SIZE_MIN_SIZE_POINTS,
+                                                                    FALCON_FVG_CALIB_STRICT_SIZE_MAX_SPREAD_POINTS);
+   if(strict_size_pass)
+      g_fvg_quality_profile_strict_size_passed++;
+   else
+      g_fvg_quality_profile_strict_size_rejected++;
+
+   bool tight_spread_pass = FalconFvgQualityCalibrationProfilePassed(snapshot,
+                                                                     FALCON_FVG_CALIB_TIGHT_SPREAD_MIN_SIZE_POINTS,
+                                                                     FALCON_FVG_CALIB_TIGHT_SPREAD_MAX_SPREAD_POINTS);
+   if(tight_spread_pass)
+      g_fvg_quality_profile_tight_spread_passed++;
+   else
+      g_fvg_quality_profile_tight_spread_rejected++;
+
+   bool strict_combo_pass = FalconFvgQualityCalibrationProfilePassed(snapshot,
+                                                                     FALCON_FVG_CALIB_STRICT_COMBO_MIN_SIZE_POINTS,
+                                                                     FALCON_FVG_CALIB_STRICT_COMBO_MAX_SPREAD_POINTS);
+   if(strict_combo_pass)
+      g_fvg_quality_profile_strict_combo_passed++;
+   else
+      g_fvg_quality_profile_strict_combo_rejected++;
 }
 
 void FalconRegisterFvgMicroCandidateMetrics(const FalconFvgMicroShadowCandidateSnapshot &snapshot)
 {
-   // R0.8c: removed 9 dead FVG-micro candidate counters
-   // (builder_evaluations, detected, quality_evaluated/passed/rejected,
-   // rejected_size/spread/age, shadow_ready). They were incremented
-   // here but never read. The inner call into
-   // FalconRegisterFvgQualityCalibrationMetrics is preserved.
+   g_fvg_micro_candidate_builder_evaluations++;
+
+   if(snapshot.fvg_detected)
+      g_fvg_micro_detected_candidates++;
+
+   if(snapshot.fvg_detected && snapshot.registry_found && snapshot.input_enabled && snapshot.runtime_safety_ready)
+   {
+      g_fvg_micro_quality_evaluated++;
+
+      if(snapshot.quality_filters_passed)
+      {
+         g_fvg_micro_quality_passed++;
+      }
+      else
+      {
+         g_fvg_micro_quality_rejected++;
+
+         if(StringFind(snapshot.quality_reject_reason, "FVG_SIZE_BELOW_MIN") >= 0)
+            g_fvg_micro_rejected_size++;
+         else if(StringFind(snapshot.quality_reject_reason, "SPREAD_ABOVE_MAX") >= 0)
+            g_fvg_micro_rejected_spread++;
+         else if(StringFind(snapshot.quality_reject_reason, "FVG_AGE_ABOVE_MAX") >= 0)
+            g_fvg_micro_rejected_age++;
+      }
+   }
+
    FalconRegisterFvgQualityCalibrationMetrics(snapshot);
+
+   if(snapshot.candidate_status == FALCON_CANDIDATE_STATUS_READY_SHADOW)
+      g_fvg_micro_shadow_ready_candidates++;
 }
 
 
@@ -3339,8 +3467,8 @@ void FalconInitializeReportPeriodTags()
 
    g_report_initial_from_tag = g_report_active_from_tag;
    g_report_initial_to_tag   = g_report_active_to_tag;
-   // R0.8c: removed dead writes to g_report_period_initialized /
-   // _finalized (booleans were set but never read).
+   g_report_period_initialized = true;
+   g_report_period_finalized = false;
 }
 
 void FalconUpdateReportPeriodLastSeen()
@@ -3370,8 +3498,7 @@ void FalconFinalizeReportPeriodTags()
    else
       g_report_active_to_tag = FalconSanitizeFileTag(ReportToDateTag);
 
-   // R0.8c: removed dead write to g_report_period_finalized (boolean
-   // was set but never read).
+   g_report_period_finalized = true;
 }
 
 string FalconEffectiveReportFromDateTag()
@@ -4794,17 +4921,10 @@ void FalconRegisterFvgRetestFreshnessHoldMetrics(const FalconFvgMicroRetestWatch
    if(!(snapshot.candidate_ready && snapshot.fvg_detected && snapshot.runtime_safety_ready))
       return;
 
-   // R0.8c: localized from former file-scope globals. Running min/max
-   // aggregates persist across calls via `static`; identifier names
-   // preserved for grep-trace continuity. Dead counter writes removed
-   // (watch_evaluated, touched, waiting, fresh, stale, age_total_bars,
-   // hold_quality_evaluated, strong/neutral/weak, score_total).
-   static int g_fvg_retest_age_min_bars    = -1;
-   static int g_fvg_retest_age_max_bars    = 0;
-   static int g_fvg_hold_quality_score_min = -1;
-   static int g_fvg_hold_quality_score_max = 0;
+   g_fvg_retest_watch_evaluated++;
 
    const int age_bars = FalconCalculateRetestAgeBars(snapshot.setup_time, snapshot.watch_time, snapshot.analysis_timeframe);
+   g_fvg_retest_age_total_bars += age_bars;
    if(g_fvg_retest_age_min_bars < 0 || age_bars < g_fvg_retest_age_min_bars)
       g_fvg_retest_age_min_bars = age_bars;
    if(age_bars > g_fvg_retest_age_max_bars)
@@ -4812,16 +4932,36 @@ void FalconRegisterFvgRetestFreshnessHoldMetrics(const FalconFvgMicroRetestWatch
 
    if(snapshot.retest_touched)
    {
+      g_fvg_retest_touched++;
+      if(FalconFvgRetestFreshState(true, age_bars, FALCON_FVG_MICRO_RETEST_FRESHNESS_BARS) == "FRESH")
+         g_fvg_retest_fresh++;
+      else
+         g_fvg_retest_stale++;
+
       FalconCandleSnapshot closed_candle;
       const int shift = FalconAnalysisCandleShift();
       if(market_context.GetCandleSnapshot(PERIOD_M5, shift, closed_candle))
       {
          const int score = FalconCalculateFvgHoldQualityScore(snapshot, closed_candle);
+         g_fvg_hold_quality_evaluated++;
+         g_fvg_hold_quality_score_total += score;
+
          if(g_fvg_hold_quality_score_min < 0 || score < g_fvg_hold_quality_score_min)
             g_fvg_hold_quality_score_min = score;
          if(score > g_fvg_hold_quality_score_max)
             g_fvg_hold_quality_score_max = score;
+
+         if(score >= FALCON_FVG_HOLD_QUALITY_STRONG_SCORE)
+            g_fvg_hold_quality_strong++;
+         else if(score >= FALCON_FVG_HOLD_QUALITY_NEUTRAL_SCORE)
+            g_fvg_hold_quality_neutral++;
+         else
+            g_fvg_hold_quality_weak++;
       }
+   }
+   else
+   {
+      g_fvg_retest_waiting++;
    }
 }
 
@@ -4905,10 +5045,8 @@ public:
       m_snapshot.validate_passed = true;
       m_snapshot.validation_reason = "VALIDATE_TRADEPLAN_FOR_STAGING_PASSED";
 
-      // R0.8c: dead local `qguard_runtime_passed_for_stage` removed
-      // along with the 6 dead g_fvg_qguard_runtime_* counters that
-      // consumed it. The qguard runtime is preserved verbatim - only
-      // the empty success branch was collapsed.
+      bool qguard_runtime_passed_for_stage = false;
+
       if(FALCON_FVG_QGUARD_RUNTIME_ACTIVE && FALCON_FVG_QGUARD_ACTUAL_BLOCKING_ENABLED)
       {
          string qguard_reason = "";
@@ -4917,8 +5055,15 @@ public:
                                                                   watcher_snapshot.fvg_retest_age_bars,
                                                                   watcher_snapshot.fvg_hold_quality_score,
                                                                   qguard_reason);
-         if(!qguard_passed)
+         g_fvg_qguard_runtime_candidate_evaluated++;
+         if(qguard_passed)
          {
+            g_fvg_qguard_runtime_candidate_passed++;
+            qguard_runtime_passed_for_stage = true;
+         }
+         else
+         {
+            g_fvg_qguard_runtime_candidate_blocked++;
             Block(StringFormat("FVG_QGUARD_RUNTIME_BLOCKED;%s", qguard_reason),
                   "v0.25.1 controlled Shadow-only activation blocked FVG Micro staging before entry. No OrderSend, no Paper, no Demo, no Live execution.");
             return true;
@@ -4935,13 +5080,19 @@ public:
 
       if(!shadow_executor.StageTradePlan(plan, evidence_pack, m_shadow_record))
       {
-         // R0.8c: removed dead qguard counters (passed_but_not_staged / rejected_after_pass).
+         if(qguard_runtime_passed_for_stage)
+         {
+            g_fvg_qguard_runtime_passed_but_not_staged++;
+            g_fvg_qguard_runtime_rejected_after_pass++;
+         }
          m_snapshot.staged_to_shadow_executor = false;
          Block("SHADOW_EXECUTOR_STAGE_FAILED", "TradePlan passed validation but ShadowExecutor refused staging. No broker orders were sent.");
          return true;
       }
 
-      // R0.8c: removed dead qguard_runtime_staged_trades counter.
+      if(qguard_runtime_passed_for_stage)
+         g_fvg_qguard_runtime_staged_trades++;
+
       m_snapshot.shadow_id = m_shadow_record.shadow_id;
       m_snapshot.staged_to_shadow_executor = true;
       m_snapshot.staging_status = FALCON_TRADEPLAN_STAGING_STATUS_STAGED_SHADOW;
