@@ -6026,7 +6026,7 @@ void OnTick()
    }
 
    // R1.1a: S00 ScalpFvgMicro FVG detection hook. The method
-   // self-gates on EnableFvgDetectionDiagnostics (off by default) and
+   // self-gates on S00_DiagReport (off by default) and
    // dedupes per closed M5 bar, so this is a pure no-op in the
    // default tree - FixedLot April still produces the locked
    // 585.17 / 1104.89 / 157.49 numbers. When the diagnostic is on, it

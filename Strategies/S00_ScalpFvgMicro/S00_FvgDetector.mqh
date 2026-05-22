@@ -19,8 +19,8 @@
 #define FALCON_S00_FVG_DETECTOR_MQH
 
 // Per-gap status. R1.1a only ever sets ACTIVE or REJECTED. EXPIRED /
-// INVALIDATED are reserved for R1.1b (gap expiry on GapExpiryBars
-// elapsed; invalidation on adverse close-through-far-edge).
+// INVALIDATED are reserved for R1.1b (gap expiry on S00_GapExpiry
+// bars elapsed; invalidation on adverse close-through-far-edge).
 enum ENUM_S00_FVG_STATUS
 {
    S00_FVG_STATUS_ACTIVE      = 0,
@@ -39,8 +39,8 @@ struct S00FvgRecord
    double                gap_low;
    double                gap_size_points;
    double                ce;                    // midpoint = (gap_high + gap_low) / 2
-   double                atr_at_detection;      // ATR(M5, AtrPeriod) read from CLOSED bar (price units)
-   double                trend_ma_at_detection; // SMA(M5, TrendMaPeriod, close) read from CLOSED bar
+   double                atr_at_detection;      // ATR(M5, S00_ATR_PERIOD) read from CLOSED bar (price units)
+   double                trend_ma_at_detection; // SMA(M5, S00_TrendMA, close) read from CLOSED bar
    ENUM_S00_FVG_STATUS   status;
    string                reject_reason;         // "" | "SIZE" | "ATR" | "TREND"
 };
@@ -61,9 +61,9 @@ private:
    bool EnsureIndicatorHandles()
    {
       if(m_atr_handle == INVALID_HANDLE)
-         m_atr_handle = iATR(_Symbol, PERIOD_M5, AtrPeriod);
+         m_atr_handle = iATR(_Symbol, PERIOD_M5, S00_ATR_PERIOD);
       if(m_ma_handle == INVALID_HANDLE)
-         m_ma_handle  = iMA(_Symbol, PERIOD_M5, TrendMaPeriod, 0, MODE_SMA, PRICE_CLOSE);
+         m_ma_handle  = iMA(_Symbol, PERIOD_M5, S00_TrendMA, 0, MODE_SMA, PRICE_CLOSE);
       return (m_atr_handle != INVALID_HANDLE && m_ma_handle != INVALID_HANDLE);
    }
 
@@ -160,7 +160,7 @@ public:
    //----------------------------------------------------------------
    // R1.1a entry point. Called from OnTick.
    //
-   // SELF-GATED on EnableFvgDetectionDiagnostics: when the diagnostic
+   // SELF-GATED on S00_DiagReport: when the diagnostic
    // is off (the default), this is a pure no-op - zero candle reads,
    // zero allocations, zero observable side effects. That is the
    // guarantee that FixedLot April still produces 585.17 / 1104.89 /
@@ -173,8 +173,8 @@ public:
    //----------------------------------------------------------------
    void EvaluateOnNewBar(CFalconMarketContext &market_context)
    {
-      if(!EnableFvgDetectionDiagnostics) return;
-      if(!EnsureIndicatorHandles())      return;
+      if(!S00_DiagReport)           return;
+      if(!EnsureIndicatorHandles()) return;
       if(m_diag_file_name == "")
          m_diag_file_name = FalconBuildReportFileName("S00_FvgDetection_Diagnostics");
 

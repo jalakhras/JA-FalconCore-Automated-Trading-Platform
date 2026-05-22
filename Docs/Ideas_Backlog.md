@@ -99,7 +99,27 @@ Improvement ideas observed during the refactor. **None of these are implemented.
 
 31. **The trend filter (3.3) treats `trend_ma_m5 == 0` as "skip filter".** Same for ATR (3.2). This keeps the SIZE filter (3.1) as the meaningful gatekeeper during indicator warm-up bars (first `max(AtrPeriod, TrendMaPeriod)` closed bars after Init), which is the safest default. Worth re-evaluating once R1.1b's entry logic depends on these filters being authoritative — a "warm-up complete" flag may be useful.
 
-32. **MQL5 input naming.** R1.1a uses unprefixed names (`MinGapPoints`, `AtrPeriod`, etc.) because the spec listed them unprefixed. Future strategies (S01, S02) will need their own filter parameters — at that point a `S00_` prefix sweep is the natural ergonomics fix. **Deferred — R1.x as strategies multiply.**
+32. ~~**MQL5 input naming.** R1.1a uses unprefixed names (`MinGapPoints`, `AtrPeriod`, etc.) because the spec listed them unprefixed. Future strategies (S01, S02) will need their own filter parameters — at that point a `S00_` prefix sweep is the natural ergonomics fix. **Deferred — R1.x as strategies multiply.**~~ **Closed in R1.1a-fix** for the S00 inputs (six renames + the new `Enable_S00_FvgScalp` switch + `AtrPeriod` demoted to `#define S00_ATR_PERIOD`). Project-wide pre-refactor inputs (R0.6b §6 cleanup) remain deferred.
+
+---
+
+## Input design rules (R1.1a-fix permanent principles)
+
+Three permanent rules for MQL5 inputs. They apply to all new strategies (S00, S01, …) and to any future cleanup of the project-wide pre-refactor input surface.
+
+1. **An input needs a reason.** Either it is *tuned* (a value the operator changes in tests / production) or it is a *real switch* (on/off behavior with a documented effect). Constants that no one tunes — a settled standard (`ATR period = 14`, `MaxBrokerEntryRetries = 3`, etc.) — belong in `#define`. The S00 cleanup that demoted `AtrPeriod` is the model: a single `#define S00_ATR_PERIOD 14` in `S00_ScalpFvgMicroInputs.mqh` next to the other strategy parameters, not an input clogging the parameter dialog.
+
+2. **Inputs are organized: one top-level `STRATEGIES` group + one sub-group per strategy.** MQL5 doesn't support real nested groups; we emulate the hierarchy via separator characters (`═══ STRATEGIES ═══` for the parent, `── S00 FVG Scalp ──` for the child). All strategy on/off switches (`Enable_S00_*`, `Enable_S01_*`, …) sit together in the top group so an operator can flip strategies on/off in one place; per-strategy parameters live in the child group.
+
+3. **New names are short, clear, and carry the strategy prefix (`S00_`, `S01_`, …).** Six chars of meaningful content (`S00_MinGap`) beats fifteen of repetition (`MinGapPoints`). Cleaning up confusing **pre-refactor** input names (e.g. the project-wide ones from `Enable*Reports` blocks) is a separate deferred sweep — do not mix it with strategy-level renames.
+
+## From R1.1a-fix (MaxGap filter + input cleanup)
+
+33. **April diagnostics surfaced anomalous gaps up to ~31,437 points** that passed all three R1.1a filters because the filters are floor-only (SIZE / ATR thrust / TREND). These are holiday session gaps and data-feed errors, not tradable patterns. The R1.1a-fix `S00_MaxGap = 6000` ceiling is calibrated to keep ~92% of accepted gaps (sits above the 90th percentile and below the outlier tail). The 6000 number is a starting point — re-tune once a wider data window (April + May + June) is available. Rejected gaps carry the `MAXSIZE` reason in the diagnostic CSV.
+
+34. **`Enable_S00_FvgScalp` is declared but not wired yet.** R1.1a-fix puts it in its correct group (`STRATEGIES`) so the operator's view of the parameter dialog matches the eventual reality. R1.1b is the phase that wires it — at which point detector + entry logic will gate on the switch instead of on `S00_DiagReport`.
+
+35. **Filter chain order is now SIZE → MAXSIZE → ATR → TREND** (short-circuit, first failure wins). SIZE and MAXSIZE come first because they are pure-data checks with no indicator warm-up dependency — they always fire when relevant. ATR/TREND retain the warm-up skip pattern from R1.1a (zero ATR or zero MA ⇒ skip the filter so SIZE/MAXSIZE remain the gatekeepers).
 
 ---
 

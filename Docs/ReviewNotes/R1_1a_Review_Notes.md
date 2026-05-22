@@ -1,8 +1,10 @@
 # R1.1a — S00 ScalpFvgMicro: FVG Detection + Three Quality Filters
 
-**Branch:** `refactor` &nbsp;|&nbsp; **Base:** R0.9 (commit `d0c880f`) &nbsp;|&nbsp; **Working tree before commit.**
+**Branch:** `refactor` &nbsp;|&nbsp; **Base:** R0.9 (commit `d0c880f`) &nbsp;|&nbsp; **Last updated:** R1.1a-fix.
 
 R1.1a opens R1.x — the strategy work that the R0 refactor cleared the path for. Scope is tightly bounded per spec §0 ("R1.1a builds the eye — the part that *sees* valid gaps; no trades"). Detection + filtering + a diagnostic CSV. The strategy is not activated; the existing FixedLot April numbers stay locked.
+
+> **R1.1a-fix update (this section header):** April diagnostics on R1.1a surfaced two issues — anomalous outlier gaps that passed the floor-only filters, and unwieldy input naming. R1.1a-fix addresses both inside this same phase before R1.1b lands the entry logic. See §11 for the fix details and §2 for the re-verified lookahead audit.
 
 ---
 
@@ -209,4 +211,63 @@ R1.2+ is parameter tuning on the April + May reference data per `ScalpFvgMicro_S
 
 ---
 
-*End of R1.1a review notes. Eye built — does not blink at the live bar. Numbers stay locked at the R0.8b baseline. Strategy work has begun.*
+## 11. R1.1a-fix (calibration + naming hygiene)
+
+The R1.1a `S00_DiagReport=true` April run produced a sane diagnostic CSV but exposed two issues that needed handling **before** R1.1b lands the entry logic — fixing them in R1.1b would mix calibration changes with new behavior, making bug bisection harder.
+
+### 11.1 Issue A — anomalous outlier gaps passed the floor-only filters
+
+Some rows in `S00_FvgDetection_Diagnostics.csv` showed `GapSizePoints` up to ~31,437 — holiday session gaps and data-feed artifacts, not tradable patterns. The R1.1a filters were all floor-only (SIZE has a min, ATR has a min, TREND is direction-only). A gap of 31k points trivially passes a `SIZE >= 30` floor and an `ATR x 0.5` thrust ratio.
+
+**Fix:** added a fourth filter — **MAXSIZE** — with input `S00_MaxGap` defaulted to `6000.0`. The threshold sits above the 90th percentile of April-accepted gaps (~92% of legitimate detections survive) and below the outlier tail. Reject reason: `"MAXSIZE"`. New filter chain order: **SIZE → MAXSIZE → ATR → TREND** (short-circuit, first failure wins).
+
+Implementation: 8 new lines in `S00_FvgQualityFilter.mqh` between the SIZE and ATR blocks. Zero new state. Zero new code surfaces on the detector side — the filter signature `Evaluate(gap_size_points, …, &reject_reason)` did not change; only the implementation added one more branch.
+
+### 11.2 Issue B — input naming + ungrouped
+
+R1.1a used spec-mandated unprefixed names (`MinGapPoints`, `AtrPeriod`, etc.) that read fine in a header file but clutter the MT5 parameter dialog and don't scale: when S01 lands, its `MinGapPoints` would collide with S00's. Plus `AtrPeriod` is a settled standard (`14`) — not something a user should be invited to "tune."
+
+**Fix:** three changes:
+
+1. **`AtrPeriod` input → `#define S00_ATR_PERIOD 14`** (in `S00_ScalpFvgMicroInputs.mqh`). The detector's `iATR(_Symbol, PERIOD_M5, S00_ATR_PERIOD)` call substitutes the constant at compile time.
+2. **Six S00 inputs renamed to short S00_-prefixed names:**
+   | Old (R1.1a) | New (R1.1a-fix) |
+   |---|---|
+   | `MinGapPoints` | `S00_MinGap` |
+   | *(new)* | `S00_MaxGap` |
+   | `GapAtrMultiplier` | `S00_GapAtrMult` |
+   | `TrendMaPeriod` | `S00_TrendMA` |
+   | `GapExpiryBars` | `S00_GapExpiry` |
+   | `EnableFvgDetectionDiagnostics` | `S00_DiagReport` |
+3. **Inputs reorganized into two groups:**
+   - `═══ STRATEGIES ═══` — the new top-level group, currently holding the single switch `Enable_S00_FvgScalp = true` (declared now per spec §3.2; not wired to logic until R1.1b). Future strategies (S01, S02, …) will add their on/off switches here.
+   - `── S00 FVG Scalp ──` — the per-strategy parameter sub-group, containing the six S00 inputs. The Unicode separator characters emulate a hierarchy that MQL5 doesn't natively support.
+
+### 11.3 Project-wide pre-refactor inputs — NOT touched
+
+The R1.1a-fix spec is explicit that the rename applies only to the six new S00 inputs (and the new `Enable_S00_FvgScalp` switch). Pre-refactor inputs (`EnableMainReport`, `ReportProfile`, the R0.6b group switches, `EnableVirtualTrailingReport`, etc.) are untouched. Cleaning their names is a separate deferred sweep — flagged in the R0.6b backlog and re-flagged in `Docs/Ideas_Backlog.md`'s permanent "Input design rules" section.
+
+### 11.4 Re-audited: zero lookahead, zero behavior change
+
+- The detector's only candle / indicator reads after R1.1a-fix are still the same three sites: `CopyBuffer(handle, 0, 1, 1)` × 2 and `GetCandleSnapshot(PERIOD_M5, shift, ...)` × 3 (with `shift ∈ {3, 2, 1}`). `ReadClosedM5`'s `if(shift < 1) return false` guard is intact.
+- The filter signature is unchanged; the new MAXSIZE branch reads only its parameter `gap_size_points` against the input `S00_MaxGap`.
+- The OnTick hook still self-gates on `S00_DiagReport` (the renamed flag). Default `false` ⇒ default tree is still a pure no-op.
+- `Enable_S00_FvgScalp` is declared with default `true`, but R1.1a-fix code paths do NOT read it yet. So enabling/disabling it has no observable effect today; behavior is unchanged either way. R1.1b will wire it.
+
+**Expected FixedLot April backtest:** `RawNetUSD = 585.17`, `FinalWorkingNetUSD = 1104.89`, broker net `157.49` — locked. R1.1a-fix did not touch Risk/Reporting/Execution.
+
+### 11.5 Touch surface (R1.1a-fix only)
+
+| File | Change |
+|---|---|
+| `Strategies/S00_ScalpFvgMicro/S00_ScalpFvgMicroInputs.mqh` | Rewritten: removed `AtrPeriod` input, added `#define S00_ATR_PERIOD 14`, regrouped inputs under `STRATEGIES` + `── S00 FVG Scalp ──`, added `S00_MaxGap`, renamed the six S00 inputs. |
+| `Strategies/S00_ScalpFvgMicro/S00_FvgQualityFilter.mqh` | Renamed input refs (`MinGapPoints → S00_MinGap`, `GapAtrMultiplier → S00_GapAtrMult`); added MAXSIZE branch between SIZE and ATR; updated header comment to document the new filter chain order. |
+| `Strategies/S00_ScalpFvgMicro/S00_FvgDetector.mqh` | Renamed input/macro refs (`AtrPeriod → S00_ATR_PERIOD`, `TrendMaPeriod → S00_TrendMA`, `EnableFvgDetectionDiagnostics → S00_DiagReport`); refreshed two comment lines for naming consistency. |
+| `Core/FalconConstants.mqh` | `EA_VERSION_TAG`: `R1_1a` → `R1_1a_fix`. |
+| `JA_FalconCore_Automated_Trading_Platform.mq5` | Single comment update in the OnTick hook (referenced renamed `S00_DiagReport`). Zero logic change. |
+| `Docs/Ideas_Backlog.md` | Item 32 struck-through and tagged "Closed in R1.1a-fix"; new "Input design rules" section recording the three permanent principles (input needs a reason; group hierarchy; short prefixed names) + items 33-35 for R1.1a-fix observations. |
+| `Docs/ReviewNotes/R1_1a_Review_Notes.md` | This §11 added; header note + ToC updated. |
+
+---
+
+*End of R1.1a review notes (now including the R1.1a-fix calibration + naming pass). Eye built — does not blink at the live bar; rejects outliers above 6000 points; six inputs in two groups; settled-standard ATR period demoted to `#define`. Numbers stay locked at the R0.8b baseline. R1.1b is next.*

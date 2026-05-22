@@ -22,19 +22,25 @@ class CS00FvgQualityFilter
 {
 public:
    //----------------------------------------------------------------
-   // Evaluate: returns true iff the gap passes all three filters.
-   // On failure, sets reject_reason to one of: "SIZE", "ATR", "TREND".
+   // Evaluate: returns true iff the gap passes all quality filters.
+   // On failure, sets reject_reason to one of:
+   //   "SIZE" | "MAXSIZE" | "ATR" | "TREND".
    //
-   // Per ScalpFvgMicro_SPEC §3:
-   //   3.1 SIZE   - gap_size_points >= MinGapPoints
-   //   3.2 ATR    - gap_size_points >= ATR(M5, AtrPeriod) [in points]
-   //                                  * GapAtrMultiplier
-   //   3.3 TREND  - bullish FVG accepted only if spot > trend MA;
-   //                bearish FVG accepted only if spot < trend MA.
+   // Per ScalpFvgMicro_SPEC §3 + JA_FalconCore_R1_1a_fix_SPEC §1:
+   //   SIZE    - gap_size_points >= S00_MinGap
+   //   MAXSIZE - gap_size_points <= S00_MaxGap (R1.1a-fix: rejects
+   //                anomalous holiday/data outliers identified in
+   //                April diagnostics, e.g. ~31,437-point gaps).
+   //   ATR     - gap_size_points >= ATR(M5, S00_ATR_PERIOD) [in points]
+   //                                  * S00_GapAtrMult
+   //   TREND   - bullish FVG accepted only if spot > trend MA;
+   //             bearish FVG accepted only if spot < trend MA.
    //
    // Order is short-circuit: first failure wins. The diagnostic CSV
    // sees one reason per rejected gap (the cheapest one to evaluate),
-   // which keeps later analysis simple.
+   // which keeps later analysis simple. SIZE and MAXSIZE are checked
+   // first because they are pure-data checks - no indicator warm-up
+   // dependency - so they always fire when relevant.
    //----------------------------------------------------------------
    static bool Evaluate(const double gap_size_points,
                         const ENUM_S00_FVG_DIRECTION direction,
@@ -45,21 +51,30 @@ public:
    {
       reject_reason = "";
 
-      // 3.1 Size filter.
-      if(gap_size_points < MinGapPoints)
+      // SIZE floor filter.
+      if(gap_size_points < S00_MinGap)
       {
          reject_reason = "SIZE";
          return false;
       }
 
-      // 3.2 ATR thrust filter. Convert ATR (price units) -> points for
+      // MAXSIZE ceiling filter (R1.1a-fix). Catches anomalous gaps
+      // that would otherwise pass SIZE + ATR + TREND but represent
+      // out-of-band moves (weekend gaps, data feed errors).
+      if(S00_MaxGap > 0.0 && gap_size_points > S00_MaxGap)
+      {
+         reject_reason = "MAXSIZE";
+         return false;
+      }
+
+      // ATR thrust filter. Convert ATR (price units) -> points for
       // an apples-to-apples comparison with gap_size_points. Skip the
       // check if ATR is unavailable (handle not warm, history short)
-      // so the SIZE filter remains the sole reason for rejection.
+      // so SIZE / MAXSIZE remain the sole gatekeepers during warm-up.
       if(atr_m5 > 0.0 && _Point > 0.0)
       {
          const double atr_points           = atr_m5 / _Point;
-         const double atr_threshold_points = atr_points * GapAtrMultiplier;
+         const double atr_threshold_points = atr_points * S00_GapAtrMult;
          if(gap_size_points < atr_threshold_points)
          {
             reject_reason = "ATR";
@@ -67,9 +82,9 @@ public:
          }
       }
 
-      // 3.3 Trend filter. Skip if trend MA is unavailable so the
-      // remaining filters keep their meaning instead of silently
-      // accepting against an unknown trend.
+      // TREND filter. Skip if trend MA is unavailable so the remaining
+      // filters keep their meaning instead of silently accepting
+      // against an unknown trend.
       if(trend_ma_m5 > 0.0 && spot_price > 0.0)
       {
          if(direction == S00_FVG_DIR_BULLISH && spot_price <= trend_ma_m5)
