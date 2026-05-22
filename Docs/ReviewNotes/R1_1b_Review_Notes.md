@@ -1,8 +1,10 @@
 # R1.1b — S00 ScalpFvgMicro: Entry Logic + Stop + Target + 1:2 Gate
 
-**Branch:** `refactor` &nbsp;|&nbsp; **Base:** R1.1a-labels (commit `8787b48`) &nbsp;|&nbsp; **Working tree before commit.**
+**Branch:** `refactor` &nbsp;|&nbsp; **Base:** R1.1a-labels (commit `8787b48`) &nbsp;|&nbsp; **Last updated:** R1.1b-diag.
 
 R1.1a built the *eye* — FVG detection + quality filters. R1.1b builds the *hand* — the per-FVG state machine that opens a paper trade when the spec's revisit-and-confirm pattern is satisfied, with a stop just past the gap edge, a target at the nearest swing, and an explicit 1:2 cost gate that refuses entries with insufficient room. S00 stays **paper-isolated**: no broker orders, no calls into the legacy Risk / Reporting / Execution pipeline, no touch on the existing R0.8b chain numbers.
+
+> **R1.1b-diag update:** the first R1.1b April run produced 26 trades (15% win rate, -8,314 points net) and surfaced a question the original 12-column trade CSV couldn't answer: of the 15 trades that died on the entry bar, was the failure mode (a) a weak confirmation candle (no real conviction in the signal) or (b) a bad entry location (price had already penetrated too far into the gap before confirming)? R1.1b-diag adds 8 columns to the trades CSV to surface that data — **without** touching any entry / stop / target / invalidation logic. See §13 for the full audit.
 
 ---
 
@@ -215,4 +217,101 @@ Once we've inspected the first April trades CSV together, R1.1c builds the runne
 
 ---
 
-*End of R1.1b review notes. The hand is built — does not blink at the live bar, refuses entries with room less than 1:2, and never touches the legacy chain. First S00 paper trades are ready to be observed.*
+## 13. R1.1b-diag (entry-quality diagnostic columns)
+
+### 13.1 Why this pass exists
+
+The first R1.1b April backtest produced 26 trades with 15% win rate and a -8,314 point net result. Two specific guesses about the failure mode — "tight stops are bleeding the trades" and "the larger FVGs perform better" — were both proven wrong by sub-cohort analysis (wide-stop trades died too, and the *largest* gaps performed *worst*). What remained was a question the original 12-column trade CSV could not answer: of the 15 trades that died on the entry bar, was the failure (a) a weak confirmation candle, or (b) a bad entry location after price had already penetrated deep into the gap?
+
+R1.1b-diag adds the eight columns that answer it. Pure observability — no logic change. Same April run must produce the **same 26 trades with the same results**.
+
+### 13.2 The eight new columns (spec §1 table)
+
+All appended to `S00_Trades_Diagnostics.csv` after the existing 12 columns:
+
+| Column | Meaning | Source data |
+|---|---|---|
+| `ConfirmBodyPoints` | `|confirm.close − confirm.open| / point` | confirmation candle (bar at REVISITED → ENTRY_PENDING transition) |
+| `ConfirmRangePoints` | `(confirm.high − confirm.low) / point` | confirmation candle |
+| `EntryVsCE` | `(entry − ce) / point` (signed) | plan.entry_price + fvg.ce |
+| `EntryVsGapMid` | 0 = entry at near edge, 1 = entry at far edge (direction-normalised fraction; can go <0 or >1 if entry lies outside the gap) | plan.entry_price + fvg.gap_high / gap_low |
+| `PenetrationDepth` | how far past the NEAR edge the lowest low (bullish) / highest high (bearish) reached during the FVG's pre-confirmation lifecycle, in points | `pre_confirm_extreme_price` running min/max across WAITING_REVISIT + REVISITED bars |
+| `BarsFromFvgToEntry` | `(entry_time − formation_time) / 300` (M5 bars) | timestamps only |
+| `MfePoints` | running max favorable excursion across the trade's life, in points (≥0) | `bar.high` / `bar.low` per bar against `entry_price` |
+| `MaePoints` | running max adverse excursion across the trade's life, in points (≥0) | mirror of MFE |
+
+### 13.3 How each value is captured (no new lookahead)
+
+**`ConfirmBodyPoints` + `ConfirmRangePoints`** — captured on `S00TrackedFvg` in step 3d the moment we transition `REVISITED → ENTRY_PENDING`. At that point `bar1` IS the confirmation candle (the same bar that was just gate-checked by `IsConfirmationCandle`). Reading its body and range is a re-read of `bar1.open / close / high / low`, all closed-bar values. The fields then carry through to `m_active_trade` when step 3e opens the trade on the next bar.
+
+**`EntryVsCE` + `EntryVsGapMid`** — pure arithmetic on `plan.entry_price` (`= bar1.open` on the entry bar T+1) and the FVG's stored `ce` / `gap_high` / `gap_low`. No additional candle reads.
+
+**`PenetrationDepth`** — needs the lowest low (bullish) or highest high (bearish) seen between the FVG's formation bar and the bar BEFORE the confirmation. Tracked incrementally as `pre_confirm_extreme_price` on each `S00TrackedFvg` via a small update block at the END of the per-FVG loop, guarded so it only fires when `state ∈ {WAITING_REVISIT, REVISITED}` *after* the state transitions for this bar have already executed. That guard placement excludes:
+- The confirmation bar itself (state has just moved to `ENTRY_PENDING`).
+- The entry bar (state has just moved to `DROPPED` with reason `ENTERED`).
+- Any bar that invalidated or expired the FVG (state moved to `DROPPED`).
+- The formation bar IS included — `bar1` at first detection happens to be the FVG's right-edge bar (C3), whose `low` for bullish ≈ `gap_high` (zero penetration baseline). Including it is harmless and keeps the extreme initialised on the first bar after detection.
+
+**`BarsFromFvgToEntry`** — pure timestamp arithmetic: `(m_active_trade.entry_time - m_tracked[i].fvg.formation_time) / 300`. 300 = 5 * 60 seconds per M5 bar. No candle read.
+
+**`MfePoints` + `MaePoints`** — updated via the new `UpdateMfeMaeOnBar(bar)` helper, called from two sites:
+1. At the **top** of `UpdateOpenTradeOnBar(bar)` — before the existing SL / TP / timeout decision. Refreshes excursion using the bar's high / low. Critically: this is BEFORE the `elapsed_bars++` increment, BEFORE the SL / TP comparisons, BEFORE the timeout check. Adding it cannot reorder or skip any existing logic.
+2. Inside step 3e on the entry bar, immediately AFTER the trade fields are populated but BEFORE the same-bar SL / TP check. The bar's high / low is already known (it's the closed `bar1` we read at the top of `EvaluateOnNewBar`). Updating MFE/MAE here ensures same-bar-stopped trades show their initial favorable excursion accurately rather than 0.
+
+The helper itself uses only `bar.high`, `bar.low`, `m_active_trade.entry_price`, and `m_active_trade.direction` — no candle re-read, no live-bar surface. Both fields are floored at 0.0 (positive magnitudes by definition).
+
+### 13.4 Behavior preservation — the 26 trades must reproduce
+
+R1.1b-diag is strictly additive. The state machine, the confirmation gate, the trade plan builder, the SL / TP / timeout decisions, and the same-bar fill ordering are untouched.
+
+**What the diff adds:**
+- New fields on `S00TrackedFvg` (4 fields) and `S00PaperTrade` (8 fields). Their values are set / read at the captured points described in §13.3.
+- `UpdateMfeMaeOnBar` helper method.
+- One call to `UpdateMfeMaeOnBar` at the top of `UpdateOpenTradeOnBar` (before the existing logic).
+- One call to `UpdateMfeMaeOnBar` inside step 3e (after `m_active_trade.open = true` and field population, before the existing inline SL/TP check).
+- Confirmation body/range capture inside step 3d's existing `if(IsConfirmationCandle(...))` block.
+- A per-FVG extreme update block at the END of the per-FVG loop iteration.
+- The CSV header gains 8 columns; each row gains 8 values.
+
+**What the diff does NOT add:**
+- No new conditional on entry decisions.
+- No reordering of `IsInvalidatedByBar` / `BarTouchesCE` / `IsConfirmationCandle` / plan-build / same-bar SL/TP check.
+- No new candle read sites (the lookahead surface table in §2 is unchanged after R1.1b-diag).
+- No change to `S00_FvgDetector.mqh`, `S00_FvgQualityFilter.mqh`, `S00_TradePlan.mqh`, or `S00_ScalpFvgMicroInputs.mqh`.
+
+**Expected April result:** same 26 trades. Same `EntryTime`, `Direction`, `EntryPrice`, `StopLoss`, `Target`, `PlannedRR`, `FvgFormationTime`, `FvgSizePoints`, `ExitTime`, `ExitReason`, `ResultPoints`, `ElapsedBars` columns row-by-row. The 8 new columns are populated with values that interpret the same trades.
+
+### 13.5 Re-audited lookahead
+
+```
+grep -nE "iClose|iHigh|iLow|iOpen|iBars|CopyRates|CopyBuffer|CopyHigh|CopyLow|
+         CopyOpen|CopyClose|CopyTime|SymbolInfoTick|GetCandleSnapshot"
+     Strategies/S00_ScalpFvgMicro/*.mqh
+```
+
+Same 9 call sites as post-R1.1b (Detector × 3, TradePlan × 6, EntryLogic × 1). Zero new read sites in R1.1b-diag. All previously-audited closed-bar guarantees (`start=1` for `CopyBuffer`, `shift ≥ 1` for `GetCandleSnapshot`) are preserved.
+
+### 13.6 Touch surface (R1.1b-diag only)
+
+| File | Change |
+|---|---|
+| `Strategies/S00_ScalpFvgMicro/S00_EntryLogic.mqh` | Struct extensions (4 fields on `S00TrackedFvg`, 8 fields on `S00PaperTrade`); `PollDetector` initialises the new tracked fields; `UpdateMfeMaeOnBar` helper added; `UpdateOpenTradeOnBar` gains a single call to the helper at its top; step 3d captures confirm body/range inside the existing branch; step 3e captures 6 diagnostic fields then calls the helper before the same-bar fill check; a per-FVG extreme-update block added at the END of the per-FVG loop; CSV header + row extended with 8 columns. |
+| `Core/FalconConstants.mqh` | `EA_VERSION_TAG`: `R1_1b` → `R1_1b_diag`. |
+| `Docs/Ideas_Backlog.md` | Items 45–50 added (R1.1b-diag observations). |
+| `Docs/ReviewNotes/R1_1b_Review_Notes.md` | This §13 added; header note updated. |
+| `Docs/Specs/JA_FalconCore_R1_1b_diag_SPEC.md` | Added (moved from root). |
+
+### 13.7 Acceptance status (per R1.1b-diag spec §5)
+
+| Criterion | Status |
+|---|---|
+| `S00_Trades_Diagnostics.csv` carries the 8 new columns | ✓ §13.2 + §13.6 |
+| Entry / exit logic unchanged — same 26 April trades, same results | ✓ (strictly additive — §13.4) |
+| Compiles `0 errors, 0 warnings` | ⏳ MetaEditor F7 by user |
+| `EA_VERSION_TAG = R1_1b_diag` | ✓ |
+| Review notes updated | ✓ (this §13) |
+| Legacy code unaffected | ✓ (no touch outside `Strategies/S00_ScalpFvgMicro/` + `Core/FalconConstants.mqh` + docs) |
+
+---
+
+*End of R1.1b review notes (now including the R1.1b-diag observability pass). The hand is built and now wears a glove with sensors — does not blink at the live bar, refuses entries with room less than 1:2, and writes 20 columns per closed trade so we can see WHY each one died. R1.1c (runner + protect) waits until we read the data and decide what to actually fix.*

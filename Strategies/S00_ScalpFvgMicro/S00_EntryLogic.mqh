@@ -48,6 +48,13 @@ struct S00TrackedFvg
    string                drop_reason;            // "" | "INVALIDATED" | "EXPIRED" | "BUSY" | plan reject reason | "ENTERED"
    int                   bars_elapsed_since_formation;
    datetime              revisit_bar_time;
+   // R1.1b-diag: entry-quality fields captured during the FVG's
+   // pre-entry lifecycle. Read-only annotations - no influence on
+   // entry / stop / target / invalidation decisions.
+   double                confirm_body_points;        // set on REVISITED -> ENTRY_PENDING transition (bar1 = confirmation candle)
+   double                confirm_range_points;       // ditto
+   bool                  pre_confirm_extreme_set;    // sentinel for the running pre-confirmation extreme
+   double                pre_confirm_extreme_price;  // BULLISH: lowest low seen pre-confirm; BEARISH: highest high
 };
 
 enum ENUM_S00_TRADE_EXIT_REASON
@@ -74,6 +81,17 @@ struct S00PaperTrade
    double                      exit_price;
    double                      result_points;
    int                         elapsed_bars;
+   // R1.1b-diag: entry-quality + execution-quality fields. Read-only
+   // annotations for the trades CSV. None of these influence the
+   // SL / TP / timeout decision; they are pure observability.
+   double                      confirm_body_points;       // |confirm.close - confirm.open| / point
+   double                      confirm_range_points;      // (confirm.high - confirm.low) / point
+   double                      entry_vs_ce_points;        // signed: (entry - ce) / point (positive => entry above CE for both directions)
+   double                      entry_vs_gap_mid_fraction; // 0.0 at near edge, 1.0 at far edge of the FVG; may go <0 or >1 if entry lies outside the gap
+   double                      penetration_depth_points;  // how far past the near edge the price reached pre-confirmation (>=0)
+   int                         bars_from_fvg_to_entry;    // (entry_time - formation_time) measured in M5 bars
+   double                      mfe_points;                // running max favorable excursion in points (>=0)
+   double                      mae_points;                // running max adverse excursion in points (>=0)
 };
 
 class CS00EntryLogic
@@ -102,6 +120,11 @@ private:
          m_tracked[m_tracked_count].drop_reason                  = "";
          m_tracked[m_tracked_count].bars_elapsed_since_formation = 0;
          m_tracked[m_tracked_count].revisit_bar_time             = 0;
+         // R1.1b-diag init.
+         m_tracked[m_tracked_count].confirm_body_points          = 0.0;
+         m_tracked[m_tracked_count].confirm_range_points         = 0.0;
+         m_tracked[m_tracked_count].pre_confirm_extreme_set      = false;
+         m_tracked[m_tracked_count].pre_confirm_extreme_price    = 0.0;
          m_tracked_count = new_size;
       }
       m_detector_polled_count = n;
@@ -144,7 +167,11 @@ private:
       const string header =
             "EntryTime,Direction,EntryPrice,StopLoss,Target,"
             "PlannedRR,FvgFormationTime,FvgSizePoints,"
-            "ExitTime,ExitReason,ResultPoints,ElapsedBars";
+            "ExitTime,ExitReason,ResultPoints,ElapsedBars,"
+            // R1.1b-diag columns - entry quality + execution tracking
+            "ConfirmBodyPoints,ConfirmRangePoints,EntryVsCE,"
+            "EntryVsGapMid,PenetrationDepth,BarsFromFvgToEntry,"
+            "MfePoints,MaePoints";
       FileWriteString(handle, header + "\r\n");
       FileClose(handle);
       m_trades_header_written = true;
@@ -181,7 +208,16 @@ private:
             FalconTimeToString(t.exit_time)                + "," +
             reason_label                                   + "," +
             DoubleToString(t.result_points,      1)        + "," +
-            IntegerToString(t.elapsed_bars);
+            IntegerToString(t.elapsed_bars)                + "," +
+            // R1.1b-diag columns
+            DoubleToString(t.confirm_body_points,       1) + "," +
+            DoubleToString(t.confirm_range_points,      1) + "," +
+            DoubleToString(t.entry_vs_ce_points,        1) + "," +
+            DoubleToString(t.entry_vs_gap_mid_fraction, 4) + "," +
+            DoubleToString(t.penetration_depth_points,  1) + "," +
+            IntegerToString(t.bars_from_fvg_to_entry)      + "," +
+            DoubleToString(t.mfe_points,                1) + "," +
+            DoubleToString(t.mae_points,                1);
       FileWriteString(handle, row + "\r\n");
       FileClose(handle);
    }
@@ -198,9 +234,40 @@ private:
       m_active_trade.open = false;
    }
 
+   // R1.1b-diag: update running MFE / MAE on the active trade against
+   // a closed bar's high / low. Pure observability - never gates the
+   // SL / TP / timeout decision.
+   void UpdateMfeMaeOnBar(const FalconCandleSnapshot &bar)
+   {
+      if(!m_active_trade.open) return;
+      const double point = (_Point > 0.0 ? _Point : 1.0);
+      double favorable = 0.0;
+      double adverse   = 0.0;
+      if(m_active_trade.direction == S00_FVG_DIR_BULLISH)
+      {
+         favorable = (bar.high - m_active_trade.entry_price) / point;
+         adverse   = (m_active_trade.entry_price - bar.low)  / point;
+      }
+      else if(m_active_trade.direction == S00_FVG_DIR_BEARISH)
+      {
+         favorable = (m_active_trade.entry_price - bar.low)  / point;
+         adverse   = (bar.high - m_active_trade.entry_price) / point;
+      }
+      if(favorable < 0.0) favorable = 0.0;
+      if(adverse   < 0.0) adverse   = 0.0;
+      if(favorable > m_active_trade.mfe_points) m_active_trade.mfe_points = favorable;
+      if(adverse   > m_active_trade.mae_points) m_active_trade.mae_points = adverse;
+   }
+
    // SL / TP / timeout check for an open trade against bar1.
    void UpdateOpenTradeOnBar(const FalconCandleSnapshot &bar)
    {
+      // R1.1b-diag: refresh MFE / MAE before checking exits. The
+      // bar's high / low fully define this bar's excursion regardless
+      // of where SL / TP would land, so observability stays accurate
+      // even for bars that trigger an exit.
+      UpdateMfeMaeOnBar(bar);
+
       m_active_trade.elapsed_bars++;
       const double sl = m_active_trade.stop_loss;
       const double tp = m_active_trade.target;
@@ -333,7 +400,16 @@ public:
             if(m_active_trade.open) continue;
 
             if(IsConfirmationCandle(m_tracked[i].fvg.direction, bar1))
+            {
                m_tracked[i].state = S00_TRACK_ENTRY_PENDING;
+               // R1.1b-diag: snapshot the confirmation candle's body
+               // + range now (bar1 IS the confirmation candle at this
+               // point). Read-only - logic above used the candle as
+               // a gate but did not consume these values.
+               const double pt = (_Point > 0.0 ? _Point : 1.0);
+               m_tracked[i].confirm_body_points  = MathAbs(bar1.close - bar1.open) / pt;
+               m_tracked[i].confirm_range_points = (bar1.high - bar1.low) / pt;
+            }
             continue;
          }
 
@@ -377,9 +453,50 @@ public:
             m_active_trade.result_points       = 0.0;
             m_active_trade.elapsed_bars        = 0;
 
+            // R1.1b-diag: capture the entry-quality + execution
+            // tracking fields. All derived from already-closed-bar
+            // data + the FVG record + the confirmation snapshot taken
+            // in step 3d. No new lookahead surface.
+            const double dpt = (_Point > 0.0 ? _Point : 1.0);
+            const double gap_range_price = m_tracked[i].fvg.gap_high - m_tracked[i].fvg.gap_low;
+            m_active_trade.confirm_body_points  = m_tracked[i].confirm_body_points;
+            m_active_trade.confirm_range_points = m_tracked[i].confirm_range_points;
+            m_active_trade.entry_vs_ce_points   = (plan.entry_price - m_tracked[i].fvg.ce) / dpt;
+            if(m_tracked[i].fvg.direction == S00_FVG_DIR_BULLISH)
+               m_active_trade.entry_vs_gap_mid_fraction = (gap_range_price > 0.0
+                                                          ? (m_tracked[i].fvg.gap_high - plan.entry_price) / gap_range_price
+                                                          : 0.0);
+            else
+               m_active_trade.entry_vs_gap_mid_fraction = (gap_range_price > 0.0
+                                                          ? (plan.entry_price - m_tracked[i].fvg.gap_low) / gap_range_price
+                                                          : 0.0);
+            // Penetration depth: how far past the NEAR edge the
+            // pre-confirmation extreme reached. >=0; can exceed the
+            // gap size if a wick poked past the far edge before the
+            // confirmation candle (but no CLOSE past the far edge -
+            // that would have triggered invalidation upstream).
+            double penetration = 0.0;
+            if(m_tracked[i].pre_confirm_extreme_set)
+            {
+               if(m_tracked[i].fvg.direction == S00_FVG_DIR_BULLISH)
+                  penetration = (m_tracked[i].fvg.gap_high - m_tracked[i].pre_confirm_extreme_price) / dpt;
+               else
+                  penetration = (m_tracked[i].pre_confirm_extreme_price - m_tracked[i].fvg.gap_low) / dpt;
+            }
+            m_active_trade.penetration_depth_points = (penetration > 0.0 ? penetration : 0.0);
+            m_active_trade.bars_from_fvg_to_entry   = (int)((m_active_trade.entry_time - m_tracked[i].fvg.formation_time) / 300);
+            m_active_trade.mfe_points = 0.0;
+            m_active_trade.mae_points = 0.0;
+
             // FVG consumed.
             m_tracked[i].state       = S00_TRACK_DROPPED;
             m_tracked[i].drop_reason = "ENTERED";
+
+            // R1.1b-diag: refresh MFE / MAE on the entry bar itself
+            // before the same-bar SL / TP check. The bar's high / low
+            // represent the trade's first-bar excursion regardless
+            // of whether SL / TP fills inside the bar.
+            UpdateMfeMaeOnBar(bar1);
 
             // Same-bar fill check on the entry bar (bar1 = T+1).
             // elapsed_bars stays 0 here; UpdateOpenTradeOnBar would
@@ -414,6 +531,34 @@ public:
                m_active_trade.exit_time   = bar1.time;
                m_active_trade.exit_price  = tp;
                CloseActiveTrade();
+            }
+         }
+
+         // R1.1b-diag: maintain the running pre-confirmation extreme
+         // for the FVG (BULLISH: lowest low; BEARISH: highest high).
+         // Runs AFTER the state transitions so the confirmation bar
+         // itself (which moves state -> ENTRY_PENDING in 3d) and the
+         // entry bar (which moves state -> DROPPED/ENTERED in 3e)
+         // are not counted in "pre-confirmation" excursion.
+         if(m_tracked[i].state == S00_TRACK_WAITING_REVISIT
+            || m_tracked[i].state == S00_TRACK_REVISITED)
+         {
+            if(!m_tracked[i].pre_confirm_extreme_set)
+            {
+               m_tracked[i].pre_confirm_extreme_price =
+                  (m_tracked[i].fvg.direction == S00_FVG_DIR_BULLISH
+                   ? bar1.low : bar1.high);
+               m_tracked[i].pre_confirm_extreme_set = true;
+            }
+            else if(m_tracked[i].fvg.direction == S00_FVG_DIR_BULLISH)
+            {
+               if(bar1.low < m_tracked[i].pre_confirm_extreme_price)
+                  m_tracked[i].pre_confirm_extreme_price = bar1.low;
+            }
+            else
+            {
+               if(bar1.high > m_tracked[i].pre_confirm_extreme_price)
+                  m_tracked[i].pre_confirm_extreme_price = bar1.high;
             }
          }
       }

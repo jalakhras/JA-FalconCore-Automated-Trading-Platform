@@ -151,6 +151,22 @@ Three permanent rules for MQL5 inputs. They apply to all new strategies (S00, S0
 
 ---
 
+## From R1.1b-diag (entry-quality diagnostic columns)
+
+45. **"Diagnose first, fix second" worked already.** The R1.1b April backtest's first-cut intuitions about *why* trades lost (tight stops? oversized FVGs?) were both wrong — the data showed wide-stop trades dying too, and large gaps performing worst, the opposite of guess. R1.1b-diag formalises the pattern: when a fix is tempting, add the diagnostic columns FIRST, run the data, then commit to a fix only with the data in hand. Worth re-asserting in the operational rules doc when we touch it.
+
+46. **`PenetrationDepth` excludes the confirmation bar by construction.** The pre-confirmation extreme is updated AFTER the state transitions in the per-FVG loop, so on the bar that triggers `REVISITED → ENTRY_PENDING` the state has already moved to `ENTRY_PENDING` and the extreme update is skipped. Same logic protects the entry bar. This matches the spec wording ("قبل شمعة التأكيد") exactly, at the cost of a slightly more involved loop order — worth re-checking if anyone reorders the per-FVG block in R1.1c.
+
+47. **`EntryVsCE` is signed; `EntryVsGapMid` is direction-normalised.** The two fields look similar but answer different questions. `EntryVsCE = (entry - ce) / point` is a raw signed distance with the same sign convention for both directions — useful for "how far on each side of CE did the entry happen across the population." `EntryVsGapMid = 0..1` is normalised against the gap range AND oriented so `0 = near edge / 1 = far edge` regardless of direction — useful for "what fraction of the gap had price penetrated when we entered." Keep both during the analysis phase; collapse to one if the correlation tells us which one matters.
+
+48. **`MfePoints` / `MaePoints` use bar.high / bar.low even on the bar that fires an exit.** A trade that exits at SL on the same bar still has an MFE = (bar.high - entry) / point if the bar made any favorable excursion before reversing into the stop. This is correct for "what was the maximum unrealised P&L during the trade's life" but can produce confusing-looking rows: MFE > 0 alongside `ExitReason = STOP`. Document on the analysis side; not a code issue.
+
+49. **MFE/MAE include the entry bar.** First call is inside step 3e (entry bar same-bar fill). Subsequent calls are at the top of `UpdateOpenTradeOnBar` for every later bar. Without the entry-bar update, MFE/MAE on a same-bar-stopped trade would be 0, hiding the favorable excursion the trade did make before reversing.
+
+50. **The 8 new columns add ~30% to the trade CSV row length.** Not a real problem (text files compress and Excel handles 20 columns trivially) but it does push the total to 20 columns. If the analysis converges on a small subset, R1.1c can collapse - or move some fields to a separate "trade observability" CSV that joins on trade ID. For now, one wide row keeps the joins simple.
+
+---
+
 ## Conventions for adding to this file
 
 - One bullet per idea. Keep it terse.
