@@ -23,7 +23,11 @@
 #define FALCON_REPORTING_REPORT_WRITER_MQH
 
 // ==================================================================
-// Report Writer Foundation - append-ready CSV contracts
+// Report Writer Foundation - append-ready CSV contracts.
+// R0.7cd: the 12-step Apply* lifecycle chain now lives in
+// CFalconRiskLifecycleProcessor (Risk/FalconRiskLifecycleProcessor.mqh).
+// RegisterClosedTrade invokes g_risk_lifecycle_processor.ApplyTradeLifecycleChain;
+// this writer is report-only.
 // ==================================================================
 class CFalconReportWriter
 {
@@ -2085,10 +2089,6 @@ public:
       if(FalconWouldBeOpenAtWeekendRisk(record))
          m_totals.market_close_guard_open_weekend_risk_trades++;
    }
-
-   // R0.7cd: Apply* method body moved to CFalconRiskLifecycleProcessor; original lived at L2089..2129 of pre-R0.7cd Reporting/FalconReportWriter.mqh.
-
-   // R0.7cd: Apply* method body moved to CFalconRiskLifecycleProcessor; original lived at L2131..2215 of pre-R0.7cd Reporting/FalconReportWriter.mqh.
 
    void ResetWeeklyStabilityState()
    {
@@ -4259,26 +4259,6 @@ private:
                 notes);
    }
 
-   // R0.7cd: Apply* method body moved to CFalconRiskLifecycleProcessor; original lived at L4386..4411 of pre-R0.7cd Reporting/FalconReportWriter.mqh.
-
-
-   // R0.7cd: Apply* method body moved to CFalconRiskLifecycleProcessor; original lived at L4414..4442 of pre-R0.7cd Reporting/FalconReportWriter.mqh.
-
-   // R0.7cd: Apply* method body moved to CFalconRiskLifecycleProcessor; original lived at L4444..4519 of pre-R0.7cd Reporting/FalconReportWriter.mqh.
-
-   // R0.7cd: Apply* method body moved to CFalconRiskLifecycleProcessor; original lived at L4521..4598 of pre-R0.7cd Reporting/FalconReportWriter.mqh.
-
-
-   // R0.7b-fix: CurrentPaperRiskCapitalBeforeTrade moved to
-   // Risk/FalconRiskLifecycleProcessor.mqh (private member of
-   // CFalconRiskLifecycleProcessor). Pure Risk-policy helper.
-
-   // R0.7cd: Apply* method body moved to CFalconRiskLifecycleProcessor; original lived at L4605..4630 of pre-R0.7cd Reporting/FalconReportWriter.mqh.
-
-   // R0.7cd: Apply* method body moved to CFalconRiskLifecycleProcessor; original lived at L4632..4726 of pre-R0.7cd Reporting/FalconReportWriter.mqh.
-
-   // R0.7cd: Apply* method body moved to CFalconRiskLifecycleProcessor; original lived at L4728..4808 of pre-R0.7cd Reporting/FalconReportWriter.mqh.
-
    double FalconDynamicTierMaxLot(const string tier_name)
    {
       if(tier_name == "MICRO")    return 0.01;
@@ -4387,12 +4367,6 @@ private:
       record.paper_protection_net_usd = FalconEstimateUsdByRawPoints(record.paper_protection_net_index_points, active_lot, m_symbol_context);
       record.paper_runner_net_usd = FalconEstimateUsdByRawPoints(record.paper_runner_net_index_points, active_lot, m_symbol_context);
    }
-
-   // R0.7cd: Apply* method body moved to CFalconRiskLifecycleProcessor; original lived at L4919..5051 of pre-R0.7cd Reporting/FalconReportWriter.mqh.
-
-   // R0.7cd: Apply* method body moved to CFalconRiskLifecycleProcessor; original lived at L5053..5212 of pre-R0.7cd Reporting/FalconReportWriter.mqh.
-
-   // R0.7cd: Apply* method body moved to CFalconRiskLifecycleProcessor; original lived at L5214..5291 of pre-R0.7cd Reporting/FalconReportWriter.mqh.
 
    void ResetTotals()
    {

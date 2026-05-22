@@ -118,7 +118,11 @@ All 12 `Apply*` methods now live inside `Reporting/FalconReportWriter.mqh`. Thei
 
 **Caller graph:**
 
-- `RegisterClosedTrade` (new-file L4002 area) is the single chain orchestrator. It calls Apply#1, #2, #3, #4, #5, #6, then #7, #8, #9, then #10, #11, then #12 in that order on every closed trade.
+- `RegisterClosedTrade` (new-file L4002 area) is the single chain orchestrator. The load-bearing *actual* call order on every closed trade is:
+
+  `#3, #4, #5, #6, #7, #8, #10, #9, #1, #2, #11, #12`
+
+  (i.e. FVG-quality guard → paper-runtime trio → capital-tier → low-capital feasibility → DLM → single-trade loss cap → user-override pair → three-layer emergency → capital-flow classification.) An earlier draft of this section claimed an ascending `#1..#12` listing; that was a documentation error. **Source of truth: `Risk/FalconRiskLifecycleProcessor.mqh::ApplyTradeLifecycleChain`** (post-R0.7cd) — the chain there mirrors exactly what `RegisterClosedTrade` has been firing since v0.55.x. See also `Docs/ReviewNotes/R0_7b_Review_Notes.md` §2 and `Docs/ReviewNotes/R0_7cd_Review_Notes.md` on the same discrepancy.
 - `WriteFinalSummary` reads the cumulative effect (via `m_totals`) but does not call any `Apply*` directly.
 - No `Apply*` is called from outside `CFalconReportWriter`. R0.7 will need to lift the chain *and* its `m_totals` / lifecycle-record contract.
 
