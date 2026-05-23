@@ -127,6 +127,12 @@ struct S00PaperTrade
    bool                        real_entry_attempted;
    bool                        real_entry_accepted;
    double                      real_entry_price;
+   // R1.2c: trade_id captured at real-entry attempt. Mirrors the
+   // shadow_id format used by the bridge ("S00_SCALP_FVG_<entry_time>"),
+   // so CloseActiveTrade can hand it back to the bridge to look up the
+   // active broker link and close the position by reverse deal. Empty
+   // string when any of the three real-execution gates is shut.
+   string                      trade_id;
    double                      real_entry_slippage;
 };
 
@@ -321,6 +327,25 @@ private:
       m_active_trade.exit_price    = exit_price;
       m_active_trade.result_points = raw / point;
       AppendTradeRow(m_active_trade);
+
+      // R1.2c: real close execution. Three gates - MQL_TESTER +
+      // EnableRealExecution + S00_RealExecution - mirror the entry
+      // contract; ALL must pass for the bridge call to leave the
+      // strategy. With any gate shut, the close stays paper-only and
+      // the legacy FixedLot April baseline (585.17 / 1104.89 / 157.49)
+      // is untouched. trade_id is non-empty only when a real entry
+      // was attempted; on paper-only trades the bridge call returns
+      // false from FindActiveLinkByTradeId and is a no-op.
+      if(MQLInfoInteger(MQL_TESTER)
+         && EnableRealExecution
+         && S00_RealExecution)
+      {
+         g_broker_entry_bridge.TryManagedCloseFromS00Trade(m_active_trade.trade_id,
+                                                          exit_price,
+                                                          reason,
+                                                          g_report_writer);
+      }
+
       m_active_trade.open = false;
    }
 
@@ -649,6 +674,7 @@ public:
             m_active_trade.real_entry_accepted  = false;
             m_active_trade.real_entry_price     = 0.0;
             m_active_trade.real_entry_slippage  = 0.0;
+            m_active_trade.trade_id             = "";
             if(MQLInfoInteger(MQL_TESTER)
                && EnableRealExecution
                && S00_RealExecution)
@@ -684,6 +710,11 @@ public:
                                               : SymbolInfoDouble(_Symbol, SYMBOL_BID));
 
                m_active_trade.real_entry_attempted = true;
+               // R1.2c: capture trade_id at the same moment the bridge
+               // call is issued. Must mirror s00_record.shadow_id so the
+               // bridge's m_active_links keyed on shadow_id can be found
+               // again at close time via FindActiveLinkByTradeId.
+               m_active_trade.trade_id = "S00_SCALP_FVG_" + IntegerToString((long)m_active_trade.entry_time);
                const bool accepted = g_broker_entry_bridge.TryOpenFromShadowRecord(s00_record, g_report_writer);
                m_active_trade.real_entry_accepted = accepted;
                if(accepted && request_price > 0.0)

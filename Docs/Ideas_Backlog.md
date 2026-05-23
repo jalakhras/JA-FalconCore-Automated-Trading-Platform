@@ -201,6 +201,22 @@ Three permanent rules for MQL5 inputs. They apply to all new strategies (S00, S0
 
 ---
 
+## From R1.2c (realistic close execution)
+
+60. **First-class dual paper-vs-real report (joined on `trade_id`).** Today, S00's paper rows live in `S00_Trades_Diagnostics.csv` and the bridge's reverse-deal close lifecycle lives in `BrokerManagedCloseLifecycle*.csv`. Cross-join on `trade_id` is possible externally but tedious. A first-class report — one row per S00 trade with `PaperEntryPrice`, `RealEntryPrice`, `PaperExitPrice`, `RealExitPrice`, `PaperResult_points`, `RealResult_points`, `PaperResult_USD`, `RealResult_USD`, `Gap_USD`, `ExitReason`, `ExitFiredBy` (`S00_LOGIC` vs `SERVER_ENVELOPE`) — would make the R1.2b→R1.2c improvement immediately readable. **Build after the first three-month tester run with `S00_RealExecution = true` validates that the close path fires as designed.** Premature wiring before the data exists risks designing the wrong columns.
+
+61. **Slippage capture on close.** `ExecuteReverseClosePositionRequest` already computes `executed_price` (the bid/ask at submission) and `result_comment`. `TryManagedCloseFromS00Trade` discards both after the call. Capturing `close_slippage = executed_price - exit_price` and writing it back into `S00PaperTrade` (parallel to R1.2b's `real_entry_slippage`) would make the close side observable. **Build only after #60** — a column without a destination report is just bookkeeping.
+
+62. **Hoist `ENUM_S00_TRADE_EXIT_REASON` to a strategy-agnostic `ENUM_FALCON_STRATEGY_EXIT_REASON`.** Today `TryManagedCloseFromS00Trade` takes `const ENUM_S00_TRADE_EXIT_REASON reason`, which resolves only because the include order in the main `.mq5` puts `S00_EntryLogic.mqh` (line 97) before `FalconBrokerEntryBridge.mqh` (line 5676). This is fragile: any reorder of includes breaks the bridge build. A clean fix is a strategy-agnostic enum in `Core/FalconEnums.mqh` (`FALCON_EXIT_TARGET`, `FALCON_EXIT_STOP`, `FALCON_EXIT_TIMEOUT`, `FALCON_EXIT_INVALIDATED`) with each strategy mapping its own enum to the shared one at the call site. **Defer until a second real-executing strategy actually needs the bridge** — same trigger as item #57. Today the include order is stable and the coupling is documented.
+
+63. **Decide whether to keep the v0.56.9b emergency server SL/TP envelope at open.** With R1.2c closing positions via S00's own logic, the broker-side stop is now a *safety net behind* S00 — relevant only when (a) S00's close path itself fails (rare), or (b) the EA crashes / disconnects mid-trade leaving a naked position. The envelope is wide (~3 × structural distance, USD-cap binary-searched to ≤ $75 loss), so it shouldn't fire in normal operation now. But it still costs the slippage of *whichever stop hits first* in an edge case. After three months of R1.2c data, ask: did the server envelope ever fire on an S00 trade? If never, consider going naked-but-EA-managed (`request.sl = 0.0`, `request.tp = 0.0`) which is what `FALCON_LOCK_PARITY_SERVER_STOP_POLICY` would call `NO_NAKED_ORDER_GUARD` if it were relaxed. **Data-driven decision.**
+
+64. **Double-close defense between `TryManagedCloseFromS00Trade` and the Virtual Trailing Bridge.** The Virtual Trailing Bridge (`UpdateVirtualTrailingForOpenLinks`) runs on every tick and issues its own `ExecuteReverseClosePositionRequest` when its virtual stop is touched. With `S00_RealExecution = true` the legacy strategy is forced dark by R1.2a's coexistence gate, so the Virtual Trailing Bridge has no legacy trades to manage. But the bridge code itself is **not** gated on `S00_RealExecution` — it iterates `m_active_links[]` indiscriminately. If a future change makes the trailing bridge applicable to S00 entries, both paths could try to close the same position on the same tick. Today the second `ExecuteReverseClosePositionRequest` would fail cleanly (position already closed), but it's a sharp edge worth either gating off explicitly or testing under stress. **Investigate after #60 surfaces real close data.**
+
+65. **Move `JA_FalconCore_R1_2c_SPEC.md` to `Docs/Specs/`.** Per the R0.9 convention (item #10 in this backlog), all specs land in `Docs/Specs/`. R1.2c's SPEC currently sits at the repo root because the operator pasted it there for handoff. A follow-up chore commit can move it and delete it on phase completion (the R0.5b "delete completed-phase SPEC" rule). **Defer to next chore commit** — out of scope for the R1.2c code change.
+
+---
+
 ## Conventions for adding to this file
 
 - One bullet per idea. Keep it terse.

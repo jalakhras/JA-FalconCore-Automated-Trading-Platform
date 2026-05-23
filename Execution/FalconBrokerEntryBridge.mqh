@@ -1765,6 +1765,98 @@ public:
    }
 
    // ==================================================================
+   // R1.2c: S00-specific real close.
+   //
+   // Called from CS00EntryLogic::CloseActiveTrade when the strategy
+   // decides to exit (target, structural/BE stop, timeout). Looks up
+   // the active broker link by trade_id (captured at real entry),
+   // validates position identity (symbol + FC_MAGIC_FVG_MICRO), and
+   // issues a reverse-deal close via ExecuteReverseClosePositionRequest
+   // - the same helper the Virtual Trailing Bridge uses for the legacy
+   // strategy. No new OrderSend logic.
+   //
+   // The three real-execution gates (MQL_TESTER + EnableRealExecution +
+   // S00_RealExecution) are enforced at the call site AND re-checked
+   // here as a defense-in-depth contract; either layer alone keeps the
+   // legacy FixedLot April baseline (585.17 / 1104.89 / 157.49) safe
+   // when gates are shut.
+   //
+   // No BrokerModify, no TRADE_ACTION_SLTP, no RuntimeSLChanged. S00
+   // breakeven protection at the broker is realized by closing the
+   // position when the paper SL (moved to entry) is touched - never
+   // by moving the server stop. Demo/Live blocked via MQL_TESTER and
+   // EnableRealExecution. Returns true iff the reverse-deal OrderSend
+   // was accepted by the tester.
+   // ==================================================================
+   bool TryManagedCloseFromS00Trade(const string &trade_id,
+                                    const double exit_price,
+                                    const ENUM_S00_TRADE_EXIT_REASON reason,
+                                    CFalconReportWriter &report_writer)
+   {
+      if(!MQLInfoInteger(MQL_TESTER))
+         return false;
+      if(!EnableRealExecution)
+         return false;
+      if(!S00_RealExecution)
+         return false;
+
+      // Empty trade_id means the paper trade was opened without a real
+      // entry (gates were shut at open, or the bridge rejected the
+      // entry). Nothing to close on the broker side.
+      if(StringLen(trade_id) <= 0)
+         return false;
+
+      FalconBrokerTradeLink link;
+      if(!FindActiveLinkByTradeId(trade_id, link))
+         return false;
+
+      if(link.broker_position_ticket <= 0)
+         return false;
+
+      if(!PositionSelectByTicket(link.broker_position_ticket))
+      {
+         // Position no longer exists - likely already closed by the
+         // server emergency SL/TP envelope before S00 reached its exit
+         // decision. Mark link closed so audit stays consistent and
+         // the next entry attempt is not blocked by a stale link.
+         MarkLinkClosed(link.broker_position_ticket, link.broker_order_ticket, link.broker_deal_ticket);
+         return false;
+      }
+
+      string pos_symbol = PositionGetString(POSITION_SYMBOL);
+      long   pos_magic  = (long)PositionGetInteger(POSITION_MAGIC);
+      if(pos_symbol != _Symbol || pos_magic != FC_MAGIC_FVG_MICRO)
+         return false;
+
+      double volume = PositionGetDouble(POSITION_VOLUME);
+      if(volume <= 0.0)
+         return false;
+
+      long position_type = (long)PositionGetInteger(POSITION_TYPE);
+
+      string lifecycle_reason = StringFormat("S00_CLOSE reason=%s exitPrice=%.5f tradeId=%s",
+                                             EnumToString(reason),
+                                             exit_price,
+                                             trade_id);
+
+      bool   accepted       = false;
+      uint   retcode        = 0;
+      double executed_price = 0.0;
+      string result_comment = "";
+      bool sent = ExecuteReverseClosePositionRequest(link,
+                                                     position_type,
+                                                     volume,
+                                                     FALCON_MREB_CLOSE_COMMENT_PREFIX,
+                                                     lifecycle_reason,
+                                                     report_writer,
+                                                     accepted,
+                                                     retcode,
+                                                     executed_price,
+                                                     result_comment);
+      return sent && accepted;
+   }
+
+   // ==================================================================
    // v0.57.4: Structural Breakeven swing detection.
    // Scans the last `max_lookback` CLOSED M5 bars (shift >= 1, no lookahead)
    // for the most recent confirmed swing low / high. A swing low at bar i
