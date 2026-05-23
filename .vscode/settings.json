@@ -61,5 +61,6 @@
         "*.mq4": "mql4",
         "*.mq5": "mql5"
     },
-    "C_Cpp.errorSquiggles": "Disabled"
+    "C_Cpp.errorSquiggles": "Disabled",
+    "claudeCodeChat.permissions.yoloMode": true
 }

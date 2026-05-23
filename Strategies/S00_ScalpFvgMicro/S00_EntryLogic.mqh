@@ -312,6 +312,45 @@ private:
       FileClose(handle);
    }
 
+   // R1.2d: build a central FalconTradeLifecycleRecord from the S00
+   // paper trade. Populates only the ~18 mandatory identity / timing /
+   // price / size fields; everything else stays zero-initialised by
+   // MQL5's automatic struct zeroing. P&L (profit/loss/net_usd, points
+   // indices) are intentionally left at 0.0 - RegisterClosedTrade calls
+   // FalconFinalizeTradeMetrics which derives them from direction /
+   // entry_price / exit_price / lot_size. No manual P&L math here.
+   //
+   // stage = PAPER is descriptive only: the 12-step Apply chain in
+   // FalconRiskLifecycleProcessor.mqh has zero behavioural branching
+   // on `stage` (verified R1.2d). The field is consumed by
+   // FalconStageToString for CSV output only.
+   void BuildLifecycleRecordFromS00Trade(FalconTradeLifecycleRecord &record)
+   {
+      // -- identity --
+      record.trade_id      = m_active_trade.trade_id;       // captured at real-entry attempt in R1.2c
+      record.strategy_id   = "S00_SCALP_FVG";
+      record.strategy_name = "S00 ScalpFvgMicro";
+      record.engine_id     = "S00_SCALP_FVG";               // matches BrokerExecutionLifecycle engine_id
+
+      // -- routing --
+      record.direction = (m_active_trade.direction == S00_FVG_DIR_BULLISH
+                            ? FALCON_DIRECTION_BUY
+                            : FALCON_DIRECTION_SELL);
+      record.stage   = FALCON_TRADE_STAGE_PAPER;
+      record.outcome = FALCON_TRADE_OUTCOME_OPEN;           // FalconFinalizeTradeMetrics recomputes
+
+      // -- timing --
+      record.entry_time = m_active_trade.entry_time;
+      record.exit_time  = m_active_trade.exit_time;
+
+      // -- prices + size --
+      record.entry_price   = m_active_trade.entry_price;
+      record.exit_price    = m_active_trade.exit_price;
+      record.lot_size      = m_active_trade.lot_size;
+      record.structural_sl = m_active_trade.stop_loss;
+      record.tp1           = m_active_trade.target;
+   }
+
    //--------------------- trade close ------------------------
    // Single-leg close. Writes one CSV row, clears m_active_trade.open.
    void CloseActiveTrade(const datetime exit_time,
@@ -328,18 +367,31 @@ private:
       m_active_trade.result_points = raw / point;
       AppendTradeRow(m_active_trade);
 
-      // R1.2c: real close execution. Three gates - MQL_TESTER +
-      // EnableRealExecution + S00_RealExecution - mirror the entry
-      // contract; ALL must pass for the bridge call to leave the
-      // strategy. With any gate shut, the close stays paper-only and
-      // the legacy FixedLot April baseline (585.17 / 1104.89 / 157.49)
-      // is untouched. trade_id is non-empty only when a real entry
-      // was attempted; on paper-only trades the bridge call returns
-      // false from FindActiveLinkByTradeId and is a no-op.
+      // R1.2c/d: real close execution + central TradeLifecycle
+      // registration. Three gates - MQL_TESTER + EnableRealExecution +
+      // S00_RealExecution - mirror the entry contract; ALL must pass.
+      // With any gate shut, the close stays paper-only and the legacy
+      // FixedLot April baseline (585.17 / 1104.89 / 157.49) is
+      // untouched.
+      //
+      // Ordering inside the gate (R1.2d):
+      //   1. RegisterClosedTrade FIRST - the Bridge's close hook below
+      //      writes a BrokerExecutionLifecycle row; having the Paper
+      //      TradeLifecycle row already registered lets Reconciliation
+      //      find the Paper-vs-Broker match instead of flagging
+      //      BROKER_ONLY_TRADE_NOT_IN_LOCK_PAPER_LIFECYCLE.
+      //   2. TryManagedCloseFromS00Trade SECOND. trade_id is non-empty
+      //      only when a real entry was attempted; on paper-only trades
+      //      the bridge call returns false from FindActiveLinkByTradeId
+      //      and is a no-op.
       if(MQLInfoInteger(MQL_TESTER)
          && EnableRealExecution
          && S00_RealExecution)
       {
+         FalconTradeLifecycleRecord lifecycle_record;
+         BuildLifecycleRecordFromS00Trade(lifecycle_record);
+         g_report_writer.RegisterClosedTrade(lifecycle_record);
+
          g_broker_entry_bridge.TryManagedCloseFromS00Trade(m_active_trade.trade_id,
                                                           exit_price,
                                                           reason,

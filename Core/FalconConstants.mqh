@@ -7,8 +7,8 @@
 #define FALCON_CONSTANTS_MQH
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "R1_2c"
-#define EA_BUILD_TAG   "RealisticCloseExecution"
+#define EA_VERSION_TAG "R1_2d"
+#define EA_BUILD_TAG   "CentralLifecycleRegistration"
 
 #define FALCON_MTF_COUNT       6
 
