@@ -245,3 +245,67 @@ Docs/Ideas_Backlog.md                                       | #67 + #68
 ```
 
 Main `.mq5` not touched. `FalconReportWriter.mqh` not touched. Legacy path not touched.
+
+---
+
+## 12. R1.2d BreachFix — correct structural SL written to the lifecycle record
+
+The R1.2d completion §11 cleared the reconciliation linkage and trade_id duplication. A residual `Summary.csv` symptom remained: the 3-month run with `S00_RealExecution = true` reported `InvariantBreaches = 2` versus the legacy baseline's `1` (the shared `paper_state_snapshot_written_rows != total_trades` debt). The extra `+1` was tracked to a single counter — `dynamic_lotsizing_invalid_trades` — and to a single field-write in S00's record builder. This section closes it.
+
+### 12.1 The root cause
+
+S00 mutates `m_active_trade.stop_loss = m_active_trade.entry_price` when breakeven arms (`S00_EntryLogic.mqh:465`). When a trade later exits AT that BE stop (a flat outcome), three values become equal in `m_active_trade`:
+
+```
+entry_price == stop_loss == exit_price
+```
+
+`BuildLifecycleRecordFromS00Trade` was reading `m_active_trade.stop_loss` for `record.structural_sl`, which then equaled `record.entry_price`. The chain that fires the breach:
+
+```
+record.structural_sl == record.entry_price
+  → Apply #8 ApplyLowCapitalRiskFeasibilityFoundation
+       (FalconRiskLifecycleProcessor.mqh:1010):
+       risk_points = MathAbs(entry_price - structural_sl) = 0
+       → record.falcon_min_lot_risk_points = 0       [L1027]
+  → Apply #10 ApplyDynamicLotSizingModel
+       (FalconRiskLifecycleProcessor.mqh:1171, 1200-1204):
+       falcon_dlm_risk_points = 0
+       → falcon_dlm_decision = "INVALID"
+       → reason = "CAPITAL_OR_RISK_BUDGET_OR_STRUCTURAL_RISK_UNKNOWN"
+  → FalconReportWriter.mqh:4831:
+       dynamic_lotsizing_invalid_trades++
+  → FalconReportWriter.mqh:3978:
+       invariant_breaches++  →  InvariantBreaches += 1
+```
+
+Legacy was immune: `ShadowToLifecycle` reads `record.structural_sl` from `FalconShadowTradeRecord` populated at trade OPEN by `StageTradePlan`. That value is never mutated by any subsequent BE arming.
+
+Full exploration report: `C:\Users\jalak\.claude\plans\ja-falconcore-valiant-hellman.md`.
+
+### 12.2 The fix — one file, ~12 lines
+
+| Step | File / Location | Change |
+|---|---|---|
+| 1 | `Strategies/S00_ScalpFvgMicro/S00_EntryLogic.mqh` (`S00PaperTrade` struct, adjacent to `stop_loss`) | New field `double original_structural_sl;` — frozen at open from `plan.stop_loss`, never mutated. |
+| 2 | Same file (step 3e entry block, immediately after `m_active_trade.stop_loss = plan.stop_loss;`) | `m_active_trade.original_structural_sl = plan.stop_loss;` |
+| 3 | Same file (`BuildLifecycleRecordFromS00Trade`) | Replace `record.structural_sl = m_active_trade.stop_loss;` with `record.structural_sl = m_active_trade.original_structural_sl;`. |
+
+### 12.3 What the fix deliberately does NOT touch
+
+- `RunExitEvaluation` and the BE-arming line (`stop_loss = entry_price`) are untouched. The exit decision continues to read the mutated `m_active_trade.stop_loss` — that is the correct behaviour for trade closure.
+- `exit_price`, `result_points`, and every P&L computation are unchanged.
+- The line at `S00_EntryLogic.mqh:787` that populates `s00_record.structural_sl` (a `FalconShadowTradeRecord` shipped to the bridge at entry time) is left alone. At that exact moment `stop_loss == original_structural_sl` because BE cannot have armed before entry registers; and the user's constraints explicitly excluded touching `FalconShadowTradeRecord` plumbing.
+- Legacy path, `FalconBrokerEntryBridge.mqh`, `FalconReportWriter.mqh`, `FalconRiskLifecycleProcessor.mqh`, `FalconTradeLifecycleRecord` struct, the 12-step Apply chain — all untouched.
+
+### 12.4 Compile + sanity
+
+- ☑ Compile: `Result: 0 errors, 0 warnings, 12918 ms elapsed, cpu='X64 Regular'`.
+- ☑ BE-stopped trade: `record.structural_sl = plan.stop_loss` (original) → `risk_points > 0` → no INVALID decision.
+- ☑ Structural-stop trade: `m_active_trade.stop_loss == plan.stop_loss == original_structural_sl` → identical reporting before and after.
+- ☑ TP / timeout trade: `stop_loss` ignored at exit; `structural_sl` still sourced from the open-time snapshot.
+- ☑ `EA_VERSION_TAG` stays `R1_2d`.
+
+### 12.5 The remaining `InvariantBreaches = 1`
+
+The `paper_state_snapshot_written_rows = 0` breach (FalconReportWriter.mqh:4012-4013) is structural across the project — it predates R1.2d and exists in legacy baseline too. `PaperStateRecoveryMode = FOUNDATION_ONLY_STATE_RESTORE_DISABLED` confirms the snapshot path is disabled by design. Captured as backlog item #69 (project-wide debt, not S00-specific). Out of scope for R1.2d.

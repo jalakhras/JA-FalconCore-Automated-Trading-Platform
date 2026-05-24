@@ -84,7 +84,15 @@ struct S00PaperTrade
    datetime                    entry_time;
    ENUM_S00_FVG_DIRECTION      direction;
    double                      entry_price;
-   double                      stop_loss;
+   double                      stop_loss;                 // mutated in place by breakeven arming (set to entry_price)
+   // R1.2d breach-fix: stop_loss above is moved to entry_price when
+   // breakeven arms (see L465 in RunExitEvaluation), which is correct
+   // for the exit decision but wrong for the reported structural risk.
+   // BuildLifecycleRecordFromS00Trade reads THIS field for record.structural_sl
+   // so Apply #8's risk_points = |entry_price - structural_sl| reflects
+   // the ORIGINAL stop distance, not the post-BE zero. Set once at trade
+   // open from plan.stop_loss; never mutated thereafter.
+   double                      original_structural_sl;
    double                      target;
    double                      lot_size;                  // R1.2a: computed at open, recorded in CSV. Paper-only - no broker order is sent.
    datetime                    fvg_formation_time;
@@ -356,7 +364,13 @@ private:
       record.entry_price   = m_active_trade.entry_price;
       record.exit_price    = m_active_trade.exit_price;
       record.lot_size      = m_active_trade.lot_size;
-      record.structural_sl = m_active_trade.stop_loss;
+      // R1.2d breach-fix: read original_structural_sl (frozen at open),
+      // NOT stop_loss (mutated to entry_price by BE arming). Without
+      // this, a BE-stopped trade gets structural_sl == entry_price,
+      // Apply #8 computes risk_points = 0, Apply #10 flags decision
+      // INVALID, and m_totals.dynamic_lotsizing_invalid_trades fires
+      // the invariant_breaches counter.
+      record.structural_sl = m_active_trade.original_structural_sl;
       record.tp1           = m_active_trade.target;
    }
 
@@ -665,6 +679,10 @@ public:
             m_active_trade.direction           = m_tracked[i].fvg.direction;
             m_active_trade.entry_price         = plan.entry_price;
             m_active_trade.stop_loss           = plan.stop_loss;
+            // R1.2d breach-fix: snapshot the structural SL BEFORE any
+            // breakeven mutation can touch m_active_trade.stop_loss.
+            // Read by BuildLifecycleRecordFromS00Trade only.
+            m_active_trade.original_structural_sl = plan.stop_loss;
             m_active_trade.target              = plan.target;
             // R1.2a: fixed-lot sizing. Recorded for the CSV + reserved
             // for R1.2b's real-execution order ticket. Paper-only here;
