@@ -187,3 +187,61 @@ No other files modified. Main `.mq5` untouched. `FalconReportWriter.mqh` untouch
 - ☑ No `FalconFinalizeTradeMetrics` call from the strategy (handled by `RegisterClosedTrade`).
 - ☑ Lookahead invariant preserved — no new bar/price reads.
 - ☑ R1.2c SPEC removed from repo root; R1.2d SPEC moved into `Docs/Specs/` per the R0.9 convention.
+
+---
+
+## 11. R1.2d Completion — three informational fixes
+
+The R1.2d acceptance run (April 2026, `S00_RealExecution = true`) confirmed S00 trades now register in the central reports (`TotalTrades = 536` in `Summary.csv`, full population of `TradeLifecycle.csv`), but surfaced three residual reporting gaps that the original R1.2d SPEC did not scope. They are closed in this same commit (still tagged `EA_VERSION_TAG = R1_2d`) by three minimum-touch informational fixes — no behavioural change.
+
+### 11.1 The three gaps observed in the R1.2d baseline
+
+| # | Symptom | Root cause |
+|---|---|---|
+| 1 | Every S00 row in `BrokerPaperTradeReconciliation.csv` flagged `BROKER_ONLY_TRADE_NOT_IN_LOCK_PAPER_LIFECYCLE` | `TryManagedCloseFromS00Trade` does not call `StorePaperFinalRecord`, so `m_paper_final_records[]` is empty for S00. The legacy close path `TryManagedCloseFromLifecycleRecord` calls it as its first statement (`FalconBrokerEntryBridge.mqh:1598`). |
+| 2 | `trade_id = S00_SCALP_FVG_<unix>` duplicated across rows (e.g. `S00_SCALP_FVG_1777946400` appears twice) | Build formula is `entry_time` alone — same-bar exit followed by a second FVG entering on the same `bar1` in the same `OnTick` produces an identical id. Legacy template (`FalconShadowExecutor.mqh:79`) uses `SHD_<strategy>_<unix>_<sequence>` to avoid this. |
+| 3 | `shadow_id` (bridge link key) and `trade_id` (S00 close key) built twice from the same formula at two separate sites in `S00_EntryLogic.mqh` | Drift hazard — if one site changes and the other doesn't, the bridge's `FindActiveLinkByTradeId` fails silently. |
+
+Full pre-fix exploration: `C:\Users\jalak\.claude\plans\ja-falconcore-valiant-hellman.md`.
+
+### 11.2 The three fixes (informational only)
+
+| Fix | File | Change |
+|---|---|---|
+| Promote `StorePaperFinalRecord` to public | `Execution/FalconBrokerEntryBridge.mqh` | Wrap the method (~16 LOC, body unchanged) with `public:` / `private:` markers so `CS00EntryLogic` can call it via `g_broker_entry_bridge`. |
+| Wire S00 close to fill `m_paper_final_records[]` | `Strategies/S00_ScalpFvgMicro/S00_EntryLogic.mqh` (`CloseActiveTrade`) | Insert `g_broker_entry_bridge.StorePaperFinalRecord(lifecycle_record);` BETWEEN `RegisterClosedTrade` and `TryManagedCloseFromS00Trade`. Hard order: Register → Store → Close. |
+| Unique `trade_id` via monotonic sequence | `Strategies/S00_ScalpFvgMicro/S00_EntryLogic.mqh` | New private member `int m_trade_sequence;` init `0` in constructor; build a single `s00_unique_id = "S00_SCALP_FVG_" + IntegerToString((long)entry_time) + "_" + IntegerToString(++m_trade_sequence)` once and assign to BOTH `s00_record.shadow_id` and `m_active_trade.trade_id`. |
+
+### 11.3 The Summary breach identified
+
+The `InvariantBreaches` column in the R1.2d baseline (`JA_FalconCore_Summary_R1_2d_..._April_2026.csv`) reads **`1`**, not 2. The single check that fires:
+
+- `m_totals.total_trades != m_totals.paper_state_snapshot_written_rows` at `FalconReportWriter.mqh:4012-4013`
+  - `TotalTrades = 536`, `PaperStateSnapshotWrittenRows = 0` (and `PaperStateRecoveryMode = FOUNDATION_ONLY_STATE_RESTORE_DISABLED`).
+
+All nine `*EvaluatedTrades` columns equal `536`. `TradeLifecyclePhysicalRowStatus = PASS`. All four net-diff checks (`final_net_diff`, `raw_net_diff`, `visible_final_net_diff`, `visible_raw_net_diff`) are within tolerance. `capital_flow_integrity_breaches = 0`.
+
+**Not fixed here:** the `paper_state_snapshot_written_rows = 0` breach is a pre-existing baseline state (snapshot path is disabled by design — `FOUNDATION_ONLY_STATE_RESTORE_DISABLED`). Wiring `AppendPaperStateSnapshotRecord` for the S00 path is logged as backlog item #68 — out of scope here.
+
+### 11.4 Constraints respected (verified)
+
+- ☑ Compile: `0 errors, 0 warnings` (`Result: 0 errors, 0 warnings, 13196 ms elapsed, cpu='X64 Regular'`).
+- ☑ S00 entry-decision logic untouched (no change to FVG state machine, plan builder, gates, or exit evaluator).
+- ☑ Same-bar multiple entries NOT blocked — the id-uniqueness fix preserves the existing entry behaviour; the multi-entry policy itself is deferred to backlog item #67.
+- ☑ Legacy `TryManagedCloseFromLifecycleRecord` untouched.
+- ☑ `StorePaperFinalRecord` body untouched (access change only).
+- ☑ `FalconTradeLifecycleRecord` struct and 12-step Apply chain untouched.
+- ☑ No `OrderModify` / `BrokerModify` / `TRADE_ACTION_SLTP`. No lookahead.
+- ☑ `EA_VERSION_TAG` stays `R1_2d` (this is completion, not a version bump).
+
+### 11.5 Net file delta for the completion
+
+```
+Execution/FalconBrokerEntryBridge.mqh                       | ~10 lines (public:/private: + comment)
+Strategies/S00_ScalpFvgMicro/S00_EntryLogic.mqh             | ~25 lines (member + init + unique id + comments)
+Docs/Specs/JA_FalconCore_R1_2d_Completion_SPEC.md           | new
+Docs/ReviewNotes/R1_2d_Review_Notes.md                      | this §11
+Docs/Ideas_Backlog.md                                       | #67 + #68
+```
+
+Main `.mq5` not touched. `FalconReportWriter.mqh` not touched. Legacy path not touched.

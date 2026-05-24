@@ -223,6 +223,14 @@ Three permanent rules for MQL5 inputs. They apply to all new strategies (S00, S0
 
 ---
 
+## From R1.2d completion (S00 reconciliation linkage + unique trade_id)
+
+67. **منع الدخول المتعدّد لـ S00 على نفس الشمعة — قرار استراتيجيّ.** Today, after a same-bar exit (`CloseActiveTrade` → `m_active_trade.open = false`) inside `RunExitEvaluation(bar1)` from step 3e, the `for(int i = 0; i < m_tracked_count; i++)` loop continues and a SECOND tracked FVG can enter on the SAME `bar1` in the same `OnTick` frame. The R1.2d-completion `trade_id` uniqueness fix (monotonic sequence suffix) ensures both entries are distinguishable in the reports, but does NOT block the second entry — it intentionally leaves the existing behaviour alone. **Open question:** is multi-entry-on-same-bar a feature (more opportunities) or a hazard (over-trading on a single signal candle)? Decision wants three-month diagnostic data: across same-bar pairs, does the second entry's expectancy match the first, or is it systematically worse (correlated outcome from the same bar's micro-structure)? Build a `last_entry_bar_time` sentinel and a `S00_BlockMultiEntryOnSameBar` toggle only after the data answers the question. **Defer until same-bar pair rate + outcome split is measured.**
+
+68. **تفعيل paper-state snapshot لمسار S00.** `Summary.csv` reads `PaperStateSnapshotEvaluatedTrades = total_trades` but `PaperStateSnapshotWrittenRows = 0` — the only `InvariantBreaches` contributor in the post-R1.2d baseline (`total_trades != paper_state_snapshot_written_rows` at `FalconReportWriter.mqh:4012-4013`). The state is `PaperStateRecoveryMode = FOUNDATION_ONLY_STATE_RESTORE_DISABLED` — i.e. the snapshot path is disabled by design AT THE BASELINE, predating R1.2d. Wiring `AppendPaperStateSnapshotRecord` for S00 (and possibly toggling the recovery mode for the S00 path) would clear the last `InvariantBreach` and let `ReportIntegrityStatus = PASS`. **Defer** — needs a separate scoping pass to confirm the snapshot path is meaningful for a paper-isolated single-trade-at-a-time strategy like S00 (legacy `FVG_MICRO_RETEST` may also write zero rows for the same reason). Check the legacy baseline before wiring; if it's also zero there, the breach is structural, not S00-specific.
+
+---
+
 ## Conventions for adding to this file
 
 - One bullet per idea. Keep it terse.

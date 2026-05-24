@@ -128,10 +128,11 @@ struct S00PaperTrade
    bool                        real_entry_accepted;
    double                      real_entry_price;
    // R1.2c: trade_id captured at real-entry attempt. Mirrors the
-   // shadow_id format used by the bridge ("S00_SCALP_FVG_<entry_time>"),
-   // so CloseActiveTrade can hand it back to the bridge to look up the
-   // active broker link and close the position by reverse deal. Empty
-   // string when any of the three real-execution gates is shut.
+   // shadow_id format used by the bridge (R1.2d completion:
+   // "S00_SCALP_FVG_<entry_time>_<sequence>"), so CloseActiveTrade
+   // can hand it back to the bridge to look up the active broker
+   // link and close the position by reverse deal. Empty string when
+   // any of the three real-execution gates is shut.
    string                      trade_id;
    double                      real_entry_slippage;
 };
@@ -148,6 +149,14 @@ private:
 
    bool              m_trades_header_written;
    string            m_trades_file_name;
+
+   // R1.2d completion: monotonic per-instance counter appended to
+   // shadow_id / trade_id so two S00 entries that share the same
+   // bar.time (e.g. a same-bar exit immediately followed by a second
+   // FVG's entry on the same OnTick) get distinct ids. Format remains
+   // backward-compatible: "S00_SCALP_FVG_<unix>_<seq>". No bearing on
+   // trading logic - this is an identifier-uniqueness fix only.
+   int               m_trade_sequence;
 
    //--------------------- detector poll ---------------------
    void PollDetector()
@@ -380,7 +389,14 @@ private:
       //      TradeLifecycle row already registered lets Reconciliation
       //      find the Paper-vs-Broker match instead of flagging
       //      BROKER_ONLY_TRADE_NOT_IN_LOCK_PAPER_LIFECYCLE.
-      //   2. TryManagedCloseFromS00Trade SECOND. trade_id is non-empty
+      //   2. StorePaperFinalRecord MIDDLE (R1.2d completion). The
+      //      reconciliation lookup keyed in OnTradeTransaction reads
+      //      m_paper_final_records[]; the legacy path fills it inside
+      //      TryManagedCloseFromLifecycleRecord, but the S00 close
+      //      function only takes trade_id+exit_price+reason and never
+      //      touches that array. Storing the full lifecycle_record here
+      //      bridges the gap before the broker deal fires.
+      //   3. TryManagedCloseFromS00Trade LAST. trade_id is non-empty
       //      only when a real entry was attempted; on paper-only trades
       //      the bridge call returns false from FindActiveLinkByTradeId
       //      and is a no-op.
@@ -391,6 +407,8 @@ private:
          FalconTradeLifecycleRecord lifecycle_record;
          BuildLifecycleRecordFromS00Trade(lifecycle_record);
          g_report_writer.RegisterClosedTrade(lifecycle_record);
+
+         g_broker_entry_bridge.StorePaperFinalRecord(lifecycle_record);
 
          g_broker_entry_bridge.TryManagedCloseFromS00Trade(m_active_trade.trade_id,
                                                           exit_price,
@@ -520,6 +538,7 @@ public:
       m_active_trade.open          = false;
       m_trades_header_written      = false;
       m_trades_file_name           = "";
+      m_trade_sequence             = 0;
    }
 
    //----------------------------------------------------------------
@@ -731,9 +750,19 @@ public:
                && EnableRealExecution
                && S00_RealExecution)
             {
+               // R1.2d completion: build the unique id ONCE per real
+               // entry so shadow_id (bridge link key) and trade_id
+               // (S00 close-path key) are identical strings. The
+               // sequence suffix disambiguates two entries that share
+               // the same bar.time within one OnTick frame.
+               m_trade_sequence++;
+               const string s00_unique_id = "S00_SCALP_FVG_"
+                                          + IntegerToString((long)m_active_trade.entry_time)
+                                          + "_"
+                                          + IntegerToString(m_trade_sequence);
                FalconShadowTradeRecord s00_record;
                ZeroMemory(s00_record);
-               s00_record.shadow_id     = "S00_SCALP_FVG_" + IntegerToString((long)m_active_trade.entry_time);
+               s00_record.shadow_id     = s00_unique_id;
                s00_record.strategy_id   = "S00_SCALP_FVG";
                s00_record.strategy_name = "S00 Scalp FVG Micro";
                s00_record.engine_id     = "S00_SCALP_FVG";
@@ -763,10 +792,10 @@ public:
 
                m_active_trade.real_entry_attempted = true;
                // R1.2c: capture trade_id at the same moment the bridge
-               // call is issued. Must mirror s00_record.shadow_id so the
-               // bridge's m_active_links keyed on shadow_id can be found
-               // again at close time via FindActiveLinkByTradeId.
-               m_active_trade.trade_id = "S00_SCALP_FVG_" + IntegerToString((long)m_active_trade.entry_time);
+               // call is issued. R1.2d completion: reuse the same
+               // s00_unique_id built above so shadow_id (entry side)
+               // and trade_id (close side) are guaranteed identical.
+               m_active_trade.trade_id = s00_unique_id;
                const bool accepted = g_broker_entry_bridge.TryOpenFromShadowRecord(s00_record, g_report_writer);
                m_active_trade.real_entry_accepted = accepted;
                if(accepted && request_price > 0.0)

@@ -122,6 +122,14 @@ private:
       return false;
    }
 
+public:
+   // R1.2d completion: promoted from private to public so the S00
+   // CloseActiveTrade path can register the Paper TradeLifecycle
+   // record in m_paper_final_records[] before the broker reverse-close
+   // deal fires. Without this, OnTradeTransaction's later call to
+   // FindPaperFinalRecord finds nothing for S00 trades and the
+   // reconciliation row is flagged BROKER_ONLY_TRADE_NOT_IN_LOCK_PAPER_LIFECYCLE.
+   // Access change ONLY - body is verbatim from the private original.
    void StorePaperFinalRecord(const FalconTradeLifecycleRecord &record)
    {
       if(StringLen(record.trade_id) <= 0)
@@ -139,6 +147,7 @@ private:
       m_paper_final_records[n] = record;
    }
 
+private:
    bool FindPaperFinalRecord(const string trade_id, FalconTradeLifecycleRecord &record)
    {
       if(StringLen(trade_id) <= 0)
