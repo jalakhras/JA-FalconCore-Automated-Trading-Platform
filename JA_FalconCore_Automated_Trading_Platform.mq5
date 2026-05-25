@@ -99,6 +99,10 @@
 // exercise the trade-management / governance engines with evidence.
 #include "Strategies/S01_Harness/S01_HarnessInputs.mqh"
 #include "Strategies/S01_Harness/S01_EntryLogic.mqh"
+// R1.4b: TradeManagement coordinator inputs (next to S01 per spec). The
+// inputs file is dependency-free; the engine/coordinator implementation
+// files are #included later (after the report helpers they depend on).
+#include "TradeManagement/FalconTradeManagementInputs.mqh"
 
 
 // ==================================================================
@@ -5679,6 +5683,18 @@ bool FalconV055ArchitectureConsolidationContractReady()
 // ==================================================================
 #include "Execution/FalconBrokerEntryBridge.mqh"
 
+// ==================================================================
+// R1.4b: TradeManagement coordinator layer (Phase 2b).
+// Included here (not next to S01) because the coordinator's audit
+// writer depends on the report helpers (FalconBuildReportFileName,
+// FalconReportWriteCsvFlags, FalconCsvSafe, FalconTimeToString) and
+// FC_MAGIC_FVG_MICRO, all defined earlier in this file. Observer-only:
+// the coordinator issues NO broker orders in Phase 2b.
+// ==================================================================
+#include "TradeManagement/FalconTradeEngineContract.mqh"
+#include "TradeManagement/FalconNoOpProbeEngine.mqh"
+#include "TradeManagement/FalconTradeManagementCoordinator.mqh"
+
 
 // ==================================================================
 // Global Runtime Objects
@@ -5891,6 +5907,11 @@ int OnInit()
    // every subsequent call.
    g_risk_lifecycle_processor.Initialize(symbol_context);
    g_broker_entry_bridge.Initialize();
+   // R1.4b: register the no-op probe engine in the trade-management
+   // coordinator (Phase 2b wiring proof; the engine returns NO_ACTION,
+   // so the coordinator is behaviourally inert). Real engines register
+   // here in Phase 3.
+   g_trade_management_coordinator.RegisterEngine(GetPointer(g_noop_probe_engine));
    g_report_writer.WriteMarketDiagnosticsSnapshot(g_market_context.GetQuoteContext(), g_market_context.GetPrimaryCandleSnapshot());
    g_report_writer.WriteStrategyRegistryDiagnosticsSnapshot(g_strategy_registry);
    g_candle_cache.LoadAll(g_market_context);
@@ -6079,6 +6100,13 @@ void OnTick()
    // S01_RealExecution. Runs AFTER S00, sharing the same closed-bar
    // market context.
    g_s01_harness_entry_logic.EvaluateOnNewBar(g_market_context);
+
+   // R1.4b: trade-management coordinator. Observer-only in Phase 2b
+   // (no broker orders). Gated by Enable_TradeManagement (off by
+   // default -> zero behaviour change, BrokerActualNetUSD unchanged).
+   // Runs after the strategies so it sees the current open positions.
+   if(Enable_TradeManagement)
+      g_trade_management_coordinator.EvaluateOnNewBar(g_market_context);
 
    // Future pipeline:
    // MarketContext -> CandleCache -> Narrative -> StrategyEngine -> Evidence -> Guard -> TradePlan -> Shadow/Paper/Demo/Live Executor -> ReportWriter
