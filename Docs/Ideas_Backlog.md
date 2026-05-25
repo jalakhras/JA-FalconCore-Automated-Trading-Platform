@@ -233,6 +233,16 @@ Three permanent rules for MQL5 inputs. They apply to all new strategies (S00, S0
 
 ---
 
+## From R1.4a (broker-truth meter reporting)
+
+70. **Make the emergency three-layer system real governance that blocks broker *entry* — not a paper-only post-hoc overlay.** Today `ApplyThreeLayerEmergencyApplication` (`Risk/FalconRiskLifecycleProcessor.mqh:1358-1364`) runs at *close* time and only zeroes the paper `falcon_emergency_after_net_*` of a BLOCKED trade; the broker entry already fired at signal time with no emergency gate (`Strategies/S01_Harness/S01_EntryLogic.mqh:246-247`). So `FinalWorkingNetUSD` is a counterfactual (−34$) while the broker really executed those trades (+243$). R1.4a only *reports* the truth; the real fix is to gate `TryOpenFromShadowRecord` on the live emergency state so paper and broker agree. **Phase 4 work (governance), not reporting.** Out of scope for any single reporting commit.
+
+71. **Rename the `MANAGED_CLOSE_PRICE_POINTS_GAP_ON_MATCHED_CLOSE` category — the name is misleading.** It is assigned (`FalconReportWriter.mqh:909-911`) by comparing `broker_actual_points` against `paper_final_points` (= `falcon_emergency_after_net_points`, `:319-321`), which is **zeroed** for BLOCKED trades — so the category fires *by construction* from emergency zeroing, not from a broker-vs-paper price-path difference as the name implies. R1.4a adds the `LockParityGapIsEmergencyZeroingArtifact` column to disambiguate without renaming (a text check may depend on the string). **Candidate for a dedicated reporting-cleanup phase** to rename to something like `MANAGED_CLOSE_PAPER_FINAL_POINTS_GAP` once no downstream check keys on the literal. Do not rename inside a non-cleanup commit.
+
+72. **The paper `1104.89` regression baseline is going stale — pin a broker-side baseline.** With `PrimaryResultMetric = BROKER_ACTUAL_NET_USD` declared in R1.4a, `FinalWorkingNetUSD` is no longer the truth metric, yet the regression gate still verifies the paper `RawNetUSD = 585.17` / `FinalWorkingNetUSD = 1104.89` baseline. Once engine work lands, adopting the broker side as the success metric requires pinning a new broker-side regression baseline (`BrokerActualNetUSD` for a fixed known run). **Linked to Backlog #58.** Defer until a deterministic broker-side reference run exists.
+
+---
+
 ## Conventions for adding to this file
 
 - One bullet per idea. Keep it terse.

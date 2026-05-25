@@ -83,6 +83,16 @@ private:
    bool                m_initialized;
    int                 m_broker_entry_bridge_order_send_attempts;
 
+   // R1.4a: broker-truth accumulators. These mirror the BrokerActualUSD column
+   // summed across every BrokerPaperTradeReconciliation row (paper-matched AND
+   // broker-only), so BrokerActualNetUSD == sum(BrokerActualUSD column) by
+   // construction. Held here, NOT in FalconReportTotals, because that struct
+   // lives in Core/FalconDataStructures.mqh which this reporting-only phase must
+   // not touch. Reset in ResetTotals(); read in WriteFinalSummary().
+   double              m_broker_actual_net_usd;
+   int                 m_broker_actual_win_trades;
+   int                 m_broker_actual_lose_trades;
+
    // R0.8b: forward to the processor's canonical symbol context.
    // Returns by value (MQL5 has no return-by-reference); the struct
    // is small so this is cheap and inlineable.
@@ -268,7 +278,7 @@ public:
       header += "BrokerExitType,ManagedCloseAttempted,ManagedCloseObserved,ServerSLHit,ServerTPHit,NotOpenedReason,";
       header += "LotRequested,LotAuthorized,LotExecuted,LotDelta,";
       header += "ReconciliationRowRole,IsFinalReconciliationRow,LockParityGapCategory,LockParityGapPrimaryCause,LockParityGapUSD,LockParityRecommendedAction,";
-      header += "Status,Reason";
+      header += "Status,Reason,LockParityGapIsEmergencyZeroingArtifact";
       FileWriteString(handle, header + "\r\n");
       FileClose(handle);
    }
@@ -1000,7 +1010,18 @@ public:
       row += DoubleToString(lock_gap_usd, 4) + ",";
       row += FalconCsvSafe(lock_gap_action) + ",";
       row += FalconCsvSafe(reconciliation_status) + ",";
-      row += FalconCsvSafe(reconciliation_reason);
+      row += FalconCsvSafe(reconciliation_reason) + ",";
+      // R1.4a: flag the emergency-zeroing artifact. The MANAGED_CLOSE_PRICE_POINTS_GAP
+      // category fires whenever paper_final_points != broker_actual_points; for a
+      // BLOCKED trade paper_final_points is zeroed to 0 (Apply #11), so the gap is a
+      // zeroing artifact, NOT a price-path slip. YES marks that ghost case.
+      string lock_parity_gap_is_emergency_zeroing_artifact =
+         ((MathAbs(paper_final_points) < 1e-9 && record.falcon_emergency_status == "BLOCKED") ? "YES" : "NO");
+      row += FalconCsvSafe(lock_parity_gap_is_emergency_zeroing_artifact);
+      // R1.4a: accumulate broker-actual truth (mirrors the BrokerActualUSD column).
+      m_broker_actual_net_usd += link.broker_actual_balance_delta;
+      if(link.broker_actual_balance_delta > 0.0)      m_broker_actual_win_trades++;
+      else if(link.broker_actual_balance_delta < 0.0) m_broker_actual_lose_trades++;
       FileWriteString(handle, row + "\r\n");
       FileClose(handle);
    }
@@ -1116,7 +1137,13 @@ public:
       row += DoubleToString(lock_gap_usd, 4) + ",";
       row += FalconCsvSafe(lock_gap_action) + ",";
       row += FalconCsvSafe(reconciliation_status) + ",";
-      row += FalconCsvSafe(reconciliation_reason);
+      row += FalconCsvSafe(reconciliation_reason) + ",";
+      // R1.4a: broker-only rows have no paper emergency context -> never a zeroing artifact.
+      row += FalconCsvSafe("NO");
+      // R1.4a: accumulate broker-actual truth (mirrors the BrokerActualUSD column).
+      m_broker_actual_net_usd += link.broker_actual_balance_delta;
+      if(link.broker_actual_balance_delta > 0.0)      m_broker_actual_win_trades++;
+      else if(link.broker_actual_balance_delta < 0.0) m_broker_actual_lose_trades++;
       FileWriteString(handle, row + "\r\n");
       FileClose(handle);
    }
@@ -4159,7 +4186,14 @@ public:
       summary_row += FalconCsvSafe(report_integrity_status) + ",";
       summary_row += FalconCsvSafe(row_count_status) + ",";
       summary_row += DoubleToString(final_net_diff, 4) + ",";
-      summary_row += DoubleToString(raw_net_diff, 4);
+      summary_row += DoubleToString(raw_net_diff, 4) + ",";
+      // R1.4a: broker-truth meter block. BrokerActualNetUSD is the missing
+      // ground-truth total (sum of BrokerActualUSD across reconciliation rows);
+      // PrimaryResultMetric declares it (not FinalWorkingNetUSD) as the metric.
+      summary_row += DoubleToString(m_broker_actual_net_usd, 2) + ",";
+      summary_row += IntegerToString(m_broker_actual_win_trades) + ",";
+      summary_row += IntegerToString(m_broker_actual_lose_trades) + ",";
+      summary_row += FalconCsvSafe("BROKER_ACTUAL_NET_USD");
 
       FileWriteString(handle, SlimSummaryHeaderV0555() + "\r\n");
       FileWriteString(handle, summary_row + "\r\n");
@@ -4347,6 +4381,11 @@ m_totals.total_trades                = 0;
       m_totals.sell_trades                 = 0;
       m_totals.sell_win_trades             = 0;
       m_totals.sell_net_index_points       = 0.0;
+
+      // R1.4a: broker-truth accumulators.
+      m_broker_actual_net_usd     = 0.0;
+      m_broker_actual_win_trades  = 0;
+      m_broker_actual_lose_trades = 0;
 
       m_totals.fvg_qguard_evaluated             = 0;
       m_totals.fvg_qguard_passed                = 0;
@@ -5227,7 +5266,9 @@ m_totals.total_trades                = 0;
       summary_header += "EmergencyTriggeredTrades,EmergencyBlockedEntries,";
       summary_header += "SafetyOrderSend,BrokerModifySent,RuntimeSLChanged,InvariantBreaches,";
       summary_header += "TradeLifecyclePhysicalRows,TradeLifecyclePhysicalRowStatus,";
-      summary_header += "VisibleRawNetUSDDiff,VisibleFinalNetUSDDiff,ReportIntegrityStatus,TradeRowsVsSummaryStatus,FinalNetUSDDiff,RawNetUSDDiff";
+      summary_header += "VisibleRawNetUSDDiff,VisibleFinalNetUSDDiff,ReportIntegrityStatus,TradeRowsVsSummaryStatus,FinalNetUSDDiff,RawNetUSDDiff,";
+      // R1.4a: broker-truth meter block (appended at the end; no existing column moved).
+      summary_header += "BrokerActualNetUSD,BrokerActualWinTrades,BrokerActualLoseTrades,PrimaryResultMetric";
       return summary_header;
    }
 
