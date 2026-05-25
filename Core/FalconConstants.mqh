@@ -7,8 +7,8 @@
 #define FALCON_CONSTANTS_MQH
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "R1_4b"
-#define EA_BUILD_TAG   "TradeManagementCoordinatorSpine"
+#define EA_VERSION_TAG "R1_5a_fix"
+#define EA_BUILD_TAG   "ProofProtectionEngineFix"
 
 #define FALCON_MTF_COUNT       6
 

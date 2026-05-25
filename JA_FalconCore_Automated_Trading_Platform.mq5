@@ -5681,6 +5681,12 @@ bool FalconV055ArchitectureConsolidationContractReady()
 // (which is defined earlier in this file). All other Execution-layer
 // .mqh files are included at the top of main .mq5.
 // ==================================================================
+// R1.5a-fix: the structural-stop registry must be visible to the entry
+// bridge (it records each S01 structural stop the moment the broker
+// position opens) and to the trade-management coordinator below (it
+// reads the value into the managed-position context). Included before
+// the bridge so the bridge binds to the same global.
+#include "TradeManagement/FalconStructuralStopRegistry.mqh"
 #include "Execution/FalconBrokerEntryBridge.mqh"
 
 // ==================================================================
@@ -5694,6 +5700,10 @@ bool FalconV055ArchitectureConsolidationContractReady()
 #include "TradeManagement/FalconTradeEngineContract.mqh"
 #include "TradeManagement/FalconNoOpProbeEngine.mqh"
 #include "TradeManagement/FalconTradeManagementCoordinator.mqh"
+// R1.5a - Phase 3a: the first real engine (protection) and its policy.
+// Included after the coordinator; registered in OnInit only when
+// Enable_S01_Protection is on (off => not registered => layer inert).
+#include "TradeManagement/Engines/FalconProofProtectionEngine.mqh"
 
 
 // ==================================================================
@@ -5912,6 +5922,11 @@ int OnInit()
    // so the coordinator is behaviourally inert). Real engines register
    // here in Phase 3.
    g_trade_management_coordinator.RegisterEngine(GetPointer(g_noop_probe_engine));
+   // R1.5a - Phase 3a: register the real protection engine ONLY when
+   // Enable_S01_Protection is on. Off => not registered => the layer
+   // issues no broker writes (full R1.4b baseline parity).
+   if(Enable_S01_Protection)
+      g_trade_management_coordinator.RegisterEngine(GetPointer(g_proof_protection_engine));
    g_report_writer.WriteMarketDiagnosticsSnapshot(g_market_context.GetQuoteContext(), g_market_context.GetPrimaryCandleSnapshot());
    g_report_writer.WriteStrategyRegistryDiagnosticsSnapshot(g_strategy_registry);
    g_candle_cache.LoadAll(g_market_context);

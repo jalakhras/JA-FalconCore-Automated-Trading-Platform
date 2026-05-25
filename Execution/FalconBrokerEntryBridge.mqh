@@ -527,6 +527,10 @@ private:
             match = true;
          if(match)
          {
+            // R1.5a-fix: drop this position's structural stop from the
+            // registry as the link closes (keyed by the same ticket recorded
+            // at entry). Bookkeeping only - no entry/exit logic changes.
+            g_structural_stop_registry.Remove(m_active_links[i].broker_position_ticket);
             for(int j = i; j < n - 1; j++)
                m_active_links[j] = m_active_links[j + 1];
             ArrayResize(m_active_links, n - 1);
@@ -1451,6 +1455,12 @@ public:
          m_previous_broker_authority_lot = volume;
          m_previous_broker_authority_lot_ready = true;
          StoreAcceptedLink(link);
+         // R1.5a-fix: carry the strategy's structural stop (already known
+         // here in record.structural_sl - read only, not recomputed) to the
+         // trade-management coordinator, keyed by broker position ticket. The
+         // protection policy sizes R off this, not off the wide emergency
+         // server SL. Cleared in MarkLinkClosed when the position closes.
+         g_structural_stop_registry.Record(link.broker_position_ticket, record.structural_sl);
       }
       else
       {

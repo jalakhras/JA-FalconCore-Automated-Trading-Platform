@@ -1,15 +1,17 @@
 //+------------------------------------------------------------------+
 //| TradeManagement/FalconTradeManagementCoordinator.mqh             |
-//| R1.4b - Phase 2b: the live trade-management coordinator.         |
+//| R1.5a - Phase 3a: the live trade-management coordinator.         |
 //|                                                                  |
 //| Per closed M5 bar, walks the EA's open broker positions (matched |
 //| by the shared Falcon magic), builds a broker-side context for    |
-//| each, calls every registered engine, and writes one audit row    |
-//| per engine-evaluation. Phase 2b is OBSERVER-ONLY: it issues no   |
-//| OrderSend / modify / close. The "apply decision" path is Phase 3 |
-//| (built with the first real engine). Strategy-aware engine routing|
-//| is also Phase 3+ (Backlog #57); here every Falcon-magic position |
-//| is evaluated by every registered engine.                         |
+//| each, calls every registered engine, applies the decision, and   |
+//| writes one audit row per engine-evaluation. R1.5a adds the apply |
+//| path deferred from 2b: a MODIFY_SL decision now issues a real    |
+//| TRADE_ACTION_SLTP modify on the broker position (CLOSE /         |
+//| PARTIAL_CLOSE still have no apply path - 3b/3c). A NO_ACTION      |
+//| decision still touches nothing. Strategy-aware engine routing is |
+//| Phase 3+ (Backlog #57); here every Falcon-magic position is      |
+//| evaluated by every registered engine.                            |
 //|                                                                  |
 //| Depends on the report helpers (FalconBuildReportFileName /       |
 //| FalconReportWriteCsvFlags / FalconCsvSafe / FalconTimeToString)  |
@@ -75,6 +77,53 @@ private:
       FileClose(handle);
    }
 
+   // R1.5a - Phase 3a apply path. Turns one engine decision into a real
+   // broker action and returns the AppliedAction string for the audit.
+   // MODIFY_SL is the only path with teeth in 3a; CLOSE / PARTIAL_CLOSE
+   // are declared in the contract but have no apply path yet (3b/3c), so
+   // they record UNSUPPORTED_DECISION_NO_APPLY_PATH and change nothing.
+   string ApplyDecision(const FalconManagedPositionContext &ctx,
+                        const FalconTradeDecision &decision)
+   {
+      if(decision.action == FALCON_TM_NO_ACTION)
+         return "NONE";
+      if(decision.action == FALCON_TM_MODIFY_SL)
+         return ApplyModifyStopLoss(ctx, decision);
+      return "UNSUPPORTED_DECISION_NO_APPLY_PATH";
+   }
+
+   // Real SL modify on the broker position. TP is preserved. This is the
+   // only broker write the trade-management layer issues in 3a. Direct
+   // TRADE_ACTION_SLTP OrderSend (mirrors the manual-request style the
+   // entry bridge uses); the bridge's entry/exit logic is untouched.
+   string ApplyModifyStopLoss(const FalconManagedPositionContext &ctx,
+                             const FalconTradeDecision &decision)
+   {
+      if(!PositionSelectByTicket(ctx.position_ticket))
+         return "SL_MODIFY_REJECTED:POSITION_NOT_SELECTED";
+
+      double new_sl = NormalizeDouble(decision.new_sl, _Digits);
+
+      MqlTradeRequest request;
+      MqlTradeResult  result;
+      ZeroMemory(request);
+      ZeroMemory(result);
+      request.action   = TRADE_ACTION_SLTP;
+      request.position = ctx.position_ticket;
+      request.symbol   = _Symbol;
+      request.sl       = new_sl;
+      request.tp       = ctx.current_tp; // keep TP exactly as is
+
+      bool sent = OrderSend(request, result);
+      if(sent && (result.retcode == TRADE_RETCODE_DONE ||
+                  result.retcode == TRADE_RETCODE_PLACED ||
+                  result.retcode == TRADE_RETCODE_DONE_PARTIAL))
+         return "SL_MODIFIED";
+
+      return StringFormat("SL_MODIFY_REJECTED:retcode=%d:%s",
+                          (int)result.retcode, result.comment);
+   }
+
    void BuildContext(FalconManagedPositionContext &ctx,
                      const ulong ticket,
                      const datetime closed_bar_time)
@@ -85,6 +134,13 @@ private:
       ctx.direction             = (ptype == POSITION_TYPE_BUY ? FALCON_DIRECTION_BUY : FALCON_DIRECTION_SELL);
       ctx.broker_entry_price    = PositionGetDouble(POSITION_PRICE_OPEN);
       ctx.current_sl            = PositionGetDouble(POSITION_SL);
+      // R1.5a-fix: the strategy's structural stop, carried from entry via the
+      // registry (keyed by position ticket). The broker SL above is the wide
+      // emergency envelope, not the intended risk - the protection policy
+      // sizes R off this field. Unknown position => left 0.0 => policy disarms.
+      double structural_stop = 0.0;
+      g_structural_stop_registry.Get(ticket, structural_stop);
+      ctx.structural_stop_price = structural_stop;
       ctx.current_tp            = PositionGetDouble(POSITION_TP);
       ctx.volume                = PositionGetDouble(POSITION_VOLUME);
       ctx.current_bid           = SymbolInfoDouble(_Symbol, SYMBOL_BID);
@@ -152,12 +208,15 @@ public:
             if(m_engines[e] == NULL)
                continue;
             FalconTradeDecision decision = m_engines[e].Evaluate(ctx);
-            // Phase 2b applies NOTHING - observer only. A non-NO_ACTION
-            // decision has no apply path yet (built in Phase 3); it is
-            // recorded explicitly so the contract stays honest.
-            string applied_action = (decision.action == FALCON_TM_NO_ACTION
-                                      ? "NONE_PHASE2B_OBSERVATIONAL"
-                                      : "UNSUPPORTED_DECISION_NO_APPLY_PATH");
+            // R1.5a - Phase 3a: decisions now have teeth. Apply the
+            // decision against the broker and record what was applied.
+            // A NO_ACTION decision still touches nothing (so a registered
+            // engine that returns NO_ACTION stays behaviourally inert).
+            string applied_action = ApplyDecision(ctx, decision);
+            // Refresh the context's current SL after a successful modify so
+            // the audit row reflects what the engine actually moved it to.
+            if(applied_action == "SL_MODIFIED")
+               ctx.current_sl = NormalizeDouble(decision.new_sl, _Digits);
             AppendAuditRow(ctx, m_engines[e].EngineId(), decision, applied_action);
          }
       }

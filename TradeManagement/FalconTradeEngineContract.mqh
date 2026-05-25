@@ -34,7 +34,8 @@ struct FalconManagedPositionContext
    string                strategy_id;
    ENUM_FALCON_DIRECTION direction;
    double                broker_entry_price;
-   double                current_sl;
+   double                current_sl;            // broker SL = wide emergency envelope (NOT the strategy risk)
+   double                structural_stop_price;  // R1.5a-fix: strategy's structural stop at entry; 0.0 if unknown. R is sized off THIS.
    double                current_tp;
    double                volume;
    double                current_bid;
