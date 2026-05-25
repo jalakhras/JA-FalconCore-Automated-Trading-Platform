@@ -95,6 +95,10 @@
 // April numbers stay locked.
 #include "Strategies/S00_ScalpFvgMicro/S00_TradePlan.mqh"
 #include "Strategies/S00_ScalpFvgMicro/S00_EntryLogic.mqh"
+// R1.3a: S01 Harness - deterministic-entry test strategy used to
+// exercise the trade-management / governance engines with evidence.
+#include "Strategies/S01_Harness/S01_HarnessInputs.mqh"
+#include "Strategies/S01_Harness/S01_EntryLogic.mqh"
 
 
 // ==================================================================
@@ -6066,6 +6070,15 @@ void OnTick()
    // g_shadow_executor, so the legacy 585.17 / 1104.89 / 157.49
    // FixedLot April numbers stay locked.
    g_s00_entry_logic.EvaluateOnNewBar(g_market_context);
+
+   // R1.3a: S01 Harness entry logic - deterministic single-trade
+   // engine for verifying trade-management engines. Self-gates on
+   // Enable_S01_Harness (off by default, so the legacy FixedLot April
+   // baseline 585.17 / 1104.89 / 157.49 stays locked). Real execution
+   // is independently gated by MQL_TESTER + EnableRealExecution +
+   // S01_RealExecution. Runs AFTER S00, sharing the same closed-bar
+   // market context.
+   g_s01_harness_entry_logic.EvaluateOnNewBar(g_market_context);
 
    // Future pipeline:
    // MarketContext -> CandleCache -> Narrative -> StrategyEngine -> Evidence -> Guard -> TradePlan -> Shadow/Paper/Demo/Live Executor -> ReportWriter

@@ -372,6 +372,21 @@ private:
       // the invariant_breaches counter.
       record.structural_sl = m_active_trade.original_structural_sl;
       record.tp1           = m_active_trade.target;
+
+      // Diagnostic-only: surface S00 exit reason in the central TradeLifecycle
+      // CloseReason column (previously empty for every S00 row). The same
+      // enum-to-string mapping AppendTradeRow uses on the S00 diagnostic CSV.
+      // record.close_reason is consumed by FalconReportWriter for the CSV
+      // column and by FalconIsSessionBoundaryNoNewEntryBlockedRecord which
+      // only matches "SESSION_BOUNDARY_USER_NO_NEW_ENTRY_BLOCKED" — the
+      // values written here cannot collide. No Apply* step branches on it.
+      switch((int)m_active_trade.exit_reason)
+      {
+         case S00_EXIT_TARGET:  record.close_reason = "TARGET";  break;
+         case S00_EXIT_STOP:    record.close_reason = "STOP";    break;
+         case S00_EXIT_TIMEOUT: record.close_reason = "TIMEOUT"; break;
+         default:               record.close_reason = "NONE";    break;
+      }
    }
 
    //--------------------- trade close ------------------------
