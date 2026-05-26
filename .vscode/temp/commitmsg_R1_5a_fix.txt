@@ -1,0 +1,40 @@
+R1.5a + R1.5a-fix - Phase 3a CLOSED: ProofProtectionEngine (proven; profitability deferred)
+
+First real trade-management engine, wired contract -> coordinator -> policy ->
+real broker modify, plus the R1.5a-fix structural-stop correction.
+
+Engine stack:
+- CFalconProofProtectionEngine (thin) + swappable CFalconProtectionPolicy +
+  CFalconFixedRMultipleProtection (arms once at Trigger x R, moves stop to
+  entry +/- offset, one-direction guard never walks the stop back).
+- Coordinator MODIFY_SL apply path issues a real TRADE_ACTION_SLTP modify;
+  NO_ACTION touches nothing; CLOSE/PARTIAL_CLOSE remain UNSUPPORTED (3b/3c).
+
+R1.5a-fix (the reason R1.5a never armed):
+- R is now sized from the strategy structural stop, not the broker SL. The
+  broker SL is the wide LOCK-parity emergency envelope (~3x structural / USD
+  capped); sizing R off it inflated R 30-500x so the engine never armed
+  (backlog #76). New double structural_stop_price on FalconManagedPositionContext;
+  carried entry->coordinator via g_structural_stop_registry
+  (position_ticket -> structural_stop_price), recorded at S01 entry-accept and
+  cleared on close (additive bookkeeping; entry/exit logic untouched). Policy
+  disarms safely when the field is 0.0.
+- Unchanged: arming rule, thresholds, stop destination, one-direction guard,
+  engine/policy signatures, inputs (none added), emergency envelope, S01/bridge
+  entry-exit, Apply* chain.
+
+Build: 0 errors, 0 warnings. EA_VERSION_TAG=R1_5a_fix, EA_BUILD_TAG=ProofProtectionEngineFix.
+
+Verdict: engine mechanically PROVEN (arms, real broker SL_MODIFIED, guard holds,
+R realistic in tens of points, deterministic). Profitability NOT judgeable on the
+S01 harness (no real edge): 4-month sweep 2026.02.01->2026.05.25 ($1000)
+BrokerActualNetUSD OFF -145.07, trig1.5 -161.30, trig2.0 -223.61 -- no value beats
+OFF, months contradict. Deferred to re-evaluation on a real edge-having strategy.
+Enable_S01_Protection stays false by default (layer inert at baseline).
+
+Docs: ReviewNotes (R1_5a_fix), ProjectMemory (Phase 3a CLOSED / Phase 2 COMPLETE;
+next: independent cleanup phase, then a real strategy), Ideas_Backlog (#76 marked
+implemented; +#77,#78 fix lessons; +#79 re-eval on edge, #80 Summary counters blind
+to coordinator apply path, #81 independent cleanup phase). No cleanup in this commit.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
