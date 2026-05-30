@@ -155,38 +155,24 @@ public:
          WriteSummaryHeader();
          if(!FalconReportProfileIsLockParity())
          {
-            // EnableTierEmergencyReports group (R0.6b).
-            if(EnableTierEmergencyReports)
-            {
-               WriteTierTransitionsHeader();
-               WriteEmergencyTriggersHeader();
-               WritePaperStateSnapshotHeader();
-            }
-            // EnableBrokerReports group (R0.6b).
+            // EnableBrokerReports group (R0.6b). R1.6a DiagnosticReportCleanup:
+            // the two DIAG-EXP broker reports (BrokerRebasedPaperComparison,
+            // BrokerContractRealityAudit) were retired - their header calls
+            // removed here. The three core broker reports remain; the switch
+            // and the if-block are preserved (R1 coupling risk).
             if(EnableBrokerReports)
             {
                WriteBrokerExecutionLifecycleHeader();
                WriteBrokerTradeManagementEventTimelineHeader();
-               WriteBrokerRebasedPaperComparisonHeader();
                WriteBrokerPaperTradeReconciliationHeader();
-               WriteBrokerContractRealityAudit();
             }
          }
-         // v0.57.0: Lock Parity Executability Decomposer header.
-         // R0.6b: gated by EnableLockParityReports group switch.
-         if(EnableLockParityReports)
-            WriteLockParityDecompositionHeader();
-         // v0.57.2: Virtual Trailing Exit Bridge header. Only emit the file when the
-         // bridge can actually fire (tester-only managed close path) so LOCKPARITY
-         // without execution stays at exactly 4 CSVs.
-         // R0.6b: additionally gated by EnableVirtualTrailingReport group switch.
-         if(EnableVirtualTrailingReport && EnableVirtualTrailingBridge && EnableRealExecution && MQLInfoInteger(MQL_TESTER))
-            WriteVirtualTrailingExitLifecycleHeader();
+         // R1.6a: the EnableTierEmergencyReports / EnableLockParityReports /
+         // EnableVirtualTrailingReport Initialize header writers were retired
+         // (DIAG-EXP). The switches remain defined as inputs.
       }
 
-      // R0.6b: gated by EnableDebugDiagnostics group switch.
-      if(EnableDebugDiagnostics && ForceCreateReportFilesOnInit)
-         WriteReportCreationGuaranteeFile();
+      // R1.6a: EnableDebugDiagnostics ReportCreationGuarantee writer retired.
 
       m_initialized = true;
       CFalconLogger::Info(StringFormat("ReportWriter initialized. TradeReport=%s | SummaryReport=%s", m_trade_report_file, m_summary_report_file));
@@ -1465,70 +1451,15 @@ public:
 
    void AppendPaperStateSnapshotRecord(const FalconTradeLifecycleRecord &record)
    {
-      // R0.6b: increment the per-trade evaluation counter BEFORE the
-      // group gate so the diagnostic computation continues regardless
-      // of whether the file is written. Per spec: "أطفئ كتابة الملفات
-      // فقط لا الحسابات." The file-write-conditional counters
-      // (paper_state_snapshot_write_failures, paper_state_snapshot_written_rows)
-      // remain inside the gate further below.
+      // R1.6a DiagnosticReportCleanup: the PaperStateSnapshot CSV (DIAG-EXP)
+      // was retired. The per-trade evaluation counter is PRESERVED because
+      // Summary's integrity-status section reads
+      // m_totals.paper_state_snapshot_evaluated_trades; per spec we remove the
+      // file-write only, never the computation that feeds a core counter. The
+      // file-write-conditional counters (write_failures / written_rows) stayed
+      // at 0 in every gated-off run, so removing them is behaviour-neutral
+      // (and preserves the accepted #69 ReportIntegrityStatus state).
       m_totals.paper_state_snapshot_evaluated_trades++;
-      if(!EnableTierEmergencyReports) return; // R0.6b group gate
-      if(FalconReportProfileIsLockParity()) return;
-
-      datetime session_boundary_close_time = 0;
-      datetime session_boundary_checkpoint_time = 0;
-      bool active_during_recovery_window = false;
-      string session_boundary_checkpoint_type = FalconSessionBoundaryCheckpointType(record, session_boundary_close_time, session_boundary_checkpoint_time, active_during_recovery_window);
-      string requires_recovery = (active_during_recovery_window ? "YES" : "NO");
-
-      int handle = FileOpen(m_paper_state_snapshot_file, FalconReportReadWriteCsvFlags(), ',');
-      if(handle == INVALID_HANDLE)
-      {
-         WritePaperStateSnapshotHeader();
-         handle = FileOpen(m_paper_state_snapshot_file, FalconReportReadWriteCsvFlags(), ',');
-      }
-      if(handle == INVALID_HANDLE)
-      {
-         m_totals.paper_state_snapshot_write_failures++;
-         CFalconLogger::Warn(StringFormat("Could not append PaperStateSnapshot row: %s", m_paper_state_snapshot_file));
-         return;
-      }
-
-      FileSeek(handle, 0, SEEK_END);
-
-      string row = "";
-      row += FalconCsvSafe(FalconTimeToString(TimeCurrent())) + ",";
-      row += FalconCsvSafe(EA_VERSION_TAG) + ",";
-      row += FalconCsvSafe(EA_BUILD_TAG) + ",";
-      row += FalconCsvSafe(record.trade_id) + ",";
-      row += FalconCsvSafe(record.strategy_id) + ",";
-      row += FalconCsvSafe(record.engine_id) + ",";
-      row += FalconCsvSafe(FalconDirectionToString(record.direction)) + ",";
-      row += FalconCsvSafe(FalconTimeToString(record.entry_time)) + ",";
-      row += FalconCsvSafe(FalconTimeToString(record.exit_time)) + ",";
-      row += DoubleToString(record.entry_price, SymbolContext().digits) + ",";
-      row += DoubleToString(record.structural_sl, SymbolContext().digits) + ",";
-      row += DoubleToString(record.tp1, SymbolContext().digits) + ",";
-      row += DoubleToString(record.tp2, SymbolContext().digits) + ",";
-      row += DoubleToString(record.tp3, SymbolContext().digits) + ",";
-      row += DoubleToString(record.falcon_dlm_active_lot, 2) + ",";
-      row += DoubleToString(record.falcon_dynamic_risk_capital_before_trade, 4) + ",";
-      row += DoubleToString(record.falcon_dynamic_risk_capital_after_trade, 4) + ",";
-      row += FalconCsvSafe(record.paper_protection_state) + ",";
-      row += FalconCsvSafe(record.paper_runner_state) + ",";
-      row += FalconCsvSafe(record.falcon_emergency_status) + ",";
-      row += FalconCsvSafe(FALCON_PERSISTENCE_RECOVERY_MODE) + ",";
-      row += FalconCsvSafe("NO") + ",";
-      row += FalconCsvSafe(session_boundary_checkpoint_type) + ",";
-      row += FalconCsvSafe(FalconTimeToString(session_boundary_close_time)) + ",";
-      row += FalconCsvSafe(FalconTimeToString(session_boundary_checkpoint_time)) + ",";
-      row += FalconCsvSafe(active_during_recovery_window ? "YES" : "NO") + ",";
-      row += FalconCsvSafe(requires_recovery) + ",";
-      row += FalconCsvSafe(FalconSessionBoundarySnapshotNotes(record));
-
-      FileWriteString(handle, row + "\r\n");
-      FileClose(handle);
-      m_totals.paper_state_snapshot_written_rows++;
    }
 
    void AppendEmergencyTriggerEvent(const FalconTradeLifecycleRecord &record)
@@ -3931,25 +3862,22 @@ public:
       // byte-for-byte; see Risk/FalconRiskLifecycleProcessor.mqh for
       // the documented order and the discrepancy note.
       g_risk_lifecycle_processor.ApplyTradeLifecycleChain(record, m_totals);
-      // R0.7cd: emergency hook. The processor's Apply #11 populates
-      // record.falcon_emergency_* fields but does NOT write the CSV
-      // (Risk doesn't call Reporting). This single post-chain call
-      // emits the EmergencyTriggers.csv row, self-gated by
-      //   if(record.falcon_emergency_status != "TRIGGERED") return;
-      // inside AppendEmergencyTriggerEvent, so it's safe to call
-      // unconditionally. There is now exactly ONE caller of this
-      // method, so no double-write is possible.
-      AppendEmergencyTriggerEvent(record);
+      // R1.6a DiagnosticReportCleanup: the EmergencyTriggers writer hook
+      // (AppendEmergencyTriggerEvent) was retired (DIAG-EXP). Risk's Apply #11
+      // still populates record.falcon_emergency_* fields; only the CSV row is
+      // gone. No counter fed by this method, so removal is behaviour-neutral.
       UpdateTotals(record);
       AppendTradeRecord(record);
+      // R1.6a: PaperStateSnapshot CSV row retired; the call is kept ONLY so
+      // its evaluated-trades counter (read by Summary) keeps incrementing.
       AppendPaperStateSnapshotRecord(record);
       AppendBrokerExecutionLifecycleAuditRecord(record);
-      AppendBrokerRebasedPaperComparisonRecord(record);
+      // R1.6a: AppendBrokerRebasedPaperComparisonRecord (DIAG-EXP) retired.
       AppendBrokerTradeManagementTimelineForRecord(record);
       // v0.57.0: Lock Parity Executability Decomposer hook.
-      // Pure additive; runs AFTER every Apply* layer has populated the record.
+      // R1.6a: the computation (UpdateLockParityTotals) is KEPT - it feeds
+      // totals; the per-trade decomposition CSV row writer was retired.
       UpdateLockParityTotals(record);
-      AppendLockParityDecompositionRecord(record);
    }
 
    int CountPhysicalTradeLifecycleDataRows()
@@ -4199,9 +4127,8 @@ public:
       FileWriteString(handle, summary_row + "\r\n");
       FileClose(handle);
 
-      // v0.57.0: Lock Parity Executability Decomposer rollup writer.
-      // Report-only; emits one row aggregating per-trade decomposition totals.
-      WriteLockParityExecutabilityRollup();
+      // R1.6a DiagnosticReportCleanup: Lock Parity rollup CSV writer
+      // (WriteLockParityExecutabilityRollup) retired (DIAG-EXP).
    }
 
 

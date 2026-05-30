@@ -3849,7 +3849,7 @@ void FalconFinalizeAndRenameReportFiles(const string trigger)
 
    if(old_from == new_from && old_to == new_to)
    {
-      FalconWriteAutoPeriodManifest(trigger + "_NoRenameNeeded", 0, 0, 0);
+      // R1.6a: AutoPeriodManifest (DIAG-EXP) retired; no-rename path returns.
       return;
    }
 
@@ -3883,7 +3883,8 @@ void FalconFinalizeAndRenameReportFiles(const string trigger)
       }
    }
 
-   FalconWriteAutoPeriodManifest(trigger, moved_count, missing_count, failed_count);
+   // R1.6a DiagnosticReportCleanup: AutoPeriodManifest report (DIAG-EXP) retired.
+   // The report-file rename loop above is unchanged.
 }
 
 
@@ -5810,24 +5811,20 @@ void FalconRunFvgMicroRuntimeShadowPipeline(const string trigger)
 
    string detector_refresh_reason = "";
    bool refresh_detector = FalconShouldRefreshFvgDetectorOnThisTick(detector_refresh_reason);
-   bool write_runtime_diagnostics = FalconShouldWriteRuntimeDiagnosticsNow();
+   // R1.6a DiagnosticReportCleanup: the FvgMicro* diagnostic-snapshot writes
+   // (DIAG-EXP, EnableDebugDiagnostics) were removed from this live pipeline.
+   // The runtime-diagnostic cadence flag and the else-if branches that only
+   // wrote snapshots were removed with them; the detector/candidate/watcher/
+   // stager/simulator refresh and the broker entry path are unchanged.
 
    if(refresh_detector)
    {
       g_candle_cache.LoadAll(g_market_context);
       g_fvg_micro_detector_stub.Initialize(g_strategy_registry, g_candle_cache, g_evidence_framework, g_runtime_safety_guard);
-      g_report_writer.WriteFvgMicroDetectorDiagnosticsSnapshot(g_fvg_micro_detector_stub);
 
       FalconFvgMicroDetectorSnapshot detector_snapshot = g_fvg_micro_detector_stub.GetSnapshot();
       if(detector_snapshot.fvg_detected)
-      {
          g_fvg_micro_candidate_builder.Initialize(g_fvg_micro_detector_stub, g_strategy_registry, g_runtime_safety_guard);
-         g_report_writer.WriteFvgMicroCandidateDiagnosticsSnapshot(g_fvg_micro_candidate_builder);
-      }
-      else if(write_runtime_diagnostics)
-      {
-         g_report_writer.WriteFvgMicroCandidateDiagnosticsSnapshot(g_fvg_micro_candidate_builder);
-      }
    }
 
    FalconFvgMicroShadowCandidateSnapshot candidate_snapshot = g_fvg_micro_candidate_builder.GetSnapshot();
@@ -5841,12 +5838,9 @@ void FalconRunFvgMicroRuntimeShadowPipeline(const string trigger)
 
       if(watcher_snapshot.watcher_status == FALCON_RETEST_WATCHER_STATUS_SKELETON_READY)
       {
-         g_report_writer.WriteFvgMicroRetestWatcherDiagnosticsSnapshot(g_fvg_micro_retest_watcher);
-
          if(watcher_snapshot.candidate_id != g_last_staged_fvg_candidate_id)
          {
             g_fvg_micro_tradeplan_stager.Initialize(g_fvg_micro_retest_watcher, g_runtime_safety_guard, g_shadow_executor);
-            g_report_writer.WriteFvgMicroTradePlanStagingDiagnosticsSnapshot(g_fvg_micro_tradeplan_stager);
 
             FalconFvgMicroTradePlanStagingSnapshot staging_snapshot = g_fvg_micro_tradeplan_stager.GetSnapshot();
             if(staging_snapshot.staging_status == FALCON_TRADEPLAN_STAGING_STATUS_BLOCKED &&
@@ -5862,21 +5856,9 @@ void FalconRunFvgMicroRuntimeShadowPipeline(const string trigger)
                g_last_staged_fvg_candidate_id = watcher_snapshot.candidate_id;
                g_broker_entry_bridge.TryOpenFromShadowRecord(g_fvg_micro_tradeplan_stager.GetShadowRecord(), g_report_writer);
                g_fvg_micro_lifecycle_simulator.Initialize(g_fvg_micro_tradeplan_stager, g_market_context, g_shadow_executor);
-               g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
-               g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot(trigger + "_StagedShadowRecord");
-               g_report_writer.WriteFvgMicroRuntimeReportAuditSnapshot(trigger + "_StagedShadowRecord");
             }
          }
       }
-      else if(write_runtime_diagnostics)
-      {
-         g_report_writer.WriteFvgMicroRetestWatcherDiagnosticsSnapshot(g_fvg_micro_retest_watcher);
-      }
-   }
-   else if(write_runtime_diagnostics)
-   {
-      g_report_writer.WriteFvgMicroDetectorDiagnosticsSnapshot(g_fvg_micro_detector_stub);
-      g_report_writer.WriteFvgMicroCandidateDiagnosticsSnapshot(g_fvg_micro_candidate_builder);
    }
 }
 
@@ -5898,7 +5880,8 @@ int OnInit()
    PrintFormat("ReportProfile: %s", FalconReportProfileToString());
    PrintFormat("============================================================");
    FalconPrintReportFolderHints();
-   FalconWriteStartupBootstrapFile();
+   // R1.6a DiagnosticReportCleanup: StartupBootstrap report (DIAG-EXP, ungated)
+   // retired - its write call was removed.
 
    if(!g_market_context.Initialize())
       return INIT_FAILED;
@@ -5927,37 +5910,32 @@ int OnInit()
    // issues no broker writes (full R1.4b baseline parity).
    if(Enable_S01_Protection)
       g_trade_management_coordinator.RegisterEngine(GetPointer(g_proof_protection_engine));
-   g_report_writer.WriteMarketDiagnosticsSnapshot(g_market_context.GetQuoteContext(), g_market_context.GetPrimaryCandleSnapshot());
-   g_report_writer.WriteStrategyRegistryDiagnosticsSnapshot(g_strategy_registry);
+   // R1.6a DiagnosticReportCleanup: all OnInit diagnostic-snapshot writes
+   // (Market / StrategyRegistry / CandleCache / NoLookahead / Evidence /
+   // FvgMicro Detector|Candidate|RetestWatcher|TradePlanStaging / Shadow -
+   // all DIAG-EXP) were removed. Every real Initialize call and its
+   // INIT_FAILED guard, plus the candle-cache load, are unchanged.
    g_candle_cache.LoadAll(g_market_context);
-   g_report_writer.WriteCandleCacheDiagnosticsSnapshot(g_candle_cache);
 
    if(!g_runtime_safety_guard.Initialize(g_candle_cache))
       return INIT_FAILED;
-   g_report_writer.WriteNoLookaheadDiagnosticsSnapshot(g_runtime_safety_guard);
 
    if(!g_evidence_framework.Initialize())
       return INIT_FAILED;
-   g_report_writer.WriteEvidenceDiagnosticsSnapshot(g_evidence_framework);
 
    if(!g_fvg_micro_detector_stub.Initialize(g_strategy_registry, g_candle_cache, g_evidence_framework, g_runtime_safety_guard))
       return INIT_FAILED;
-   g_report_writer.WriteFvgMicroDetectorDiagnosticsSnapshot(g_fvg_micro_detector_stub);
 
    if(!g_fvg_micro_candidate_builder.Initialize(g_fvg_micro_detector_stub, g_strategy_registry, g_runtime_safety_guard))
       return INIT_FAILED;
-   g_report_writer.WriteFvgMicroCandidateDiagnosticsSnapshot(g_fvg_micro_candidate_builder);
 
    if(!g_fvg_micro_retest_watcher.Initialize(g_fvg_micro_candidate_builder, g_market_context, g_runtime_safety_guard))
       return INIT_FAILED;
-   g_report_writer.WriteFvgMicroRetestWatcherDiagnosticsSnapshot(g_fvg_micro_retest_watcher);
 
    g_shadow_executor.Initialize();
-   g_report_writer.WriteShadowDiagnosticsSnapshot(g_shadow_executor);
 
    if(!g_fvg_micro_tradeplan_stager.Initialize(g_fvg_micro_retest_watcher, g_runtime_safety_guard, g_shadow_executor))
       return INIT_FAILED;
-   g_report_writer.WriteFvgMicroTradePlanStagingDiagnosticsSnapshot(g_fvg_micro_tradeplan_stager);
    // R1.2a coexistence gate: when S00_RealExecution = true, the legacy
    // FVG_MICRO_RETEST execution path is bypassed (entry + managed
    // close + lifecycle close registration) so S00 owns the broker
@@ -5977,21 +5955,14 @@ int OnInit()
       g_report_writer.RegisterClosedTrade(lifecycle_record_on_init);
       g_broker_entry_bridge.TryManagedCloseFromLifecycleRecord(lifecycle_record_on_init, g_report_writer);
    }
-   g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
-   g_report_writer.WriteReportCalibrationDiagnosticsSnapshot();
-   g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot("OnInit_AfterAllInitialReports");
-   g_report_writer.WriteFvgMicroRuntimeReportAuditSnapshot("OnInit_AfterAllInitialReports");
-   g_report_writer.WriteRuntimeReportVerificationSnapshot("OnInit_AfterAllInitialReports");
+   // R1.6a: OnInit lifecycle-simulation / report-calibration / smoke-test /
+   // runtime report-audit / runtime-report-verification snapshots (DIAG-EXP)
+   // removed.
 
    if(!g_first_strategy_adapter.Initialize(g_strategy_registry, g_runtime_safety_guard, g_shadow_executor))
       return INIT_FAILED;
-   g_report_writer.WriteStrategyAdapterDiagnosticsSnapshot(g_first_strategy_adapter);
-   if(FALCON_WRITE_SECONDARY_ONINIT_AUDIT_SNAPSHOTS)
-   {
-      g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot("OnInit_AfterStrategyAdapterReport");
-      g_report_writer.WriteFvgMicroRuntimeReportAuditSnapshot("OnInit_AfterStrategyAdapterReport");
-      g_report_writer.WriteRuntimeReportVerificationSnapshot("OnInit_AfterStrategyAdapterReport");
-   }
+   // R1.6a: StrategyAdapter diagnostics + the secondary-audit snapshot block
+   // (FALCON_WRITE_SECONDARY_ONINIT_AUDIT_SNAPSHOTS) removed (DIAG-EXP).
 
    g_risk_tm_architecture.Initialize();
    g_risk_tm_architecture.PrintState();
@@ -6008,10 +5979,9 @@ void OnDeinit(const int reason)
    FalconUpdateReportPeriodLastSeen();
    g_broker_entry_bridge.FlushOpenLinksAtDeinit(g_report_writer);
    g_report_writer.WriteFinalSummary();
-   g_report_writer.WriteReportCalibrationDiagnosticsSnapshot();
-   g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot("OnDeinit_FinalSmokeTest");
-   g_report_writer.WriteFvgMicroRuntimeReportAuditSnapshot("OnDeinit_FinalReportAudit");
-   g_report_writer.WriteRuntimeReportVerificationSnapshot("OnDeinit_FinalReportVerification");
+   // R1.6a DiagnosticReportCleanup: OnDeinit report-calibration / smoke-test /
+   // runtime report-audit / runtime-report-verification snapshots (DIAG-EXP)
+   // removed. WriteFinalSummary (core) and the report-file rename are kept.
    FalconFinalizeAndRenameReportFiles("OnDeinit_AutoPeriodFinalize");
    CFalconLogger::Info(StringFormat("Deinitializing. Reason=%d", reason));
    g_is_initialized = false;
@@ -6065,30 +6035,12 @@ void OnTick()
       {
          g_report_writer.RegisterClosedTrade(lifecycle_record);
          g_broker_entry_bridge.TryManagedCloseFromLifecycleRecord(lifecycle_record, g_report_writer);
-         // v0.18.5 performance rule:
-         // TradeLifecycle rows are written immediately, but heavy file-verification/audit snapshots
-         // are not rewritten after every Shadow close. They remain available at OnInit/OnDeinit.
-         if(FALCON_WRITE_HEAVY_RUNTIME_AUDIT_ON_SHADOW_CLOSE)
-         {
-            g_report_writer.WriteFvgMicroSmokeTestDiagnosticsSnapshot("OnTick_AfterShadowLifecycleClose");
-            g_report_writer.WriteFvgMicroRuntimeReportAuditSnapshot("OnTick_AfterShadowLifecycleClose");
-            g_report_writer.WriteRuntimeReportVerificationSnapshot("OnTick_AfterShadowLifecycleClose");
-         }
-         g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
-      }
-      else
-      {
-         bool should_write_lifecycle_tick_snapshot = true;
-         if(EnableFastRuntimeSmokeMode)
-         {
-            int safe_interval = RuntimeDiagnosticsEveryNTicks;
-            if(safe_interval < 1)
-               safe_interval = FALCON_RUNTIME_DIAGNOSTICS_DEFAULT_N_TICKS;
-            should_write_lifecycle_tick_snapshot = ((g_runtime_tick_counter % safe_interval) == 0);
-         }
-
-         if(should_write_lifecycle_tick_snapshot)
-            g_report_writer.WriteFvgMicroLifecycleSimulationDiagnosticsSnapshot(g_fvg_micro_lifecycle_simulator);
+         // R1.6a DiagnosticReportCleanup: the heavy runtime-audit snapshot block
+         // (smoke-test / runtime report-audit / runtime-report-verification) and
+         // the per-close lifecycle-simulation snapshot (all DIAG-EXP) were
+         // removed, together with the else branch whose only purpose was to
+         // decide whether to write that snapshot. RegisterClosedTrade (core
+         // TradeLifecycle) and the managed close above are unchanged.
       }
    }
 

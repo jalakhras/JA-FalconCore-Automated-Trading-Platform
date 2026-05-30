@@ -403,7 +403,9 @@ private:
       m_active_trade.exit_time     = exit_time;
       m_active_trade.exit_price    = exit_price;
       m_active_trade.result_points = raw / point;
-      AppendTradeRow(m_active_trade);
+      // R1.6a DiagnosticReportCleanup: S00_Trades_Diagnostics (DIAG-EXP) retired
+      // - the AppendTradeRow write call was removed. m_active_trade is still
+      // finalized above; S00_DiagReport stays defined as an input.
 
       // R1.2c/d: real close execution + central TradeLifecycle
       // registration. Three gates - MQL_TESTER + EnableRealExecution +

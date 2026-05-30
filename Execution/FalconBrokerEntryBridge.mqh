@@ -2144,32 +2144,21 @@ public:
                                                 m_active_links[i].virtual_trailing_active ? "true" : "false",
                                                 m_active_links[i].virtual_breakeven_locked ? "true" : "false");
 
-         bool sent = ExecuteReverseClosePositionRequest(m_active_links[i],
-                                                        position_type,
-                                                        volume,
-                                                        FALCON_VIRTUAL_TRAILING_CLOSE_COMMENT_PREFIX,
-                                                        lifecycle_reason,
-                                                        report_writer,
-                                                        accepted,
-                                                        retcode,
-                                                        executed_price,
-                                                        result_comment);
-
-         string trailing_status = sent
-                                  ? (accepted ? "TRAILING_CLOSE_REQUEST_ACCEPTED_WAITING_ON_TRADE_TRANSACTION"
-                                              : "TRAILING_CLOSE_REQUEST_REJECTED")
-                                  : "TRAILING_CLOSE_PRE_SEND_BLOCKED";
-
-         // v0.57.3: pass the actual exit price the helper sent (or the tick price if the
-         // helper short-circuited pre-send). The report writer derives RealizedPointsAtExit
-         // and EstimatedUsdAtExit from link + exit_price + its own symbol context.
-         report_writer.AppendVirtualTrailingExitLifecycleRecord(m_active_links[i],
-                                                                TimeCurrent(),
-                                                                sent ? executed_price : current_price,
-                                                                profit_points,
-                                                                trigger_reason,
-                                                                retcode,
-                                                                trailing_status);
+         // R1.6a DiagnosticReportCleanup: the reverse-close itself is unchanged,
+         // but its return is no longer captured because the only consumer was
+         // the retired VirtualTrailingExitLifecycle report (DIAG-EXP). The
+         // report-only local (trailing_status) and the
+         // AppendVirtualTrailingExitLifecycleRecord call were removed.
+         ExecuteReverseClosePositionRequest(m_active_links[i],
+                                            position_type,
+                                            volume,
+                                            FALCON_VIRTUAL_TRAILING_CLOSE_COMMENT_PREFIX,
+                                            lifecycle_reason,
+                                            report_writer,
+                                            accepted,
+                                            retcode,
+                                            executed_price,
+                                            result_comment);
       }
    }
 

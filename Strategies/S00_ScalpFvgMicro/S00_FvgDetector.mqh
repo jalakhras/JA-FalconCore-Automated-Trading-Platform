@@ -256,10 +256,10 @@ public:
          rec.reject_reason = reject_reason;
       }
 
-      // R1.1b: CSV write gated separately - the strategy can run without
-      // producing the detection diagnostic report.
-      if(S00_DiagReport)
-         AppendDiagnosticsRow(rec, c3.close);
+      // R1.6a DiagnosticReportCleanup: S00_FvgDetection_Diagnostics (DIAG-EXP)
+      // retired - the AppendDiagnosticsRow write call was removed. S00_DiagReport
+      // stays defined as an input. The detector's in-memory record (rec) and
+      // its ActiveFvg list are unchanged - entry logic reads the list, not CSV.
    }
 
    //----------------------------------------------------------------
