@@ -1,2 +1,7 @@
 .vscode/buraq-diagnostics.json
 JA_FalconCore_Automated_Trading_Platform.ex5
+
+# Build logs and scratch artifacts (Backlog #92)
+.vscode/temp/
+*.log
+diff.txt
