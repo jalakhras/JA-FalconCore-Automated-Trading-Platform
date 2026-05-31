@@ -1429,6 +1429,28 @@ public:
          return false;
       }
 
+      // R2.1.1 SlippageHardened: final pre-OrderSend entry-slippage guard for
+      // FVG Micro. Entry slippage that pushes the broker fill into the micro-zone
+      // toward SL roughly doubles the realized loss vs. the paper midpoint
+      // assumption. This is the LAST check before OrderSend, after every other
+      // guard has already passed. record.entry_price is the planned FVG midpoint;
+      // price is the live broker Ask/Bid resolved above. Rejections reuse the
+      // existing ENTRY_BLOCKED audit mechanism with an FVG_MICRO_REJECTED_* reason.
+      if(record.entry_price > 0.0 && FvgMicroMaxEntrySlippagePoints > 0.0)
+      {
+         const double entry_slippage_points = MathAbs(price - record.entry_price) / _Point;
+         if(entry_slippage_points > FvgMicroMaxEntrySlippagePoints)
+         {
+            m_entry_blocked++;
+            link.status = FALCON_BEEB_ENTRY_BLOCKED_STATUS;
+            link.reason = StringFormat("FVG_MICRO_REJECTED_ENTRY_SLIPPAGE;Slippage=%.1f;Max=%.1f;Planned=%.5f;Broker=%.5f",
+                                       entry_slippage_points, FvgMicroMaxEntrySlippagePoints, record.entry_price, price);
+            StoreOrUpdateAuditLink(link);
+            report_writer.AppendBrokerEntryBridgeLifecycleRecord(link);
+            return false;
+         }
+      }
+
       link.broker_entry_attempted = true;
       link.requested_lot = record.lot_size;
       link.accepted_lot = volume;

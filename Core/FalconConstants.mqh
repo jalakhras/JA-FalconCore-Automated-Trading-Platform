@@ -7,8 +7,8 @@
 #define FALCON_CONSTANTS_MQH
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "R2_1"
-#define EA_BUILD_TAG   "FvgMicroSpecAligned"
+#define EA_VERSION_TAG "R2_1_1"
+#define EA_BUILD_TAG   "SlippageHardened"
 
 #define FALCON_MTF_COUNT       6
 

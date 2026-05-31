@@ -1845,7 +1845,10 @@ input int    VirtualSwingMaxLookback         = 40;     // max closed bars to sca
 input group "03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات";
 input bool EnableStrategy_FvgMicroRetest             = true;  // ShadowSmoke core winner candidate. Still no real execution.
 // R2.1 FvgMicroSpecAligned: FVG Micro tunables (spec changes 4 and 6).
-input double FvgMicroSlBufferPoints                  = 30.0;  // structural SL buffer below/above the FVG zone (points)
+input double FvgMicroSlBufferPoints                  = 50.0;  // structural SL buffer below/above the FVG zone (points)
+// R2.1.1 SlippageHardened: two slippage-absorption tunables (placeholder defaults, calibrate later).
+input double FvgMicroMaxEntrySlippagePoints          = 1500.0;  // reject FVG Micro entry if |broker price - planned entry| exceeds this (points)
+input double FvgMicroSlZoneSizeMultiplier            = 1.0;   // SL distance from entry = zoneSize x multiplier + buffer
 input bool   FvgMicroRequireRetestConfirmation       = false; // require close-beyond-mid + directional candle before entry
 input bool EnableStrategy_TailSmartReturn            = false; // استراتيجية ذيل العودة الذكي.
 input bool EnableStrategy_MomentumCross820           = false; // استراتيجية تقاطع الزخم 8/20.
@@ -4824,9 +4827,17 @@ private:
 
       m_snapshot.planned_entry_price = midpoint;
 
+      // R2.1.1 SlippageHardened: SL distance measured from entry (midpoint) as
+      // zoneSize x FvgMicroSlZoneSizeMultiplier + buffer. Previously the SL was
+      // anchored at the FVG boundary (= zoneSize/2 + buffer from entry). The wider
+      // SL absorbs the residual entry slippage that the change-1 guard does not
+      // reject. TP is unchanged, so this lowers the R-multiple but cuts the broker
+      // loss on slipped entries by more.
+      const double sl_distance = (zone_size * FvgMicroSlZoneSizeMultiplier) + safe_buffer;
+
       if(m_snapshot.direction == FALCON_DIRECTION_BUY)
       {
-         m_snapshot.planned_structural_sl = m_snapshot.fvg_lower - safe_buffer;
+         m_snapshot.planned_structural_sl = midpoint - sl_distance;
          // R2.1: TP anchored to entry (midpoint) instead of the FVG boundary.
          m_snapshot.planned_tp1 = midpoint + zone_size;
          m_snapshot.planned_tp2 = midpoint + (zone_size * 2.0);
@@ -4834,7 +4845,7 @@ private:
       }
       else if(m_snapshot.direction == FALCON_DIRECTION_SELL)
       {
-         m_snapshot.planned_structural_sl = m_snapshot.fvg_upper + safe_buffer;
+         m_snapshot.planned_structural_sl = midpoint + sl_distance;
          // R2.1: TP anchored to entry (midpoint) instead of the FVG boundary.
          m_snapshot.planned_tp1 = midpoint - zone_size;
          m_snapshot.planned_tp2 = midpoint - (zone_size * 2.0);
@@ -4842,7 +4853,7 @@ private:
       }
 
       m_snapshot.tradeplan_skeleton_created = true;
-      m_snapshot.skeleton_notes = "Diagnostic geometry only. Entry=FVG midpoint; SL=outside FVG with stop-level-aware buffer; TP1/TP2/TP3=zone-size projections. No real TradePlan object is created.";
+      m_snapshot.skeleton_notes = "Diagnostic geometry only. Entry=FVG midpoint; SL=entry -/+ (zoneSize x multiplier + stop-level-aware buffer) [R2.1.1]; TP1/TP2/TP3=zone-size projections. No real TradePlan object is created.";
    }
 
    void ResetSnapshot()
