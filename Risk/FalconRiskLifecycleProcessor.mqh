@@ -67,6 +67,12 @@
 #define FALCON_RISK_LIFECYCLE_PROCESSOR_MQH
 
 #include "FalconTradeLifecycleContract.mqh"
+// R1.7 GateLeakFix: Enable_TradeManagement / Enable_S01_Protection are
+// declared in TradeManagement/FalconTradeManagementInputs.mqh, which is
+// #included later in the main .mq5 than this processor. Pull it in here
+// (guarded, no-op on the later include) so the call-site guards below
+// resolve at this file's parse point.
+#include "../TradeManagement/FalconTradeManagementInputs.mqh"
 
 class CFalconRiskLifecycleProcessor
 {
@@ -810,6 +816,12 @@ private:
       record.paper_protection_net_index_points = record.paper_guard_net_index_points;
       record.paper_protection_net_usd = record.paper_guard_net_usd;
 
+      // R1.7-amend: gate paper protection logic by flags.
+      // Defensive inits above always run (passthrough semantics);
+      // logic below runs only when both flags are on.
+      if(!Enable_TradeManagement || !Enable_S01_Protection)
+         return;
+
       if(record.paper_guard_status != "PASSED")
       {
          record.paper_exit_reason = "PAPER_GUARD_REJECTED";
@@ -885,6 +897,12 @@ private:
       record.paper_runner_net_index_points = record.paper_protection_net_index_points;
       record.paper_runner_net_usd = record.paper_protection_net_usd;
       record.paper_final_exit_reason = record.paper_exit_reason;
+
+      // R1.7-amend: gate paper runner logic by flag.
+      // Defensive inits above always run; logic below runs only when TM on.
+      // (Runner naturally no-ops if paper_protection_activated stayed false.)
+      if(!Enable_TradeManagement)
+         return;
 
       if(record.paper_guard_status != "PASSED")
       {

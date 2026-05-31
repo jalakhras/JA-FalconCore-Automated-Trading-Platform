@@ -5803,7 +5803,7 @@ bool FalconShouldWriteRuntimeDiagnosticsNow()
 
 void FalconRunFvgMicroRuntimeShadowPipeline(const string trigger)
 {
-   if(!EnableFvgMicroRuntimePipelineRefresh)
+   if(!EnableStrategy_FvgMicroRetest)
       return;
 
    if(!g_market_context.Refresh())

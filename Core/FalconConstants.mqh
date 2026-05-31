@@ -7,8 +7,8 @@
 #define FALCON_CONSTANTS_MQH
 
 #define EA_NAME        "JA FalconCore Automated Trading Platform"
-#define EA_VERSION_TAG "R1_6a"
-#define EA_BUILD_TAG   "DiagnosticReportCleanup"
+#define EA_VERSION_TAG "R1_7"
+#define EA_BUILD_TAG   "GateLeakFix"
 
 #define FALCON_MTF_COUNT       6
 

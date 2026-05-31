@@ -69,7 +69,7 @@ public:
       Reset();
 
       AddEntry("FVG_MICRO_RETEST", "FVG Micro Retest Engine", "SCALP.FVG_MICRO",
-               FALCON_STRATEGY_GROUP_CORE, (EnableStrategy_FvgMicroRetest || EnableFvgMicroRuntimePipelineRefresh),
+               FALCON_STRATEGY_GROUP_CORE, EnableStrategy_FvgMicroRetest,
                FALCON_ENGINE_HEALTH_CORE_WINNER, FALCON_ENGINE_SHADOW,
                true, false, false, false,
                "Legacy indicator core winner. v0.18.4 allows ShadowSmoke activation when FVG runtime pipeline is enabled; still Shadow-first and no live execution.");

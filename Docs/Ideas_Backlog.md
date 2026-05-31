@@ -293,6 +293,20 @@ Three permanent rules for MQL5 inputs. They apply to all new strategies (S00, S0
 
 ---
 
+## From R1.7 (gate-leak fix + defensive-init guard)
+
+88. **قاعدة عمل جديدة (معرفة #10) — الحارس على دالّة init-aware يكون داخلها بعد التهيئة، لا حولها.** R1.7's first attempt guarded Apply #5/#6 at the *call site* (`ApplyTradeLifecycleChain`), skipping the whole function when OFF. But Apply #5/#6 initialise their own paper output fields (`paper_protection_*`, `paper_runner_*`) as their first work — skipping the call left those fields as uninitialised memory, which `FalconRefreshUsdMetricsForActiveLot` then read, producing `ProtectionActivatedTrades = 467` and `FinalWorkingNetUSD = 5.38e+267` in the Bare run. The fix moved the guard *inside* each function, after the defensive-init block and before the first logical line. **Permanent rule:** any function that initialises output fields then branches on logic must be gated INSIDE, after the init — never wrapped at the call site. OFF = full passthrough neutrality (init runs), logic is what's gated. **Any future gating spec is subject to this rule.**
+
+89. **ملاحظة Apply #4 (guard) يقصّ الـ Raw إلى −2.43 على الطبقة الورقيّة.** In the R1.7 bare baseline, `RawNetUSD = 648.71` is cut to `FinalWorkingNetUSD = −2.43` purely by Apply #4 (the paper guard step) — the broker side is stable at `BrokerActualNetUSD = 275.97`. This is a paper-only artifact, not a broker effect. The value of the guard step is currently unmeasurable on the S01 harness (no edge); **revisit when the guard's effect is measured on a real edge-having strategy** — does the paper guard's clipping behaviour track or distort broker outcomes? Same "engines are unjudgeable on the harness" theme as #79.
+
+90. **مراجعة بقيّة سلسلة Apply\* للنمط init-then-logic.** R1.7 only fixed Apply #5/#6. Audit whether the other chain steps (#1, #2, #3, #7, #8, #9, #10, #11, #12) follow the same init-then-logic shape — i.e. they initialise output fields up front then run conditional logic. If any do, the same in-function guard strategy (knowledge #10 / #88) is applicable when a gating need arises for them. **Read-only audit first; do not pre-emptively add guards.** Trigger: when a new gate is needed on any other Apply step.
+
+91. **حذف `#define EnableFvgMicroRuntimePipelineRefresh` لاحقًا.** After R1.7's changes 2 and 3, the `#define EnableFvgMicroRuntimePipelineRefresh` (`Router/FalconRouterInputs.mqh:16`, a structural `#define` with a historical R0.5 reason) is no longer read anywhere — both the Registry entry and the legacy shadow pipeline now read `EnableStrategy_FvgMicroRetest` instead. It was deliberately **kept** in R1.7 (not deleted) to keep the fix scoped. **Remove it in a later cleanup phase** after confirming by grep it has no remaining reader, and re-read the R0.5 Review Notes for the historical reason first. Belongs to the input/dead-surface cleanup family (#81/#82/#83).
+
+92. **`.gitignore`: أضِف `.vscode/temp/` و `*.log` (تذكير متكرّر من R1.6a).** The headless MetaEditor build logs land in `.vscode/temp/*.log` and show up as untracked noise in `git status` every phase. Add a `.gitignore` covering `.vscode/temp/` and `*.log` so build artifacts never get committed by accident. **Do it in a dedicated chore commit, not mixed with a build/feature commit.** (R1.7 close deliberately did NOT create the `.gitignore` — recorded here per the closeout spec.)
+
+---
+
 ## Conventions for adding to this file
 
 - One bullet per idea. Keep it terse.
