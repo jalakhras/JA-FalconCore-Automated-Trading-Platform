@@ -307,6 +307,20 @@ Three permanent rules for MQL5 inputs. They apply to all new strategies (S00, S0
 
 ---
 
+## From R2.1 (FvgMicroRetest spec-aligned close)
+
+93. **معايرة العتبات الأربعة — تُؤجَّل حتى بيانات R2.2 (3 أشهر).** The four FvgMicroRetest gates ship with placeholder / spec-aligned values: `MIN_SIZE_POINTS = 30` (raised from `1.00` in R2.1 as a placeholder), `MAX_SPREAD_TO_FVG_RATIO = 0.50`, `MAX_FVG_AGE_BARS = 12` (M5), `FvgMicroSlBufferPoints = 30`. These are **not** calibrated — they are reasonable starting points. **Any tuning before the R2.2 three-month run lands is data mining** (single-month April overfit). Re-tune all four together only after the wider window exists, picking values stable across months in `BrokerActualNetUSD` terms (same discipline as knowledge #3/#4). **Trigger: R2.2 three-month data.**
+
+94. **`R2.2-StrategyOnly` — FvgMicroRetest وحدها على 3 أشهر — مُؤجَّل.** Running FvgMicroRetest in isolation (no S01, no TM/Protection) over the three-month window is a **useful scientific question** — it isolates the strategy's own edge from the composition uplift (#12: A−(B+C)=+77.74). But it is **not on the production path** (the production baseline is the full Test-A composition). Run it only if a later diagnosis needs to attribute results to the strategy alone vs. the management layer. **Deferred — diagnostic, not roadmap. Trigger: an attribution question that needs it.**
+
+95. **Protection/Runner على البروكر = R3.x.** Today Protection (Apply #5) and Runner (Apply #6) act on the **paper layer** only; the broker side still carries the wide LOCK-parity emergency server-stop envelope (the bounded-loss safety net, #63/#76). Making Protection/Runner issue **real broker** `TRADE_ACTION_SLTP` modifies behind a real-edge strategy is **R3.x** work. **The emergency envelope stays in place until then** — it is the only broker-side safety net while management is paper-only. Linked to #63 (envelope-fire audit) and #70 (real governance gating entry). **Trigger: R3.x.**
+
+96. **`FalconStrategySignal` refactor — اتّساق معماريّ، غير حاجب.** The FvgMicroRetest signal/snapshot path has architectural-consistency rough edges (signal struct vs. snapshot ownership) surfaced during R2.1 spec-alignment. **Non-blocking** for R2.2/R2.3 — it works as is. Refactor for consistency only in a dedicated phase when the strategy-signal surface is being touched for a real reason. **Trigger: a phase that touches the strategy-signal path.**
+
+97. **ازدواج مسار الدخول OnInit/OnTick — راجِع `g_last_staged_fvg_candidate_id`.** The entry path has a potential double-staging seam between the OnInit and OnTick flows mediated by `g_last_staged_fvg_candidate_id`. R2.1 left it as-is (no behavioural change, verified across 5 runs). **Read-only review** of whether the staged-candidate id can be set/consumed inconsistently across the two paths — and whether a same-candidate double-entry is reachable. Same single-trade-at-a-time-discipline family as #67. **Read-only audit first; do not change behaviour pre-emptively. Trigger: next entry-path work.**
+
+---
+
 ## Conventions for adding to this file
 
 - One bullet per idea. Keep it terse.

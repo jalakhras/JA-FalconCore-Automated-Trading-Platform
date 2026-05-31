@@ -1844,6 +1844,9 @@ input int    VirtualSwingMaxLookback         = 40;     // max closed bars to sca
 // ==================================================================
 input group "03 - Strategy Switches / تفعيل وإيقاف الاستراتيجيات";
 input bool EnableStrategy_FvgMicroRetest             = true;  // ShadowSmoke core winner candidate. Still no real execution.
+// R2.1 FvgMicroSpecAligned: FVG Micro tunables (spec changes 4 and 6).
+input double FvgMicroSlBufferPoints                  = 30.0;  // structural SL buffer below/above the FVG zone (points)
+input bool   FvgMicroRequireRetestConfirmation       = false; // require close-beyond-mid + directional candle before entry
 input bool EnableStrategy_TailSmartReturn            = false; // استراتيجية ذيل العودة الذكي.
 input bool EnableStrategy_MomentumCross820           = false; // استراتيجية تقاطع الزخم 8/20.
 input bool EnableStrategy_CheckMarkLiquiditySweep    = false; // استراتيجية علامة الصح بعد سحب السيولة.
@@ -1998,9 +2001,10 @@ string FalconReportProfileToString()
 // candidates before Shadow staging, but never enable broker execution.
 // ==================================================================
 #define FALCON_FVG_MICRO_QUALITY_FILTERS_ENABLED              true
-#define FALCON_FVG_MICRO_MIN_SIZE_POINTS                      1.00
-#define FALCON_FVG_MICRO_MAX_SPREAD_POINTS                    200
-#define FALCON_FVG_MICRO_MAX_FVG_AGE_BARS                     0
+#define FALCON_FVG_MICRO_MIN_SIZE_POINTS                      30.0  // R2.1: was 1.00; placeholder for US100 M5, recalibrate after R2.2
+#define FALCON_FVG_MICRO_MAX_SPREAD_POINTS                    200   // kept for report-field consistency (quality_max_spread_points)
+#define FALCON_FVG_MICRO_MAX_SPREAD_TO_FVG_RATIO              0.50  // R2.1: active spread gate, spread <= 50% of FVG size
+#define FALCON_FVG_MICRO_MAX_FVG_AGE_BARS                     12    // R2.1: was 0; ~1 hour on M5
 #define FALCON_FVG_MICRO_RETEST_FRESHNESS_BARS                3
 
 // v0.19.2/v0.19.3 calibration profiles. These do NOT block trades yet.
@@ -4470,7 +4474,12 @@ private:
       m_snapshot.quality_max_spread_points = FALCON_FVG_MICRO_MAX_SPREAD_POINTS;
       m_snapshot.quality_max_fvg_age_bars = FALCON_FVG_MICRO_MAX_FVG_AGE_BARS;
       m_snapshot.quality_retest_freshness_bars = FALCON_FVG_MICRO_RETEST_FRESHNESS_BARS;
-      m_snapshot.quality_fvg_age_bars = 0; // Phase 1 detector uses the newest closed M5 FVG only.
+      // R2.1: compute the FVG age in M5 bars from detection to the last CLOSED bar (shift=1).
+      const datetime fvg_age_now_closed = iTime(_Symbol, PERIOD_M5, 1);   // last closed M5 bar time
+      const datetime fvg_age_setup_time = detector_snapshot.newer_candle_time;
+      m_snapshot.quality_fvg_age_bars = (fvg_age_setup_time > 0 && fvg_age_now_closed > fvg_age_setup_time)
+         ? (int)((fvg_age_now_closed - fvg_age_setup_time) / (5 * 60))
+         : 0;
       m_snapshot.quality_reject_reason = "QUALITY_FILTERS_PASSED";
 
       long spread_points = 0;
@@ -4493,12 +4502,16 @@ private:
          return false;
       }
 
-      if(m_snapshot.quality_max_spread_points > 0 && spread_points > m_snapshot.quality_max_spread_points)
+      // R2.1: relative spread gate (spread / FVG size) replaces the absolute-points cap.
+      const double spread_to_fvg_ratio = (detector_snapshot.fvg_size_points > 0.0)
+         ? ((double)spread_points / detector_snapshot.fvg_size_points)
+         : 999.0;
+      if(spread_to_fvg_ratio > FALCON_FVG_MICRO_MAX_SPREAD_TO_FVG_RATIO)
       {
          m_snapshot.quality_filters_passed = false;
-         m_snapshot.quality_reject_reason = StringFormat("SPREAD_ABOVE_MAX;Spread=%d;Max=%d",
-                                                          (int)spread_points,
-                                                          (int)m_snapshot.quality_max_spread_points);
+         m_snapshot.quality_reject_reason = StringFormat("FVG_MICRO_REJECTED_SPREAD_TOO_LARGE;Ratio=%.2f;Max=%.2f",
+                                                          spread_to_fvg_ratio,
+                                                          (double)FALCON_FVG_MICRO_MAX_SPREAD_TO_FVG_RATIO);
          return false;
       }
 
@@ -4509,6 +4522,25 @@ private:
                                                           m_snapshot.quality_fvg_age_bars,
                                                           m_snapshot.quality_max_fvg_age_bars);
          return false;
+      }
+
+      // R2.1: invalidation guard - a CLOSED M5 bar (shift=1) beyond the zone breaks the FVG.
+      MqlRates inval_rates[];
+      ArraySetAsSeries(inval_rates, true);
+      const int inval_copied = CopyRates(_Symbol, PERIOD_M5, 1, 1, inval_rates);  // shift=1: last closed bar
+      if(inval_copied == 1)
+      {
+         const double last_closed_close = inval_rates[0].close;
+         const bool bullish_invalidated = (detector_snapshot.fvg_direction == FALCON_DIRECTION_BUY
+                                            && last_closed_close < detector_snapshot.fvg_lower);
+         const bool bearish_invalidated = (detector_snapshot.fvg_direction == FALCON_DIRECTION_SELL
+                                            && last_closed_close > detector_snapshot.fvg_upper);
+         if(bullish_invalidated || bearish_invalidated)
+         {
+            m_snapshot.quality_filters_passed = false;
+            m_snapshot.quality_reject_reason = "FVG_MICRO_REJECTED_ZONE_INVALIDATED";
+            return false;
+         }
       }
 
       return true;
@@ -4706,6 +4738,41 @@ public:
          return true;
       }
 
+      // R2.1: optional retest confirmation gate (close-beyond-mid + directional candle on the last CLOSED M5 bar).
+      // Computed locally here; FalconCalculateFvgHoldQualityScore and the snapshot score fields stay untouched.
+      if(FvgMicroRequireRetestConfirmation)
+      {
+         MqlRates confirm_rates[];
+         ArraySetAsSeries(confirm_rates, true);
+         const int confirm_copied = CopyRates(_Symbol, PERIOD_M5, 1, 1, confirm_rates);  // shift=1: last closed bar
+         bool retest_confirmed = false;
+         if(confirm_copied == 1)
+         {
+            const double confirm_midpoint = (m_snapshot.fvg_lower + m_snapshot.fvg_upper) / 2.0;
+            const double confirm_close = confirm_rates[0].close;
+            const double confirm_open  = confirm_rates[0].open;
+            if(m_snapshot.direction == FALCON_DIRECTION_BUY)
+               retest_confirmed = (confirm_close >= m_snapshot.fvg_lower)
+                                  && (confirm_close > confirm_midpoint)
+                                  && (confirm_close > confirm_open);
+            else if(m_snapshot.direction == FALCON_DIRECTION_SELL)
+               retest_confirmed = (confirm_close <= m_snapshot.fvg_upper)
+                                  && (confirm_close < confirm_midpoint)
+                                  && (confirm_close < confirm_open);
+         }
+
+         if(!retest_confirmed)
+         {
+            m_snapshot.watcher_status = FALCON_RETEST_WATCHER_STATUS_WAITING;
+            m_snapshot.retest_reason = (confirm_copied == 1) ? "FVG_MICRO_REJECTED_RETEST_NOT_CONFIRMED"
+                                                             : "RETEST_CONFIRMATION_NO_CLOSED_BAR";
+            m_snapshot.block_reason = "WAITING_FOR_RETEST_CONFIRMATION";
+            m_snapshot.notes = "Retest touched the FVG zone but the optional close-beyond-mid + directional-candle confirmation was not met. No skeleton built this tick.";
+            m_initialized = true;
+            return true;
+         }
+      }
+
       BuildTradePlanSkeleton(symbol_context);
       m_snapshot.watcher_status = FALCON_RETEST_WATCHER_STATUS_SKELETON_READY;
       m_snapshot.retest_reason = "LIVE_TICK_INSIDE_FVG_ZONE";
@@ -4748,9 +4815,11 @@ private:
 
    void BuildTradePlanSkeleton(const FalconSymbolContext &symbol_context)
    {
-      const double zone_size = MathAbs(m_snapshot.fvg_upper - m_snapshot.fvg_lower);
-      const double min_buffer = MathMax(zone_size, (double)symbol_context.stops_level_points * symbol_context.point);
-      const double safe_buffer = (min_buffer > 0.0 ? min_buffer : 10.0 * symbol_context.point);
+      const double zone_size      = MathAbs(m_snapshot.fvg_upper - m_snapshot.fvg_lower);
+      // R2.1: SL buffer configurable via FvgMicroSlBufferPoints, honoring the broker stops_level minimum.
+      const double user_buffer    = FvgMicroSlBufferPoints * symbol_context.point;
+      const double stops_buffer   = (double)symbol_context.stops_level_points * symbol_context.point;
+      const double safe_buffer    = MathMax(user_buffer, stops_buffer);
       const double midpoint = (m_snapshot.fvg_lower + m_snapshot.fvg_upper) / 2.0;
 
       m_snapshot.planned_entry_price = midpoint;
@@ -4758,16 +4827,18 @@ private:
       if(m_snapshot.direction == FALCON_DIRECTION_BUY)
       {
          m_snapshot.planned_structural_sl = m_snapshot.fvg_lower - safe_buffer;
-         m_snapshot.planned_tp1 = m_snapshot.fvg_upper + zone_size;
-         m_snapshot.planned_tp2 = m_snapshot.fvg_upper + (zone_size * 2.0);
-         m_snapshot.planned_tp3 = m_snapshot.fvg_upper + (zone_size * 3.0);
+         // R2.1: TP anchored to entry (midpoint) instead of the FVG boundary.
+         m_snapshot.planned_tp1 = midpoint + zone_size;
+         m_snapshot.planned_tp2 = midpoint + (zone_size * 2.0);
+         m_snapshot.planned_tp3 = midpoint + (zone_size * 3.0);
       }
       else if(m_snapshot.direction == FALCON_DIRECTION_SELL)
       {
          m_snapshot.planned_structural_sl = m_snapshot.fvg_upper + safe_buffer;
-         m_snapshot.planned_tp1 = m_snapshot.fvg_lower - zone_size;
-         m_snapshot.planned_tp2 = m_snapshot.fvg_lower - (zone_size * 2.0);
-         m_snapshot.planned_tp3 = m_snapshot.fvg_lower - (zone_size * 3.0);
+         // R2.1: TP anchored to entry (midpoint) instead of the FVG boundary.
+         m_snapshot.planned_tp1 = midpoint - zone_size;
+         m_snapshot.planned_tp2 = midpoint - (zone_size * 2.0);
+         m_snapshot.planned_tp3 = midpoint - (zone_size * 3.0);
       }
 
       m_snapshot.tradeplan_skeleton_created = true;
